@@ -192,9 +192,11 @@ class SGPClient:
     # ==========================================================
     # CHAMADO TÉCNICO (CORRIGIDO DEFINITIVO)
     # ==========================================================
-    def criar_chamado(self, contrato, conteudo, ocorrenciatipo=1):
+    def criar_chamado(self, contrato, conteudo, ocorrenciatipo):
         """
         Criar chamado técnico no SGP via API URA
+
+        ocorrenciatipo: código do tipo de ocorrência no SGP (obrigatório, definido pelo provedor).
 
         Endpoint:
             POST /api/ura/chamado/
@@ -205,6 +207,24 @@ class SGPClient:
         - NÃO enviar Content-Type manualmente
         - Enviar TUDO via form-data (data=)
         """
+        if ocorrenciatipo is None or (isinstance(ocorrenciatipo, str) and not str(ocorrenciatipo).strip()):
+            return {
+                "success": False,
+                "error": "ocorrenciatipo é obrigatório (código do tipo de ocorrência no SGP).",
+            }
+        try:
+            o_int = int(str(ocorrenciatipo).strip())
+        except (TypeError, ValueError):
+            return {
+                "success": False,
+                "error": "ocorrenciatipo inválido: use um número inteiro.",
+            }
+        if o_int < 1:
+            return {
+                "success": False,
+                "error": "ocorrenciatipo inválido.",
+            }
+        ocorrenciatipo = o_int
 
         url = f'{self.base_url}/api/ura/chamado/'
 

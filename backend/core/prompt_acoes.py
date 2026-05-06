@@ -468,7 +468,7 @@ Quando o cliente relatar problemas de internet (lenta, caindo, sem sinal, sem in
         - Esta mensagem deve ser enviada ANTES de abrir o chamado e transferir
      
      2. **Crie o chamado técnico:**
-        - Chame `criar_chamado_tecnico(contrato, conteudo)`
+        - Chame `criar_chamado_tecnico(contrato, conteudo, ocorrenciatipo)` — `ocorrenciatipo` é obrigatório: use o **código numérico** do tipo de ocorrência cadastrado no SGP para aquele caso (não invente; se houver mais de um tipo, escolha o que melhor descreve o problema).
         - Conteúdo: "Cliente sem acesso à internet. Verificação de acesso: Offline. Modem ligado: [sim/não]. LED vermelho: [sim/não]."
      
      3. **Transfira para SUPORTE TÉCNICO:**

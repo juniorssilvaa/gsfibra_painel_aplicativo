@@ -1192,6 +1192,119 @@ class ConversationViewSet(viewsets.ModelViewSet):
             # logger = logging.getLogger(__name__)
             logger.error(f"Erro ao enviar mensagem humana para Telegram: {e}", exc_info=True)
             return False, str(e)
+
+    def _deliver_agent_message_to_customer(self, conversation, message, formatted_content):
+        """
+        Envia ao cliente o texto já formatado (nome do agente + corpo), como em MessageViewSet.send_text.
+        Atualiza additional_attributes / external_id da Message após o envio.
+        """
+        import re
+
+        channel_type = conversation.inbox.channel_type if conversation.inbox else 'whatsapp'
+        success = False
+        telegram_response = None
+        whatsapp_response = None
+
+        try:
+            if channel_type == 'telegram':
+                success, telegram_response = self._send_telegram_message(conversation, formatted_content, None)
+            elif channel_type in ('whatsapp', 'whatsapp_oficial', 'whatsapp_session'):
+                canal_oficial = conversation.inbox.get_canal_instance()
+                if canal_oficial and canal_oficial.token and canal_oficial.phone_number_id:
+                    if not conversation.is_24h_window_open():
+                        err = translate_whatsapp_error(131047)
+                        add = message.additional_attributes or {}
+                        add.update({
+                            'sent_success': False,
+                            'channel_type': channel_type,
+                            'error_message': err,
+                            'error_code': 131047,
+                            'delivery_error_code': 131047,
+                            'delivery_error_message': err,
+                        })
+                        message.additional_attributes = add
+                        message.save(update_fields=['additional_attributes'])
+                        logger.warning(
+                            "[ASSIGN_MSG] Janela 24h fechada — mensagem de atribuição não enviada (conv=%s)",
+                            conversation.id,
+                        )
+                        return
+                    success, whatsapp_response = send_via_whatsapp_cloud_api(
+                        conversation,
+                        formatted_content,
+                        'text',
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                elif channel_type in ('whatsapp', 'whatsapp_session'):
+                    success, whatsapp_response = send_via_uazapi(
+                        conversation, formatted_content, 'text', None, None
+                    )
+                else:
+                    logger.warning(
+                        "[ASSIGN_MSG] WhatsApp oficial sem canal/token configurado — não enviado (conv=%s)",
+                        conversation.id,
+                    )
+            else:
+                logger.warning(
+                    "[ASSIGN_MSG] channel_type=%s sem envio automático para mensagem de atribuição",
+                    channel_type,
+                )
+        except Exception as ex:
+            logger.error("[ASSIGN_MSG] Falha ao enviar mensagem de atribuição: %s", ex, exc_info=True)
+            success = False
+
+        add = message.additional_attributes or {}
+        add['channel_type'] = channel_type
+        if success:
+            add['sent_success'] = True
+            add['last_status'] = 'sent'
+            add['sent_at'] = timezone.now().isoformat()
+            if channel_type == 'telegram':
+                add['telegram_sent'] = True
+            elif channel_type in ('whatsapp', 'whatsapp_oficial', 'whatsapp_session') and whatsapp_response:
+                try:
+                    response_data = whatsapp_response
+                    if isinstance(whatsapp_response, str):
+                        try:
+                            response_data = json.loads(whatsapp_response)
+                        except (ValueError, TypeError):
+                            response_data = None
+                    message_id = None
+                    if isinstance(response_data, dict):
+                        messages = response_data.get('messages', [])
+                        if messages and isinstance(messages, list) and len(messages) > 0:
+                            message_id = messages[0].get('id')
+                    if not message_id and isinstance(whatsapp_response, str):
+                        for pattern in (r'"id":\s*"([^"]+)"', r'wamid\.[A-Za-z0-9_-]+'):
+                            match = re.search(pattern, whatsapp_response)
+                            if match:
+                                message_id = match.group(1) if match.lastindex else match.group(0)
+                                break
+                    if message_id:
+                        add['external_id'] = message_id
+                        message.external_id = message_id
+                    add['whatsapp_sent'] = True
+                    add['whatsapp_response'] = whatsapp_response
+                except Exception as ex:
+                    logger.warning("[ASSIGN_MSG] Erro ao extrair external_id: %s", ex)
+            message.additional_attributes = add
+            message.save(update_fields=['external_id', 'additional_attributes'])
+        else:
+            add['sent_success'] = False
+            err_msg = None
+            if channel_type == 'telegram' and telegram_response:
+                err_msg = str(telegram_response)
+            elif whatsapp_response:
+                err_msg = str(whatsapp_response)
+            if err_msg:
+                add['error_message'] = err_msg
+            message.additional_attributes = add
+            message.save(update_fields=['additional_attributes'])
     
     @action(detail=False, methods=['POST'], url_path='start-with-template', url_name='start-with-template')
     def start_with_template(self, request):
@@ -1703,6 +1816,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         retry_delay_seconds = 0.12
 
         for attempt in range(max_retries):
+            pending_assignment_delivery = None  # dict após commit: conv_id, msg_id, formatted_content
             try:
                 with transaction.atomic():
                 # Lock na conversa para evitar que múltiplos agentes se atribuam simultaneamente
@@ -1766,38 +1880,35 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         }
                     )
                 
-                # Tentar enviar mensagem de atribuição (se houver) - fora da transação principal para não travar
-                # Mas aqui como é transação pequena, mantemos.
                     if user.assignment_message and user.assignment_message.strip():
-                        try:
-                            channel_type = conversation.inbox.channel_type
-                            formatted_content = self._format_message_with_agent_name(user.assignment_message, user, channel_type)
-                        
-                            # Criar mensagem de atribuição
-                            Message.objects.create(
-                                conversation=conversation,
-                                content=user.assignment_message,
-                                message_type='text',
-                                is_from_customer=False,
-                                additional_attributes={
-                                    'system_message': False,
-                                    'action': 'assignment_message',
-                                    'sent_by': user.id
-                                }
-                            )
-                        
-                            # Lógica de envio real (simplificada aqui para brevidade, mas deve seguir o original)
-                            # ... lógica de envio via integrations ...
-                        except Exception as e:
-                            logger.error(f"Erro ao enviar msg atribuição: {e}")
+                        channel_type = conversation.inbox.channel_type if conversation.inbox else 'whatsapp'
+                        formatted_content = self._format_message_with_agent_name(
+                            user.assignment_message, user, channel_type
+                        )
+                        assignment_msg = Message.objects.create(
+                            conversation=conversation,
+                            content=user.assignment_message,
+                            message_type='text',
+                            is_from_customer=False,
+                            additional_attributes={
+                                'system_message': False,
+                                'action': 'assignment_message',
+                                'sent_by': user.id
+                            }
+                        )
+                        pending_assignment_delivery = {
+                            'conversation_id': conversation.id,
+                            'message_id': assignment_msg.id,
+                            'formatted_content': formatted_content,
+                        }
 
                 # Serializar e retornar
                     serializer = ConversationSerializer(conversation)
-                    return Response({
+                    response_data = {
                         'success': True,
                         'message': f'Conversa atribuída para {user.get_full_name() or user.username}',
                         'conversation': serializer.data
-                    })
+                    }
             except OperationalError as e:
                 # SQLite em desenvolvimento pode bloquear sob concorrência curta.
                 # Fazemos tentativas rápidas antes de retornar erro ao usuário.
@@ -1815,6 +1926,28 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     {'error': 'Não foi possível atribuir o atendimento agora. Tente novamente em instantes.'},
                     status=500
                 )
+
+            # Após commit: enviar mensagem de atribuição ao cliente (Telegram / WhatsApp)
+            if pending_assignment_delivery:
+                try:
+                    conv = Conversation.objects.select_related('inbox', 'contact').get(
+                        pk=pending_assignment_delivery['conversation_id']
+                    )
+                    msg = Message.objects.get(pk=pending_assignment_delivery['message_id'])
+                    self._deliver_agent_message_to_customer(
+                        conv,
+                        msg,
+                        pending_assignment_delivery['formatted_content'],
+                    )
+                except Exception as e:
+                    logger.error(f"Erro ao enviar mensagem de atribuição ao cliente: {e}", exc_info=True)
+
+            return Response(response_data)
+
+        return Response(
+            {'error': 'Não foi possível atribuir o atendimento agora. Tente novamente em instantes.'},
+            status=500
+        )
 
     @action(detail=True, methods=['post'])
     def close_conversation_agent(self, request, pk=None):

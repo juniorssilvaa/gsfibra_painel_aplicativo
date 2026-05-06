@@ -124,11 +124,13 @@ class SGPIntegrationViewSet(viewsets.ViewSet):
         """Abre um novo chamado técnico."""
         contrato_id = request.data.get('contrato_id')
         conteudo = request.data.get('conteudo')
-        ocorrenciatipo = request.data.get('ocorrenciatipo', 1)
+        ocorrenciatipo = request.data.get('ocorrenciatipo')
         provedor_id = request.data.get('provedor_id')
 
         if not all([contrato_id, conteudo, provedor_id]):
             return Response({"error": "Dados incompletos para abertura de chamado."}, status=status.HTTP_400_BAD_REQUEST)
+        if ocorrenciatipo is None or (isinstance(ocorrenciatipo, str) and not str(ocorrenciatipo).strip()):
+            return Response({"error": "ocorrenciatipo é obrigatório (ID do tipo de ocorrência no SGP)."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             provedor = Provedor.objects.get(id=provedor_id)

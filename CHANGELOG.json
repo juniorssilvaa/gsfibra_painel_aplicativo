@@ -1,6 +1,26 @@
 {
-  "current_version": "2.38.0",
+  "current_version": "2.38.1",
   "versions": [
+    {
+      "version": "2.38.1",
+      "version_type": "patch",
+      "date": "2026-05-06",
+      "title": "Atribuição envia mensagem e chamado SGP exige tipo",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Enviar mensagem de atribuição ao cliente (quando configurado)",
+          "description": "Ao atribuir um atendimento, se o usuário tiver uma Mensagem de Atribuição configurada no perfil, ela agora é enviada para o cliente."
+        },
+        {
+          "type": "improvement",
+          "module": "SGP",
+          "title": "Abertura de chamado exige o número do tipo de ocorrência",
+          "description": "Correção interna: todos os fluxos/ações que abrem chamado técnico no SGP agora exigem informar o número do tipo de ocorrência (ocorrenciatipo)."
+        }
+      ]
+    },
     {
       "version": "2.38.0",
       "version_type": "patch",

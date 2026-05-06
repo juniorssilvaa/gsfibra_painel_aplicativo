@@ -1497,17 +1497,36 @@ const ChatbotBuilder = () => {
                                                     </div>
 
                                                     {sgpAction === 'criar_chamado' && (
-                                                        <div>
-                                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Descrição do Chamado (Conteúdo)</label>
-                                                            <textarea
-                                                                rows={3}
-                                                                value={sgpNode?.data.content || ''}
-                                                                onChange={(e) => updateNodeData(selectedNode, { content: e.target.value })}
-                                                                placeholder="Ex: Cliente solicita suporte técnico via WhatsApp."
-                                                                className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all resize-none"
-                                                            />
-                                                            <p className="text-[9px] text-slate-400 mt-1 px-1 italic">Texto que será enviado como descrição do chamado no SGP.</p>
-                                                        </div>
+                                                        <>
+                                                            <div>
+                                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tipo de ocorrência (ID no SGP) <span className="text-red-500">*</span></label>
+                                                                <input
+                                                                    type="number"
+                                                                    min={1}
+                                                                    step={1}
+                                                                    value={
+                                                                        sgpNode?.data.ocorrenciatipo !== undefined && sgpNode?.data.ocorrenciatipo !== ''
+                                                                            ? String(sgpNode.data.ocorrenciatipo)
+                                                                            : ''
+                                                                    }
+                                                                    onChange={(e) => updateNodeData(selectedNode, { ocorrenciatipo: e.target.value })}
+                                                                    placeholder="Ex: 5 (código cadastrado no seu SGP)"
+                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all"
+                                                                />
+                                                                <p className="text-[9px] text-slate-400 mt-1 px-1 italic">Obrigatório. Informe o código do tipo de ocorrência no seu SGP (sem valor padrão no sistema).</p>
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Descrição do Chamado (Conteúdo)</label>
+                                                                <textarea
+                                                                    rows={3}
+                                                                    value={sgpNode?.data.content || ''}
+                                                                    onChange={(e) => updateNodeData(selectedNode, { content: e.target.value })}
+                                                                    placeholder="Ex: Cliente solicita suporte técnico via WhatsApp."
+                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all resize-none"
+                                                                />
+                                                                <p className="text-[9px] text-slate-400 mt-1 px-1 italic">Texto que será enviado como descrição do chamado no SGP.</p>
+                                                            </div>
+                                                        </>
                                                     )}
 
                                                     {sgpAction === 'listar_titulos' && (

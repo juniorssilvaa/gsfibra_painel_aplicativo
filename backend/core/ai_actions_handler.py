@@ -608,13 +608,16 @@ class AIActionsHandler:
 
             elif function_name == "criar_chamado_tecnico":
                 cid, cont = function_args.get('contrato'), function_args.get('conteudo')
+                tipo_arg = function_args.get('ocorrenciatipo')
                 if not cid or not cont: return {"success": False, "erro": "Dados insuficientes."}
+                if tipo_arg is None or (isinstance(tipo_arg, str) and not str(tipo_arg).strip()):
+                    return {"success": False, "erro": "Informe o código ocorrenciatipo (tipo de ocorrência no SGP do provedor)."}
                 
                 if conversation_state.get('is_suspenso'):
                     return {"success": False, "erro": "Contrato suspenso.", "contrato_suspenso": True}
                 
                 # Criar chamado no SGP
-                sgp_res = sgp.criar_chamado(contrato=re.sub(r'[^\d]', '', str(cid)), conteudo=cont, ocorrenciatipo=1)
+                sgp_res = sgp.criar_chamado(contrato=re.sub(r'[^\d]', '', str(cid)), conteudo=cont, ocorrenciatipo=tipo_arg)
                 
                 if sgp_res.get('success'):
                     protocolo = sgp_res.get('protocolo')
@@ -714,7 +717,7 @@ class AIActionsHandler:
             {"type": "function", "function": {"name": "gerar_fatura_completa", "description": "Gera e envia fatura completa para o cliente via WhatsApp. Use quando o cliente pedir fatura, segunda via, boleto ou PIX.", "parameters": {"type": "object", "properties": {"cpf_cnpj": {"type": "string"}, "tipo_pagamento": {"type": "string", "enum": ["pix", "boleto"]}}, "required": ["cpf_cnpj"]}}},
             {"type": "function", "function": {"name": "verificar_manutencao_sgp", "description": "Verifica se há manutenção programada para o cliente. Use APENAS se o contrato NÃO estiver suspenso e após confirmar os dados do cliente. Se houver manutenção, informe ao cliente e NÃO abra chamado técnico.", "parameters": {"type": "object", "properties": {"cpf_cnpj": {"type": "string"}}, "required": ["cpf_cnpj"]}}},
             {"type": "function", "function": {"name": "verificar_acesso_sgp", "description": "Verifica se o acesso à internet do contrato está online, offline ou em manutenção. Retorna status_conexao que pode ser 'Online', 'Offline' ou 'Manutencao'. Se retornar 'Manutencao' ou tem_manutencao=True, há manutenção preventiva em andamento - NÃO abra chamado técnico. IMPORTANTE: Quando houver manutenção, você DEVE criar sua própria mensagem de forma educada, profissional e amigável usando suas próprias palavras. NUNCA copie literalmente a mensagem_manutencao_raw do SGP. Use as informações (protocolo, tempo_estimado) mas crie uma mensagem natural e variada, adaptando ao contexto da conversa. 🚨 SE RETORNAR 'Offline': Faça perguntas sobre LED vermelho e modem ligado PRIMEIRO. Se confirmar LED vermelho OU modem desligado, automatize: criar_resumo_suporte + criar_chamado_tecnico + executar_transferencia_conversa para SUPORTE TÉCNICO. Use APENAS se o contrato NÃO estiver suspenso. NUNCA use para contrato suspenso.", "parameters": {"type": "object", "properties": {"contrato": {"type": "string"}}, "required": ["contrato"]}}},
-            {"type": "function", "function": {"name": "criar_chamado_tecnico", "description": "Cria chamado técnico no SGP. Use APENAS se o contrato NÃO estiver suspenso, NÃO houver manutenção programada e após coletar todas as informações de diagnóstico e criar o resumo. NUNCA use para contrato suspenso ou se houver manutenção.", "parameters": {"type": "object", "properties": {"contrato": {"type": "string"}, "conteudo": {"type": "string"}}, "required": ["contrato", "conteudo"]}}},
+            {"type": "function", "function": {"name": "criar_chamado_tecnico", "description": "Cria chamado técnico no SGP. Use APENAS se o contrato NÃO estiver suspenso, NÃO houver manutenção programada e após coletar todas as informações de diagnóstico e criar o resumo. ocorrenciatipo é o código numérico do tipo de ocorrência cadastrado no SGP do provedor. NUNCA use para contrato suspenso ou se houver manutenção.", "parameters": {"type": "object", "properties": {"contrato": {"type": "string"}, "conteudo": {"type": "string"}, "ocorrenciatipo": {"type": "integer", "description": "ID do tipo de ocorrência no SGP"}}, "required": ["contrato", "conteudo", "ocorrenciatipo"]}}},
             {"type": "function", "function": {"name": "liberar_por_confianca", "description": "Realiza desbloqueio em confiança do contrato suspenso. Use quando o cliente quiser desbloquear o acesso sem pagar imediatamente. O CPF/CNPJ é opcional e será buscado da memória se não fornecido. O conteúdo (conteudo) deve ser o que o cliente disse sobre quando vai pagar (ex: 'vou paga amanhã'), ou deixe vazio para usar 'Liberação Via NioChat' como padrão.", "parameters": {"type": "object", "properties": {"contrato": {"type": "string"}, "cpf_cnpj": {"type": "string", "description": "CPF/CNPJ do cliente (opcional, será buscado da memória se não fornecido)"}, "conteudo": {"type": "string", "description": "Conteúdo da promessa de pagamento que o cliente mencionou (ex: 'vou paga amanhã'). Se o cliente não mencionou nada específico, deixe vazio ou não inclua este parâmetro para usar 'Liberação Via NioChat' como padrão."}}, "required": ["contrato"]}}}
         ]
 

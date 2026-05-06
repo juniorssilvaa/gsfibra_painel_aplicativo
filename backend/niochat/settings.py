@@ -43,11 +43,11 @@ import logging
 # BASE
 # ============================================
 
-__version__ = "2.36.0"
-__version_info__ = (2, 36, 0)
+__version__ = "2.38.1"
+__version_info__ = (2, 38, 1)
 
 # Compatibilidade legado
-VERSION = "2.36.0"
+VERSION = "2.38.1"
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Sempre usar config que prioriza variáveis de ambiente sobre arquivo .env

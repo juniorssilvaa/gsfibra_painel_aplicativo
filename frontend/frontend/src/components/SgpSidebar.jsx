@@ -24,7 +24,7 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose }) => {
   const [documento, setDocumento] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('cliente');
-  const [ticketType, setTicketType] = useState('1'); // Padrão
+  const [ticketType, setTicketType] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
   const [openingTicket, setOpeningTicket] = useState(false);
   const [manuallyReset, setManuallyReset] = useState(false);
@@ -219,13 +219,18 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose }) => {
       toast.error('Descreva o problema em detalhes para o chamado.');
       return;
     }
+    const tipoNum = parseInt(String(ticketType).trim(), 10);
+    if (ticketType === '' || ticketType === undefined || Number.isNaN(tipoNum) || tipoNum < 1) {
+      toast.error('Informe o ID numérico do tipo de ocorrência no SGP.');
+      return;
+    }
 
     setOpeningTicket(true);
     try {
       const resp = await axios.post('/api/sgp/abrir-chamado/', {
         provedor_id: provedorId,
         contrato_id: cid,
-        ocorrenciatipo: ticketType,
+        ocorrenciatipo: tipoNum,
         conteudo: ticketDescription
       }, {
         headers: { 'Authorization': `Token ${localStorage.getItem('token')}` }
@@ -554,16 +559,19 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose }) => {
                       <span className="text-sm font-semibold text-gray-200">Abertura de Chamado</span>
                       
                       <div className="space-y-3">
-                         <select 
-                            className="w-full bg-[#1a1c23] border border-white/10 rounded-lg p-2.5 text-sm text-gray-200 focus:outline-none appearance-none"
-                            value={ticketType}
-                            onChange={e => setTicketType(e.target.value)}
-                         >
-                            <option value="1">Sem acesso à internet</option>
-                            <option value="2">Serviço com lentidão</option>
-                            <option value="3">Dúvidas financeiras</option>
-                            <option value="4">Outros problemas</option>
-                         </select>
+                         <div className="space-y-1">
+                           <label className="text-[10px] uppercase text-gray-500 font-semibold tracking-wide">Tipo de ocorrência (ID no SGP)</label>
+                           <input
+                             type="number"
+                             min={1}
+                             step={1}
+                             className="w-full bg-[#1a1c23] border border-white/10 rounded-lg p-2.5 text-sm text-gray-200 focus:outline-none"
+                             placeholder="Ex.: código do tipo na sua base SGP"
+                             value={ticketType}
+                             onChange={(e) => setTicketType(e.target.value)}
+                           />
+                           <p className="text-[10px] text-gray-500">Informe o código numérico cadastrado no seu SGP (sem valor fixo no sistema).</p>
+                         </div>
 
                          <textarea
                             className="w-full h-24 bg-[#1a1c23] border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:outline-none resize-none placeholder:text-gray-500"

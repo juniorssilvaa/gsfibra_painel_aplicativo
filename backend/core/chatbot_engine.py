@@ -100,6 +100,23 @@ def _formatar_data_br(data_str: str) -> str:
     return data_str
 
 
+def _parse_ocorrenciatipo_node(node_data: dict) -> Optional[int]:
+    """ID do tipo de ocorrência no SGP configurado no bloco pelo provedor (sem valor padrão)."""
+    raw = node_data.get('ocorrenciatipo')
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        n = int(s)
+    except (TypeError, ValueError):
+        return None
+    if n < 1:
+        return None
+    return n
+
+
 class ChatbotEngine:
     """
     Motor de execução para fluxos criados no Chatbot Builder.
@@ -1218,6 +1235,14 @@ class ChatbotEngine:
                         result_context = {'sucesso': False, 'sgp_liberacao': None}
 
                 elif sgp_action == 'criar_chamado':
+                    tipo_oc = _parse_ocorrenciatipo_node(node_data)
+                    if tipo_oc is None:
+                        err_txt = (node_data.get('errorMessage') or '').strip() or (
+                            "Configure o ID do tipo de ocorrência no bloco Consulta SGP (ação Criar chamado técnico) e salve o fluxo."
+                        )
+                        await ChatbotEngine.send_message_agnostic(conv=conversation, text=err_txt)
+                        return
+
                     # Descrição do chamado: priorizar texto configurado no nó (evita usar só o título do menu).
                     conteudo_cfg_raw = node_data.get('content', '')
                     conteudo_cfg = str(conteudo_cfg_raw).strip() if conteudo_cfg_raw else ''
@@ -1261,8 +1286,7 @@ class ChatbotEngine:
                         except Exception as e:
                             logger.error(f"[ChatbotEngine][SGP] Erro ao buscar contrato via fatura2via: {e}")
                     
-                    tipo = node_data.get('ocorrenciatipo', 1)
-                    result = await sync_to_async(sgp.criar_chamado)(contrato_final, conteudo, ocorrenciatipo=tipo)
+                    result = await sync_to_async(sgp.criar_chamado)(contrato_final, conteudo, ocorrenciatipo=tipo_oc)
                     if result:
                         result_context = {
                             'protocolo': result.get('protocolo', ''),
