@@ -1,0 +1,133 @@
+/* Prévia de template WhatsApp (modal iniciar atendimento / seleção) */
+.wa-tpl-card {
+  background: #d8d1ca;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.wa-tpl-header {
+  background: #16816f;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.wa-tpl-body {
+  padding: 8px;
+  background: rgba(225, 243, 251, 0.2);
+}
+
+.wa-tpl-box {
+  background: #ebedf0;
+  border-radius: 6px;
+  border: 1px solid #d5d7da;
+  overflow: hidden;
+}
+
+.wa-tpl-header-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  padding: 10px 12px;
+  border-bottom: 1px solid #d7d7d7;
+  background: #ebedf0;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.wa-tpl-message {
+  background: #f7f7f7;
+  border-top: 1px solid #d7d7d7;
+  padding: 10px;
+  color: #1a1a1a;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 7.5rem;
+  overflow-y: auto;
+}
+
+.wa-tpl-footer {
+  border-top: 1px solid #d7d7d7;
+  background: #ececec;
+  padding: 8px 10px;
+  text-align: center;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.wa-tpl-action {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #fff;
+  margin-top: 6px;
+  color: #11a24d;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.wa-tpl-action--link {
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+.wa-tpl-payment {
+  padding: 7px 10px;
+  border-bottom: 1px dashed #8d9197;
+}
+
+.wa-tpl-payment-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #000;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 5px;
+}
+
+.wa-tpl-total {
+  border-top: 1px dashed #8d9197;
+  padding-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #000;
+  font-weight: 800;
+}
+
+.wa-tpl-message--compact {
+  max-height: 4.5rem;
+  font-size: 11px;
+  padding: 8px;
+}
+
+.wa-tpl-caption {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* Selects em modais escuros (iniciar atendimento) — opções visíveis no dropdown nativo */
+.attendance-modal-select {
+  color-scheme: dark;
+}
+
+.attendance-modal-select option {
+  background-color: #1a1a1a;
+  color: #ffffff;
+}

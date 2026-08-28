@@ -1,0 +1,272 @@
+version: "3.8"
+
+# ==========================================================
+# NOTA SOBRE SSL/TLS E WEBSOCKETS
+# ==========================================================
+# IMPORTANTE: Para que os certificados SSL funcionem corretamente,
+# o Traefik no servidor DEVE estar configurado com:
+# 1. CertResolver "letsencryptresolver" configurado
+# 2. Let's Encrypt habilitado e funcionando
+# 3. Portas 80 e 443 abertas e roteando para o Traefik
+# 4. DNS apontando corretamente (app.niochat.com.br e api.niochat.com.br)
+#
+# Se o site aparecer como "não seguro":
+# - Verificar logs do Traefik para erros de certificado
+# - Verificar se o certresolver está configurado corretamente
+# - Verificar se os domínios estão acessíveis via HTTP na porta 80
+# - Reiniciar o Traefik após mudanças de configuração
+# ==========================================================
+
+services:
+
+  # ==========================================================
+  # POSTGRESQL
+  # Banco de dados principal do NioChat
+  # ==========================================================
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: niochat
+      POSTGRES_USER: niochat_user
+      POSTGRES_PASSWORD: E0sJT3wAYFuahovmHkxgy
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - niochat-postgres:/var/lib/postgresql/data
+    networks:
+      - nioNet
+    ports:
+      - "5432:5432"
+    command: >
+      postgres
+      -c max_connections=50
+      -c shared_buffers=256MB
+      -c effective_cache_size=768MB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=8MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=512MB
+      -c max_wal_size=2GB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U niochat_user -d niochat"]
+      interval: 15s
+      timeout: 15s
+      retries: 20
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 2500M
+      restart_policy:
+        condition: any
+
+  # ==========================================================
+  # BACKEND DJANGO (ASGI + API + WEBSOCKET)
+  # ==========================================================
+  niochat-backend:
+    image: ghcr.io/juniorssilvaa/niochat-backend:latest
+    depends_on:
+      - postgres
+    networks:
+      - nioNet
+    volumes:
+      - niochat-media:/app/backend/media
+      - niochat-static:/app/backend/staticfiles
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG}
+      ENVIRONMENT: ${ENVIRONMENT}
+      PYTHONUNBUFFERED: 1
+
+      ALLOWED_HOSTS: 127.0.0.1,localhost,api.niochat.com.br,app.niochat.com.br
+
+      DATABASE_URL: ${DATABASE_URL}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: niochat_user
+      POSTGRES_DB: niochat
+      POSTGRES_PASSWORD: E0sJT3wAYFuahovmHkxgy
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+      DRAMATIQ_BROKER_URL: ${DRAMATIQ_BROKER_URL}
+
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+
+      EVOLUTION_URL: ${EVOLUTION_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
+
+      CORS_ALLOWED_ORIGINS: https://app.niochat.com.br,https://api.niochat.com.br
+      CSRF_TRUSTED_ORIGINS: https://app.niochat.com.br,https://api.niochat.com.br
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
+      restart_policy:
+        condition: any
+
+    labels:
+      # Ativa o Traefik
+      - "traefik.enable=true"
+
+      # Serviço interno
+      - "traefik.http.services.niochat-backend.loadbalancer.server.port=8010"
+
+      # API HTTPS (api.niochat.com.br)
+      - "traefik.http.routers.niochat-api.rule=Host(`api.niochat.com.br`) && PathPrefix(`/api/`)"
+      - "traefik.http.routers.niochat-api.entrypoints=websecure"
+      - "traefik.http.routers.niochat-api.tls=true"
+      - "traefik.http.routers.niochat-api.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.niochat-api.service=niochat-backend"
+      - "traefik.http.routers.niochat-api.priority=10"
+
+      # API HTTPS (app.niochat.com.br) - Para requisições de API vindas do frontend
+      - "traefik.http.routers.niochat-api-app.rule=Host(`app.niochat.com.br`) && PathPrefix(`/api/`)"
+      - "traefik.http.routers.niochat-api-app.entrypoints=websecure"
+      - "traefik.http.routers.niochat-api-app.tls=true"
+      - "traefik.http.routers.niochat-api-app.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.niochat-api-app.service=niochat-backend"
+      - "traefik.http.routers.niochat-api-app.priority=10"
+
+      # WebSocket HTTPS (api.niochat.com.br)
+      - "traefik.http.routers.niochat-ws.rule=Host(`api.niochat.com.br`) && PathPrefix(`/ws/`)"
+      - "traefik.http.routers.niochat-ws.entrypoints=websecure"
+      - "traefik.http.routers.niochat-ws.tls=true"
+      - "traefik.http.routers.niochat-ws.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.niochat-ws.service=niochat-backend"
+      - "traefik.http.routers.niochat-ws.priority=10"
+
+      # WebSocket HTTPS (app.niochat.com.br) - Para requisições de WebSocket vindas do frontend
+      - "traefik.http.routers.niochat-ws-app.rule=Host(`app.niochat.com.br`) && PathPrefix(`/ws/`)"
+      - "traefik.http.routers.niochat-ws-app.entrypoints=websecure"
+      - "traefik.http.routers.niochat-ws-app.tls=true"
+      - "traefik.http.routers.niochat-ws-app.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.niochat-ws-app.service=niochat-backend"
+      - "traefik.http.routers.niochat-ws-app.priority=10"
+
+      # Webhooks HTTPS
+      - "traefik.http.routers.niochat-webhooks.rule=Host(`api.niochat.com.br`) && PathPrefix(`/webhooks/`)"
+      - "traefik.http.routers.niochat-webhooks.entrypoints=websecure"
+      - "traefik.http.routers.niochat-webhooks.tls=true"
+      - "traefik.http.routers.niochat-webhooks.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.niochat-webhooks.service=niochat-backend"
+
+  # ==========================================================
+  # CRON (FINALIZAÇÃO DE CONVERSAS)
+  # ==========================================================
+  niochat-cron:
+    image: ghcr.io/juniorssilvaa/niochat-backend:latest
+    networks:
+      - nioNet
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      ENVIRONMENT: ${ENVIRONMENT}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: >
+      sh -c "
+      while true; do
+        python manage.py finalize_closing_conversations || true;
+        sleep 120;
+      done
+      "
+    volumes:
+      - niochat-cron-logs:/var/log/niochat
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+      restart_policy:
+        condition: any
+
+  # ==========================================================
+  # FRONTEND REACT
+  # ==========================================================
+  niochat-frontend:
+    image: ghcr.io/juniorssilvaa/niochat-frontend:latest
+    networks:
+      - nioNet
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+      restart_policy:
+        condition: any
+    labels:
+      - "traefik.enable=true"
+      # Frontend - apenas para rotas que NÃO são /api/, /ws/ ou /webhooks/ (prioridade menor que API)
+      # IMPORTANTE: Usar !PathPrefix para excluir essas rotas e garantir que sejam roteadas para o backend
+      - "traefik.http.routers.niochat-frontend.rule=Host(`app.niochat.com.br`) && !PathPrefix(`/api/`) && !PathPrefix(`/ws/`) && !PathPrefix(`/webhooks/`)"
+      - "traefik.http.routers.niochat-frontend.entrypoints=websecure"
+      - "traefik.http.routers.niochat-frontend.tls=true"
+      - "traefik.http.routers.niochat-frontend.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.niochat-frontend.service=niochat-frontend"
+      - "traefik.http.services.niochat-frontend.loadbalancer.server.port=8012"
+      - "traefik.http.routers.niochat-frontend.priority=1"
+
+  # ==========================================================
+  # DOCUMENTAÇÃO
+  # ==========================================================
+  docs:
+    image: ghcr.io/juniorssilvaa/niochat-docs:latest
+    networks:
+      - nioNet
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+      restart_policy:
+        condition: any
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.niochat-docs.rule=Host(`docs.niochat.com.br`)"
+      - "traefik.http.routers.niochat-docs.entrypoints=websecure"
+      - "traefik.http.routers.niochat-docs.tls=true"
+      - "traefik.http.routers.niochat-docs.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.niochat-docs.service=niochat-docs"
+      - "traefik.http.services.niochat-docs.loadbalancer.server.port=80"
+
+# ==========================================================
+# NETWORKS
+# ==========================================================
+networks:
+  nioNet:
+    external: true
+    name: nioNet
+
+# ==========================================================
+# VOLUMES
+# ==========================================================
+volumes:
+  niochat-postgres:
+  niochat-media:
+  niochat-static:
+  niochat-cron-logs:

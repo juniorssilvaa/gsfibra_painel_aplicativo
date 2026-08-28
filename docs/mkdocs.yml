@@ -1,0 +1,47 @@
+site_name: NioChat
+site_description: Documentação NioChat
+docs_dir: docs_content
+
+theme:
+  name: material
+  logo: assets/logo.png
+  palette:
+    - scheme: slate
+      primary: blue
+      accent: blue
+
+nav:
+  - 'Início': 'index.md'
+  - 'Visão Geral':
+    - 'Introdução': 'overview/introduction.md'
+    - 'Arquitetura': 'overview/architecture.md'
+    - 'Funcionalidades': 'overview/features.md'
+  - 'Instalação':
+    - 'Desenvolvimento': 'installation/development.md'
+    - 'Produção': 'installation/production.md'
+  - 'Uso': 'usage/interface.md'
+  - 'Funcionalidades':
+    - 'Recuperador': 'features/recovery.md'
+  - 'IA':
+    - 'Configuração': 'ai/configuration.md'
+    - 'Chamadas de Função': 'ai/function-calls.md'
+    - 'Integração SGP': 'ai/sgp-integration.md'
+    - 'Transcrição': 'ai/transcription.md'
+  - 'Desenvolvimento':
+    - 'Estrutura': 'development/structure.md'
+    - 'Contribuição': 'development/contributing.md'
+    - 'Solução de Problemas': 'development/troubleshooting.md'
+  - 'API':
+    - 'Autenticação': 'api/authentication.md'
+    - 'Endpoints': 'api/endpoints.md'
+    - 'Webhooks': 'api/webhooks.md'
+    - 'Websocket': 'api/websocket.md'
+    - 'Guia do Postman': 'api/postman-guide.md'
+  - 'Integração com Supabase': 'supabase/integration.md'
+  - 'Configuração':
+    - 'Supabase': 'configuration/supabase.md'
+    - 'Sentry': 'configuration/sentry.md'
+  - 'Changelog': 'changelog.md'
+
+plugins:
+  - search

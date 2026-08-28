@@ -1,0 +1,42 @@
+# Contextos com `context: .` (backend/frontend/superadmin/docs).
+# Não afeta o build de calls (context próprio em services/niohub-telefonia).
+.git
+.github
+**/.git
+**/.DS_Store
+**/Thumbs.db
+
+# Não entram nas imagens do chat (contexto raiz)
+services/
+nanet_telecom/
+supreme_network/
+certs/
+tools/
+scripts/
+
+# Node artifacts from host machine (Windows) must not enter Linux images
+**/node_modules
+**/dist
+**/.vite
+**/.cache
+**/pnpm-store
+**/.pnpm-store
+
+# Python artifacts
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/staticfiles
+**/media
+
+# Local env/secrets
+**/.env
+**/.env.*
+!superadmin/.env.superadmin.example
+
+# Logs / binários locais
+**/*.log
+**/*.exe
+**/postgres/
+**/w64devkit/

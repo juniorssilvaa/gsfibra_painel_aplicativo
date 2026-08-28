@@ -1,0 +1,156 @@
+# Configuração Codemagic CI/CD para Netshow
+# Workflow único: gera iOS + Android no mesmo build.
+# iOS: usa certificado + profile já cadastrados em Code signing identities
+# (não gera certificado novo via App Store Connect).
+
+workflows:
+  ios-release:
+    name: Netshow iOS Release
+    working_directory: mobile
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: "NIO HUB"
+    environment:
+      groups:
+        - tokens
+        - android_credentials
+      vars:
+        BUNDLE_ID: "com.netshow.app.niohub"
+        XCODE_SCHEME: "Runner"
+      flutter: stable
+      xcode: latest
+      ios_signing:
+        # Reference names exatamente como no Codemagic → Code signing identities
+        certificates:
+          - NIO HUB TECNOLOGIA
+        provisioning_profiles:
+          - netshow_distribution
+
+    scripts:
+      - name: Install dependencies
+        script: |
+          # Instala CocoaPods via Bundler (evita crash do Ruby 3.4)
+          bundle install
+          flutter pub get
+
+      - name: Set up Android keystore
+        script: |
+          # Decodifica o keystore Base64 da variavel de ambiente
+          echo $ANDROID_KEYSTORE | base64 --decode > android/upload-key-final.jks
+          # Cria o key.properties para o Gradle encontrar a chave
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=../upload-key-final.jks
+          EOF
+
+      - name: Verify Android keystore fingerprints
+        script: |
+          echo "=== Verificando keystore Android ==="
+          echo "$ANDROID_KEYSTORE" | base64 --decode > /tmp/niohub-upload-key-universal.jks
+          keytool -list -v \
+            -keystore /tmp/niohub-upload-key-universal.jks \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -alias "$ANDROID_KEY_ALIAS" \
+            | grep -E "SHA1:|SHA256:"
+
+      - name: Flutter build APK (Netshow)
+        script: |
+          flutter build apk --flavor netshow --release \
+            --build-number=$BUILD_NUMBER \
+            --android-skip-build-dependency-validation \
+            --dart-define=PROVIDER_API_TOKEN=$PROVIDER_API_TOKEN_CLIENTE_NETSHOW
+
+      - name: Flutter build App Bundle (Netshow)
+        script: |
+          flutter build appbundle --flavor netshow --release \
+            --build-number=$BUILD_NUMBER \
+            --android-skip-build-dependency-validation \
+            --dart-define=PROVIDER_API_TOKEN=$PROVIDER_API_TOKEN_CLIENTE_NETSHOW
+
+      - name: CocoaPods installation
+        script: |
+          flutter precache --ios
+          cd ios
+          rm -rf Pods Podfile.lock
+          bundle exec pod install --repo-update
+
+      - name: Set up code signing
+        script: |
+          # Aplica certificado/profile do ios_signing e gera export_options.plist
+          xcode-project use-profiles
+          echo "=== Installed profiles ==="
+          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles" || true
+          echo "=== Looking for export_options.plist ==="
+          ls -la "$HOME/export_options.plist" \
+                 "/Users/builder/export_options.plist" \
+                 "export_options.plist" 2>/dev/null || true
+          echo "=== CHECK PUSH ENTITLEMENT ==="
+          FOUND_PUSH=0
+          for f in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision; do
+            [ -f "$f" ] || continue
+            echo "======================================"
+            echo "$f"
+            security cms -D -i "$f" > /tmp/profile.plist
+            /usr/libexec/PlistBuddy -c "Print :Name" /tmp/profile.plist || true
+            APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" /tmp/profile.plist 2>/dev/null || true)
+            APS=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:aps-environment" /tmp/profile.plist 2>/dev/null || true)
+            echo "application-identifier=$APP_ID"
+            echo "aps-environment=$APS"
+            if echo "$APP_ID" | grep -q "$BUNDLE_ID" && [ "$APS" = "production" ]; then
+              FOUND_PUSH=1
+            fi
+          done
+          if [ "$FOUND_PUSH" != "1" ]; then
+            echo "ERRO: profile de $BUNDLE_ID sem Entitlements:aps-environment=production"
+            exit 1
+          fi
+          echo "OK: $BUNDLE_ID com aps-environment=production"
+
+      - name: Flutter build IPA
+        script: |
+          set -e
+          EXPORT_PLIST=""
+          for p in "$HOME/export_options.plist" \
+                   "/Users/builder/export_options.plist" \
+                   "export_options.plist" \
+                   "ios/ExportOptions.plist"; do
+            if [ -f "$p" ]; then
+              EXPORT_PLIST="$p"
+              break
+            fi
+          done
+          if [ -z "$EXPORT_PLIST" ]; then
+            echo "Gerando export_options.plist..."
+            xcode-project use-profiles --export-options-plist="$HOME/export_options.plist"
+            EXPORT_PLIST="$HOME/export_options.plist"
+          fi
+          echo "Using: $EXPORT_PLIST"
+          cat "$EXPORT_PLIST"
+          flutter build ipa --release \
+            --export-options-plist="$EXPORT_PLIST" \
+            --build-number=$BUILD_NUMBER \
+            --dart-define=PROVIDER_API_TOKEN=$PROVIDER_API_TOKEN_CLIENTE_NETSHOW
+          echo "=== IPA files ==="
+          find build/ios -name "*.ipa" -print -ls
+          test -n "$(find build/ios -name '*.ipa' | head -1)"
+
+    # Artifacts: clone root E working_directory (Codemagic varia)
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/bundle/**/*.aab
+      - build/ios/ipa/*.ipa
+      - mobile/build/app/outputs/flutter-apk/*.apk
+      - mobile/build/app/outputs/bundle/**/*.aab
+      - mobile/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        # Usa a integracao "NIO HUB" (Team → Integrations → Developer Portal).
+        # Se der 401 NOT_AUTHORIZED, regenerar a API key .p8 no App Store Connect
+        # e atualizar a chave no Codemagic (Issuer ID + Key ID + arquivo .p8).
+        auth: integration
+        submit_to_testflight: true

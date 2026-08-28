@@ -1,0 +1,260 @@
+# APK/AAB são gerados em todo run. O passo "Upload" envia para GitHub Artifacts (aba
+# Artifacts do run). Se a cota de storage da conta/org estiver cheia, o upload falha
+# mas o job continua verde (continue-on-error). Libere cota: Actions → apagar artifacts
+# antigos. Para NUNCA tentar upload (só validar build), defina SKIP_ARTIFACT_UPLOAD=true.
+name: Build Mobile App (Nanet)
+
+on:
+  push:
+    branches:
+      - "cliente/nanet-telecom"
+
+jobs:
+  build-android:
+    name: Build Android (APK & AAB)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+      
+      - name: Flutter config
+        run: |
+          flutter --disable-analytics || true
+          flutter --version
+
+      - name: Resolve provider token (prefer GitHub Variables)
+        shell: bash
+        env:
+          TOKEN_BRANCH: ${{ vars.PROVIDER_API_TOKEN_CLIENTE_NANET }}
+          TOKEN_GLOBAL: ${{ vars.PROVIDER_API_TOKEN }}
+        run: |
+          if [[ -n "$TOKEN_BRANCH" ]]; then
+            echo "PROVIDER_API_TOKEN=$TOKEN_BRANCH" >> $GITHUB_ENV
+            echo "Using branch provider token from variables."
+            echo "::add-mask::$TOKEN_BRANCH"
+          elif [[ -n "$TOKEN_GLOBAL" ]]; then
+            echo "PROVIDER_API_TOKEN=$TOKEN_GLOBAL" >> $GITHUB_ENV
+            echo "Using global provider token from variables."
+            echo "::add-mask::$TOKEN_GLOBAL"
+          else
+            echo "No provider token variable set. Failing early."
+            exit 1
+          fi
+
+      - name: Prepare Android signing (if secrets provided)
+        working-directory: ./mobile/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_ALIAS_PASSWORD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" ]]; then
+            mkdir -p app
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/upload-keystore.jks
+            KEYSTORE_PW="${ANDROID_KEYSTORE_PASSWORD:-$ANDROID_KEY_PASSWORD}"
+            KEY_ALIAS_PW="${ANDROID_KEY_ALIAS_PASSWORD:-$ANDROID_KEY_PASSWORD}"
+            {
+              echo "storeFile=upload-keystore.jks"
+              echo "storePassword=${KEYSTORE_PW}"
+              echo "keyAlias=${ANDROID_KEY_ALIAS}"
+              echo "keyPassword=${KEY_ALIAS_PW}"
+            } > key.properties
+            echo "Android signing configured."
+          else
+            echo "No Android signing secrets provided. Building with debug signing."
+          fi
+
+      - name: Check Android signing vars (optional)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS_PASSWORD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$ANDROID_KEY_ALIAS" || ( -z "$ANDROID_KEY_PASSWORD" && -z "$ANDROID_KEYSTORE_PASSWORD" ) ]]; then
+            echo "Warning: Missing Android signing variables. Release will be signed with debug key."
+          else
+            echo "Android signing variables detected."
+          fi
+
+      - name: Install dependencies and Clean build
+        working-directory: ./mobile
+        run: |
+          # Verificar se o google-services.json existe para o flavor nanet
+          if [ ! -f "android/app/src/nanet/google-services.json" ]; then
+            echo "::error::google-services.json missing in android/app/src/nanet/"
+            exit 1
+          fi
+          flutter clean
+          flutter pub get
+
+      - name: Build APK (Flavor Nanet)
+        working-directory: ./mobile
+        run: |
+          if [ -z "$PROVIDER_API_TOKEN" ]; then
+            flutter build apk --flavor nanet --release
+          else
+            flutter build apk --flavor nanet --release --dart-define=PROVIDER_API_TOKEN=$PROVIDER_API_TOKEN
+          fi
+
+      - name: Build App Bundle (Flavor Nanet)
+        working-directory: ./mobile
+        run: |
+          if [ -z "$PROVIDER_API_TOKEN" ]; then
+            flutter build appbundle --flavor nanet --release
+          else
+            flutter build appbundle --flavor nanet --release --dart-define=PROVIDER_API_TOKEN=$PROVIDER_API_TOKEN
+          fi
+
+      - name: Listar binários gerados (APK / AAB)
+        working-directory: ./mobile
+        run: |
+          ls -lah build/app/outputs/flutter-apk/ || true
+          ls -lah build/app/outputs/bundle/nanetRelease/ || true
+
+      - name: Aviso — upload desativado (SKIP_ARTIFACT_UPLOAD)
+        if: ${{ vars.SKIP_ARTIFACT_UPLOAD == 'true' }}
+        run: |
+          echo "::notice::SKIP_ARTIFACT_UPLOAD=true — APK/AAB existem no runner; upload para GitHub Artifacts foi ignorado."
+
+      - name: Upload APK e AAB (GitHub Artifacts)
+        if: ${{ vars.SKIP_ARTIFACT_UPLOAD != 'true' && false }} # Desativado temporariamente para economizar cota de storage
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanet-android-apk-aab-${{ github.run_number }}
+          retention-days: 3
+          compression-level: 9
+          path: |
+            mobile/build/app/outputs/flutter-apk/app-nanet-release.apk
+            mobile/build/app/outputs/bundle/nanetRelease/app-nanet-release.aab
+
+  build-ios:
+    if: ${{ vars.ENABLE_IOS_BUILD == 'true' }}
+    name: Build iOS (Runner.app)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+      
+      - name: Flutter config
+        run: |
+          flutter --disable-analytics || true
+          flutter --version
+
+      - name: Resolve provider token (prefer GitHub Variables)
+        shell: bash
+        env:
+          TOKEN_BRANCH: ${{ vars.PROVIDER_API_TOKEN_CLIENTE_NANET }}
+          TOKEN_GLOBAL: ${{ vars.PROVIDER_API_TOKEN }}
+        run: |
+          if [[ -n "$TOKEN_BRANCH" ]]; then
+            echo "PROVIDER_API_TOKEN=$TOKEN_BRANCH" >> $GITHUB_ENV
+            echo "Using branch provider token from variables."
+            echo "::add-mask::$TOKEN_BRANCH"
+          elif [[ -n "$TOKEN_GLOBAL" ]]; then
+            echo "PROVIDER_API_TOKEN=$TOKEN_GLOBAL" >> $GITHUB_ENV
+            echo "Using global provider token from variables."
+            echo "::add-mask::$TOKEN_GLOBAL"
+          else
+            echo "No provider token variable set. Failing early."
+            exit 1
+          fi
+
+      - name: Prepare iOS codesigning (if secrets provided)
+        shell: bash
+        working-directory: ./mobile
+        env:
+          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          if [[ -n "$IOS_CERT_P12_BASE64" && -n "$IOS_PROVISIONING_PROFILE_BASE64" ]]; then
+            echo "Setting up iOS codesigning..."
+            KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+            security create-keychain -p "" $KEYCHAIN_PATH
+            security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+            security unlock-keychain -p "" $KEYCHAIN_PATH
+            echo "$IOS_CERT_P12_BASE64" | base64 -d > $RUNNER_TEMP/cert.p12
+            security import $RUNNER_TEMP/cert.p12 -k $KEYCHAIN_PATH -P "$IOS_CERT_PASSWORD" -T /usr/bin/codesign
+            security list-keychain -d user -s $KEYCHAIN_PATH
+            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+            echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+          else
+            echo "No iOS signing secrets provided. Build will run with --no-codesign."
+          fi
+
+      - name: Install dependencies
+        working-directory: ./mobile
+        run: flutter pub get
+
+      - name: Build iOS (codesigned if secrets are present)
+        working-directory: ./mobile
+        shell: bash
+        env:
+          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          if [[ -n "$IOS_CERT_P12_BASE64" && -n "$IOS_PROVISIONING_PROFILE_BASE64" ]]; then
+            flutter build ipa --release --dart-define=PROVIDER_API_TOKEN=$PROVIDER_API_TOKEN
+          else
+            flutter build ios --release --no-codesign --dart-define=PROVIDER_API_TOKEN=$PROVIDER_API_TOKEN
+          fi
+
+      - name: Zip Runner.app
+        working-directory: ./mobile/build/ios/iphoneos
+        run: |
+          if [ -d "Runner.app" ]; then
+            zip -r Runner.app.zip Runner.app
+          fi
+
+      - name: Upload iOS Artifact
+        if: ${{ vars.SKIP_ARTIFACT_UPLOAD != 'true' && false && (hashFiles('mobile/build/ios/ipa/*.ipa') != '' || hashFiles('mobile/build/ios/iphoneos/Runner.app.zip') != '') }} # Desativado para economizar storage
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanet-ios-artifact-${{ github.run_number }}
+          retention-days: 3
+          compression-level: 9
+          path: |
+            mobile/build/ios/ipa/*.ipa
+            mobile/build/ios/iphoneos/Runner.app.zip

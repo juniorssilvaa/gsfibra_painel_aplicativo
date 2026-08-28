@@ -1,0 +1,2 @@
+export const META_APP_ID = '713538217881661';
+export const META_CONFIG_ID = '1888449245359692';

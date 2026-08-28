@@ -1,0 +1,28 @@
+/* Toaster acima de modais e painéis */
+[data-sonner-toaster] {
+  z-index: 100000 !important;
+  pointer-events: none;
+}
+
+/* Remove caixa branca padrão do Sonner nos toasts customizados */
+[data-sonner-toaster] [data-sonner-toast] {
+  pointer-events: auto;
+  --normal-bg: transparent;
+  --normal-border: transparent;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  min-height: unset !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-content] {
+  padding: 0 !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-icon],
+[data-sonner-toaster] [data-sonner-toast] [data-title],
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  display: none !important;
+}

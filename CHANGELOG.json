@@ -1,0 +1,1403 @@
+{
+  "current_version": "2.65.0",
+  "versions": [
+    {
+      "version": "2.65.0",
+      "version_type": "minor",
+      "date": "2026-08-28",
+      "title": "CSAT da IA e otimizações no chat de conversas",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "CSAT / IA",
+          "title": "Envio de CSAT pela IA respeita a configuração do provedor",
+          "description": "Corrigido o módulo de envio de CSAT: quando o provedor desativa o disparo automático (bot/IA), a pesquisa não é mais enviada ao cliente após o encerramento do atendimento pela IA ou pelo chatbot."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento / Chat",
+          "title": "Otimizações internas no módulo de conversas",
+          "description": "Correções e otimizações internas no chat de conversas: mensagens em tempo real mais rápidas, menos recarregamentos da lista, carregamento inicial mais leve do histórico e melhor desempenho geral do painel."
+        }
+      ]
+    },
+    {
+      "version": "2.64.0",
+      "version_type": "minor",
+      "date": "2026-08-21",
+      "title": "Meta Analytics — visão de gasto da API oficial",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Integrações / Meta",
+          "title": "Dashboard Meta · WhatsApp Analytics",
+          "description": "Agora é possível ter visão de gasto com a API oficial do WhatsApp (mensagens gratuitas vs templates pagos, tendência, categorias e estimativa em R$). Caminho: Integrações → Meta."
+        },
+        {
+          "type": "improvement",
+          "module": "Integrações / Meta",
+          "title": "Gasto estimado em Real (USD → BRL)",
+          "description": "O gasto aproximado usa tarifas por categoria (Utility, Marketing, Authentication) e a cotação do dólar (AwesomeAPI), convertendo para Real. Caminho: Integrações → Meta."
+        }
+      ]
+    },
+    {
+      "version": "2.63.0",
+      "version_type": "minor",
+      "date": "2026-08-21",
+      "title": "Chat Area e melhorias no módulo da IA",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Atendimento / Chat",
+          "title": "Corrigido o Chat Area",
+          "description": "Corrigido o Chat Area: composer, barra de resposta e banner de atender com fundo sólido e legível."
+        },
+        {
+          "type": "improvement",
+          "module": "IA",
+          "title": "Melhorias no módulo da IA",
+          "description": "Melhorias no módulo da IA: confirmação de contratos sem loop de reconfirmação e formatação mais clara dos dados do cliente."
+        }
+      ]
+    },
+    {
+      "version": "2.62.0",
+      "version_type": "minor",
+      "date": "2026-08-19",
+      "title": "Correção no módulo de viabilidade da IA",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "IA / Viabilidade",
+          "title": "Módulo de viabilidade da IA",
+          "description": "Corrigida a consulta de viabilidade pela IA. Na contratação, o cliente pode enviar a localização pelo WhatsApp ou o endereço escrito (nome da rua/avenida ou CEP). A leitura da resposta do SGP foi ajustada para reconhecer cobertura corretamente."
+        }
+      ]
+    },
+    {
+      "version": "2.61.0",
+      "version_type": "minor",
+      "date": "2026-08-17",
+      "title": "IA com áudio, visão e escolha de contrato",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "IA / Canais",
+          "title": "IA entende áudio e imagem",
+          "description": "A IA agora transcreve mensagens de áudio e interpreta imagens (visão) nos canais oficiais (WhatsApp, Instagram e Telegram). A resposta do áudio é devolvida ao cliente em texto."
+        },
+        {
+          "type": "fix",
+          "module": "IA / Financeiro",
+          "title": "Cliente com vários contratos",
+          "description": "Quando o cliente tem mais de um contrato, a IA lista os contratos, pede a escolha e só então consulta fatura ou suporte no contrato selecionado."
+        }
+      ]
+    },
+    {
+      "version": "2.60.0",
+      "version_type": "minor",
+      "date": "2026-08-15",
+      "title": "Canal Aplicativo Mobile e correções",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Regras de Atendimento",
+          "title": "Módulo de feriados nacionais",
+          "description": "Adicionado módulo com feriados nacionais."
+        },
+        {
+          "type": "feature",
+          "module": "Canais / Atendimento",
+          "title": "Aplicativo mobile como canal",
+          "description": "Agora o painel conta com o canal Aplicativo (app mobile): o cliente conversa pelo app do provedor e o atendimento aparece na mesma fila do NioChat, com texto, imagem e áudio."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Correções no atendimento pela internet",
+          "description": "Ajustes no fluxo de mensagens e notificações do atendimento via internet (app do cliente), incluindo ícone do canal App e sincronização das conversas no painel."
+        },
+        {
+          "type": "fix",
+          "module": "Perfil / Segurança",
+          "title": "Timeout da sessão respeita o tempo escolhido",
+          "description": "Corrigido o timeout de sessão por inatividade para aplicar de fato o valor salvo no perfil. Incluídas as opções de 3 e 4 horas."
+        }
+      ]
+    },
+    {
+      "version": "2.59.0",
+      "version_type": "minor",
+      "date": "2026-08-11",
+      "title": "Wi-Fi via TR-069 na IA e no chatbot",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "IA / Chatbot",
+          "title": "Troca de senha ou nome da rede Wi-Fi",
+          "description": "Agora a IA ou o chatbot pode realizar a troca de senha ou do nome da rede Wi-Fi (SSID) do modem do cliente quando houver integração com um serviço TR-069 (ACS) configurada no provedor."
+        }
+      ]
+    },
+    {
+      "version": "2.58.1",
+      "version_type": "patch",
+      "date": "2026-08-08",
+      "title": "Correção no envio de mensagens automáticas",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Disparos / Cobrança",
+          "title": "Erro interno no envio de mensagem automática",
+          "description": "Corrigido erro interno no preenchimento das variáveis dos templates Meta em disparos automáticos (SGP): datas e valores deixam de ser trocados (ex.: valor no lugar do vencimento). O mapeamento passa a usar o texto do template, sem associar {{2}}/{{3}} a um tipo fixo."
+        }
+      ]
+    },
+    {
+      "version": "2.58.0",
+      "version_type": "minor",
+      "date": "2026-08-07",
+      "title": "Card de fatura personalizável e valores com atraso",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Regras de Atendimento",
+          "title": "Customizar o card de envio de faturas",
+          "description": "Agora é possível personalizar o texto do card de pagamento (WhatsApp Oficial) enviado pela IA ou pelo chatbot. Caminho: Regras de Atendimento → Configurações gerais → Texto do card da fatura. Use variáveis como {{vencimento}}, {{valor}}, {{valores_texto}}, {{instrucoes}}, {{fatura_id}}, {{nome_cliente}} e {{nome_provedor}}, com prévia ao vivo do card (igual à tela de Criar Template)."
+        },
+        {
+          "type": "improvement",
+          "module": "Financeiro",
+          "title": "Fatura com valor atualizado em atraso",
+          "description": "No envio da fatura (IA e chatbot, todos os canais), o valor cobrado passa a priorizar o valor atualizado quando há multa/juros, e o texto pode mostrar valor original, multa, juros e valor atualizado."
+        },
+        {
+          "type": "improvement",
+          "module": "Financeiro",
+          "title": "Card de fatura sem mensagem avulsa",
+          "description": "No WhatsApp Oficial, a fatura é enviada direto no card interativo, sem mensagem de texto separada antes do card."
+        }
+      ]
+    },
+    {
+      "version": "2.57.0",
+      "version_type": "minor",
+      "date": "2026-08-01",
+      "title": "Lista de conversas mais clara e mensagem de atribuição",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Indicador de novas mensagens na lista",
+          "description": "Quando outro contato envia mensagem enquanto você está em um atendimento, a conversa mostra um contador de mensagens novas na lista."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Nome do atendente no balão da mensagem",
+          "description": "As mensagens enviadas pelo atendente passam a exibir o nome dele no topo do balão no chat."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "Preview limpo na lista de conversas",
+          "description": "Na lista, o resumo da última mensagem mostra só o conteúdo, sem a assinatura do atendente."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "Tempo desde a atribuição",
+          "description": "O indicador “Há X min” na lista passa a contar o tempo desde que o atendimento foi atribuído ao atendente."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Mensagem de atribuição enviada ao cliente",
+          "description": "A mensagem configurada em Perfil → Atribuição volta a ser enviada ao cliente ao clicar em Atender."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Chat não permanece aberto ao atualizar ou voltar",
+          "description": "Ao atualizar a página ou sair para o dashboard e retornar, a tela de atendimento abre sem conversa selecionada."
+        }
+      ]
+    },
+    {
+      "version": "2.56.1",
+      "version_type": "patch",
+      "date": "2026-07-30",
+      "title": "Melhorias internas no módulo de ligação",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Ligações",
+          "title": "Melhorias internas no módulo de ligação",
+          "description": "Ajustes internos no módulo de ligações de voz para maior estabilidade e confiabilidade no atendimento."
+        }
+      ]
+    },
+    {
+      "version": "2.56.0",
+      "version_type": "minor",
+      "date": "2026-07-28",
+      "title": "Regras de atendimento, automação por horário e feriados",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Nova área de Regras de Atendimento",
+          "description": "A tela de Regras de Atendimento foi reorganizada em cards: horário comercial, automação por horário, feriados e configurações gerais. O menu Horário passou a ficar dentro dessa área."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Automação por horário",
+          "description": "Agora é possível ligar a IA ou o chatbot automaticamente conforme o horário comercial do provedor. O modo mais comum deixa humanos atenderem no expediente e ativa a automação quando a empresa está fechada."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Feriados e datas especiais",
+          "description": "Cadastre feriados de dia inteiro ou com horário parcial (ex.: fechamento a partir das 12h). Essas datas entram no cálculo do horário de atendimento e da automação por horário."
+        },
+        {
+          "type": "feature",
+          "module": "Integrações",
+          "title": "Opção para desativar consulta de viabilidade",
+          "description": "Em Integrações → Seu ERP, agora é possível desligar a consulta de viabilidade pela IA. Quando desativada, a IA não usa essa ferramenta e não informa ao cliente que a viabilidade não está configurada."
+        }
+      ]
+    },
+    {
+      "version": "2.55.3",
+      "version_type": "patch",
+      "date": "2026-07-24",
+      "title": "Avisos de atendimento no WhatsApp",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Avisos no WhatsApp do atendente",
+          "description": "Agora é possível receber avisos no WhatsApp quando um atendimento for transferido para você ou entrar na fila de espera."
+        }
+      ]
+    },
+    {
+      "version": "2.55.2",
+      "version_type": "patch",
+      "date": "2026-07-23",
+      "title": "Áudio nas ligações e várias chamadas ao mesmo tempo",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Ligações",
+          "title": "Áudio nas ligações de voz",
+          "description": "Corrigido o problema em que a ligação conectava, mas a voz do atendente e do cliente não saía. Agora o áudio funciona nos dois sentidos durante a chamada."
+        },
+        {
+          "type": "feature",
+          "module": "Ligações",
+          "title": "Várias ligações ao mesmo tempo",
+          "description": "Agora é possível fazer e receber várias ligações ao mesmo tempo no painel."
+        }
+      ]
+    },
+    {
+      "version": "2.55.1",
+      "version_type": "patch",
+      "date": "2026-07-23",
+      "title": "Áudio WhatsApp corrigido no iOS",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "WhatsApp Oficial",
+          "title": "Envio e abertura de áudio no iOS",
+          "description": "Corrigido o envio e a abertura de mensagens de áudio/voz no WhatsApp em dispositivos iOS. Clientes no iPhone deixavam de conseguir ouvir o áudio (mensagem “Este áudio não está mais disponível”)."
+        }
+      ]
+    },
+    {
+      "version": "2.55.0",
+      "version_type": "minor",
+      "date": "2026-07-21",
+      "title": "Fatura multi-contrato e imagens da galeria na IA",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Financeiro",
+          "title": "Envio de fatura no menu de acesso rápido com vários contratos",
+          "description": "Corrigido o erro ao enviar fatura pelo menu de acesso rápido (sidebar Financeiro) quando o cliente tinha mais de um contrato. Agora o contrato selecionado é enviado e a fatura correspondente é gerada corretamente."
+        },
+        {
+          "type": "feature",
+          "module": "Inteligência Artificial",
+          "title": "IA envia imagens da galeria",
+          "description": "O agente de IA pode enviar imagens ao cliente a partir da Galeria. Nomeie a imagem no formato com a tag entre chaves, por exemplo Cartão 500MB {planos} — use o nome da tag dentro das chaves ({planos}) para a IA localizar e enviar a imagem no atendimento."
+        }
+      ]
+    },
+    {
+      "version": "2.54.0",
+      "version_type": "minor",
+      "date": "2026-07-18",
+      "title": "IA consulta viabilidade de instalação",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Inteligência Artificial",
+          "title": "Consulta de viabilidade pela IA",
+          "description": "A IA consegue verificar se há cobertura para instalação. Ela pode pedir a localização atual direto pelo WhatsApp do cliente ou o endereço completo (rua, número, bairro, cidade e/ou CEP). Com viabilidade, segue o atendimento; sem viabilidade, informa o cliente e oferece transferir para a equipe comercial."
+        },
+        {
+          "type": "improvement",
+          "module": "Integrações",
+          "title": "Como configurar a consulta de viabilidade",
+          "description": "Em Integrações → Seu ERP, além de URL, Token e App, preencha o ID do Gateway de mapas e o Raio máximo em metros (ex.: 300). Sem esses dois campos, a IA consulta só por endereço; com Gateway e Raio configurados, ela também consulta por coordenadas no mapa."
+        }
+      ]
+    },
+    {
+      "version": "2.53.0",
+      "version_type": "minor",
+      "date": "2026-07-16",
+      "title": "Agente de IA mais preciso e personalizável",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Inteligência Artificial",
+          "title": "Correções no módulo do agente de IA",
+          "description": "Várias correções no agente de IA para o atendimento ficar mais natural e confiável: encerramento quando o cliente agradece ou diz que vai aguardar, horário de funcionamento real do provedor (sem inventar), fatura sempre com PIX, despedida completa com nome do cliente e do provedor, além de melhorias no diagnóstico de internet, transferência e protocolo."
+        },
+        {
+          "type": "improvement",
+          "module": "Inteligência Artificial",
+          "title": "Agente mais personalizável",
+          "description": "O agente passa a respeitar melhor a personalidade, o horário e as regras do seu provedor — respostas mais alinhadas ao jeito da sua operação e à experiência do cliente."
+        }
+      ]
+    },
+    {
+      "version": "2.52.0",
+      "version_type": "minor",
+      "date": "2026-07-14",
+      "title": "Protocolo, Telegram, chatbot e ideias",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Ideias",
+          "title": "Board de ideias",
+          "description": "Novo menu Ideias para enviar sugestões, acompanhar o andamento (Em análise, Em desenvolvimento e Concluído) e comentar. Disponível para administradores e agentes."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Geração de protocolo",
+          "description": "Agora é possível gerar e enviar o protocolo de atendimento do NioHub ao cliente (incluindo a variável {{protocolo}} no fluxo do chatbot)."
+        },
+        {
+          "type": "improvement",
+          "module": "Telegram",
+          "title": "Melhorias no fluxo de atendimento no Telegram",
+          "description": "Foram feitas melhorias no fluxo de atendimento quando criado para o canal do Telegram, alinhando chatbot e respostas automáticas ao comportamento dos demais canais."
+        },
+        {
+          "type": "feature",
+          "module": "Chatbot",
+          "title": "Nome do chatbot",
+          "description": "Agora é possível dar um nome ao chatbot nas regras de atendimento, exibido nas mensagens enviadas automaticamente."
+        }
+      ]
+    },
+    {
+      "version": "2.51.0",
+      "version_type": "minor",
+      "date": "2026-07-04",
+      "title": "Agente de IA, dashboard e integrações",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Inteligência Artificial",
+          "title": "Agente de IA próprio e treinável",
+          "description": "Agora é possível ter o seu próprio agente de IA e treiná-lo como quiser, com chave e configurações próprias em Integrações, planos e base de conhecimento."
+        },
+        {
+          "type": "fix",
+          "module": "Dashboard",
+          "title": "Correções internas no dashboard",
+          "description": "Correções internas no módulo do dashboard, incluindo a exibição dos canais de atendimento."
+        },
+        {
+          "type": "fix",
+          "module": "Integrações",
+          "title": "Módulo de integrações corrigido",
+          "description": "Correções no módulo de integrações para configuração mais estável do agente de IA, ERP e canais conectados."
+        },
+        {
+          "type": "improvement",
+          "module": "Interface",
+          "title": "Novo visual",
+          "description": "Novo visual adicionado em telas do painel, com ajustes de layout e apresentação dos componentes."
+        }
+      ]
+    },
+    {
+      "version": "2.50.0",
+      "version_type": "minor",
+      "date": "2026-07-01",
+      "title": "Ligações WhatsApp no painel",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Ligações de voz no painel",
+          "description": "Agora é possível receber e fazer ligações WhatsApp direto no painel: popup de chamada recebida em qualquer tela, ligar pelo chat e atender com áudio no navegador. Ative o QR de voz em Canais (WhatsApp Oficial)."
+        }
+      ]
+    },
+    {
+      "version": "2.49.0",
+      "version_type": "patch",
+      "date": "2026-06-17",
+      "title": "Mídias no chat e modal de atendimento",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Carregamento de mídias no chat",
+          "description": "Corrigido o envio e a exibição de imagens, vídeos e áudios no ChatArea, com upload de anexos mais confiável e prévia de vídeo antes do envio."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "Modal iniciar atendimento com prévia WhatsApp",
+          "description": "Ao iniciar atendimento com template, o modal exibe prévia no estilo galeria do WhatsApp (cabeçalho verde, corpo bege e botões de pagamento quando aplicável), com formulário e prévia lado a lado em telas maiores."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Canais visíveis no campo Canal de envio",
+          "description": "Corrigido o dropdown de conexões no modal de novo atendimento, que abria com fundo branco e opções invisíveis no modo claro."
+        },
+        {
+          "type": "improvement",
+          "module": "Interface",
+          "title": "Notificações toast padronizadas",
+          "description": "Toasts de sucesso e erro unificados no canto superior direito (Sonner + AppNotifyCard), incluindo Equipes, Contatos e demais telas que ainda usavam alertas ou avisos fixos no centro da tela."
+        },
+        {
+          "type": "fix",
+          "module": "Equipes",
+          "title": "Feedback ao salvar equipe",
+          "description": "Confirmação de sucesso e mensagens de erro corretas ao criar ou editar uma equipe, com estado de carregamento no botão Salvar."
+        }
+      ]
+    },
+    {
+      "version": "2.48.0",
+      "version_type": "minor",
+      "date": "2026-06-17",
+      "title": "Encerramento em lote e filtro de mensagens automáticas",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Encerramento de atendimentos em lote",
+          "description": "Agora é possível encerrar vários atendimentos de uma vez, com filtros por escopo (Automação ou Espera) e tempo aberto (mais ou menos de X minutos). O recurso fica no painel de conversas, ao lado do botão de novo atendimento."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Filtro por palavras-chave em Regras de Atendimento",
+          "description": "Agora é possível configurar termos (palavras ou trechos) em Regras de Atendimento para manter o atendimento encerrado quando mensagens automáticas enviadas pelo gateway NioHub contêm esses termos, evitando reabertura após confirmações de pagamento e disparos similares."
+        }
+      ]
+    },
+    {
+      "version": "2.47.0",
+      "version_type": "minor",
+      "date": "2026-06-03",
+      "title": "Regras de atendimento para contrato suspenso",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Controle de chamado com contrato suspenso",
+          "description": "Agora é possível permitir ou não a abertura de chamado técnico no fluxo quando o contrato do cliente estiver suspenso, em Regras de Atendimento."
+        }
+      ]
+    },
+    {
+      "version": "2.46.0",
+      "version_type": "minor",
+      "date": "2026-05-29",
+      "title": "Novo canal Instagram e melhorias no atendimento",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Instagram",
+          "title": "Novo canal disponível: Instagram",
+          "description": "Agora é possível atender seus clientes pelo Instagram, com as conversas centralizadas no mesmo painel de atendimento que você já usa no WhatsApp."
+        },
+        {
+          "type": "improvement",
+          "module": "Integrações",
+          "title": "Telas de cadastro de canais renovadas",
+          "description": "Modais de WhatsApp, Telegram, Instagram e e-mail com visual mais limpo e padronizado, campos organizados e botões alinhados ao restante do sistema."
+        },
+        {
+          "type": "improvement",
+          "module": "Supervisão",
+          "title": "Transferir conversa em modo supervisão",
+          "description": "Supervisores podem transferir atendimentos para outro agente diretamente pelo painel, sem precisar assumir a conversa."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "Abas e barra do chat mais compactas",
+          "description": "Ajustes no painel de conversas: nomes das abas Atendimento e Espera exibidos por completo, e barra superior do chat mais fina para ganhar espaço na tela."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Áudios que não abriam no WhatsApp do cliente",
+          "description": "Corrigido problema em que alguns áudios enviados pelo painel chegavam ao cliente, mas não reproduziam no WhatsApp. Gravações e anexos passam a ser preparados no formato correto antes do envio."
+        }
+      ]
+    },
+    {
+      "version": "2.45.0",
+      "version_type": "minor",
+      "date": "2026-05-29",
+      "title": "Autenticação 2FA, aba Em andamento e correções SGP",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Segurança",
+          "title": "Autenticação em dois fatores (2FA)",
+          "description": "Nova tela Autenticação 2 Fatores no perfil: ative o TOTP com QR code, confirme com código OTP, recrie a chave ou desative quando necessário. No login, usuários com 2FA ativo passam por verificação em duas etapas (senha + código do aplicativo). Compatível com Google Authenticator, Microsoft Authenticator, FreeOTP e Authy."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Aba Em andamento no painel de conversas",
+          "description": "Administradores do provedor passam a ver a aba Em andamento na lista de conversas, com todos os atendimentos humanos em curso: contato, tempo decorrido e atendente responsável."
+        },
+        {
+          "type": "fix",
+          "module": "Integrações",
+          "title": "Variáveis corretas nos disparos SGP para WhatsApp",
+          "description": "Corrigido o envio de templates Meta vindos do SGP: Contrato, Valor e Vencimento passam a ser extraídos da mensagem já preenchida (por rótulo), na ordem certa, sem depender de body_params no export do webhook."
+        }
+      ]
+    },
+    {
+      "version": "2.44.1",
+      "version_type": "patch",
+      "date": "2026-05-26",
+      "title": "Nova tela CSAT e novo visual do chat",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "CSAT",
+          "title": "Nova tela de CSAT",
+          "description": "Adicionada nova tela de CSAT para acompanhar as avaliações e configurações relacionadas à pesquisa de satisfação."
+        },
+        {
+          "type": "improvement",
+          "module": "Chat Interno",
+          "title": "Novo visual e melhorias no chat interno",
+          "description": "Melhorias e novo visual no chat interno, incluindo suporte ao envio de áudio."
+        },
+        {
+          "type": "fix",
+          "module": "CSAT",
+          "title": "Correção de travamento em contatos com CSAT anterior",
+          "description": "Corrigido um erro que travava alguns contatos quando já tinham recebido a pesquisa de satisfação anteriormente."
+        }
+      ]
+    },
+    {
+      "version": "2.44.0",
+      "version_type": "minor",
+      "date": "2026-05-26",
+      "title": "Pesquisa de satisfação, horário por equipe e melhorias no atendimento",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "CSAT",
+          "title": "Pesquisa de satisfação do cliente",
+          "description": "Agora é possível enviar a pesquisa de satisfação ao encerrar o atendimento. O cliente recebe uma lista com 5 opções no WhatsApp Oficial, as avaliações aparecem no painel CSAT e na satisfação média do dashboard, e corrigimos falhas no envio e no registro da nota (inclusive em modo chatbot)."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "Acesso Rápido (SGP)",
+          "description": "Visual renovado do painel lateral e correção no envio de fatura pelo SGP (segunda via/cobrança), mantendo a consulta de contratos, faturas e suporte na conversa."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Player de áudio no chat",
+          "description": "Corrigidos o player de voz e áudio: contador em minutos e segundos (00:00), barra de progresso que acompanha a reprodução e permite buscar no arquivo, além dos controles de play/pause, velocidade e download."
+        },
+        {
+          "type": "fix",
+          "module": "Integrações",
+          "title": "Texto duplicado no envio via webhook",
+          "description": "Corrigido problema em que, ao receber disparos de sistemas externos (webhook), em alguns casos o texto era montado com frases repetidas e a mensagem ia duplicada para o cliente no WhatsApp."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Texto do campo de envio no modo claro",
+          "description": "No tema claro, o texto digitado no campo de mensagem do chat voltou a ficar visível (cor e cursor ajustados), sem sumir no fundo branco."
+        },
+        {
+          "type": "feature",
+          "module": "Equipes",
+          "title": "Controle de horário por equipe",
+          "description": "Implantado o cadastro de horário de atendimento por equipe na tela Horário: escolha o provedor (global) ou cada equipe, defina dias e períodos, ou marque para usar o horário global. O chatbot e a IA respeitam o expediente da equipe na transferência e nas mensagens de fora do horário."
+        }
+      ]
+    },
+    {
+      "version": "2.43.3",
+      "version_type": "patch",
+      "date": "2026-05-21",
+      "title": "Atribuição obrigatória para responder ao cliente",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Atender antes de enviar mensagem",
+          "description": "Agora é necessário clicar em Atender para assumir o atendimento antes de enviar mensagens ao cliente. Conversas em Automação ou em Espera não permitem resposta até a atribuição."
+        }
+      ]
+    },
+    {
+      "version": "2.43.2",
+      "version_type": "patch",
+      "date": "2026-05-17",
+      "title": "Melhorias no envio automático de mensagens",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Integrações",
+          "title": "Melhorias no componente interno de envio automático",
+          "description": "Aprimoramentos no componente interno responsável pelo envio de mensagens automáticas vindas de integrações externas: uso correto de templates aprovados na Meta e substituição de variáveis (datas, fatura, valor)."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Correção no layout da área de chat",
+          "description": "Removido o espaço excessivo entre os balões de mensagem e o campo de texto; as mensagens ficam mais próximas da barra de envio, no estilo esperado do chat."
+        }
+      ]
+    },
+    {
+      "version": "2.43.1",
+      "version_type": "patch",
+      "date": "2026-05-17",
+      "title": "Correção no mapeamento de variáveis dos disparos",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Integrações",
+          "title": "Correção interna no mapeamento de variáveis",
+          "description": "Ajuste no componente de mapeamento de variáveis dos disparos automáticos: distinção entre vencimento e vencimento original, catálogo completo na geração de código e correção do placeholder de valor (ex.: Valor original → {valor} em vez de {var_2})."
+        }
+      ]
+    },
+    {
+      "version": "2.43.0",
+      "version_type": "minor",
+      "date": "2026-05-17",
+      "title": "Modelo Pagamento recebido e melhorias nos disparos",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Canais",
+          "title": "Novo modelo de mensagem para disparo",
+          "description": "Adicionado o modelo Pagamento recebido na aba Modelos, com botão de link Recibo e variáveis para nome, fatura, valor e data de pagamento. Ideal para confirmar recebimento de pagamento nos disparos automáticos."
+        },
+        {
+          "type": "fix",
+          "module": "Integrações",
+          "title": "Correções internas nos disparos e templates",
+          "description": "Ajustes no mapeamento de variáveis para templates (fatura, valor, vencimento), sanitização de URLs de exemplo na criação na Meta (evita erro 368), JSON de disparo com campos técnicos de cobrança e mensagens de erro mais claras."
+        }
+      ]
+    },
+    {
+      "version": "2.42.0",
+      "version_type": "minor",
+      "date": "2026-05-15",
+      "title": "Editar contato, webhook SGP e notificações mais inteligentes",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Agora você pode editar o nome do contato",
+          "description": "No painel de atendimento, clique no lápis ao lado do nome do cliente para alterar e salvar. Funciona inclusive quando o sistema só exibia emoji ou número de telefone no lugar do nome."
+        },
+        {
+          "type": "fix",
+          "module": "Notificações",
+          "title": "Som só na fila e no seu atendimento",
+          "description": "O som de notificação não toca mais enquanto o cliente está só na automação (robô). Ele passa a ser emitido apenas quando a conversa entra na fila de espera ou está atribuída a você."
+        },
+        {
+          "type": "feature",
+          "module": "Integrações",
+          "title": "Disparo de texto livre no webhook",
+          "description": "O gateway externo aceita mensagens sem modelo de template: envie texto simples no campo mensagem. Ideal para avisos rápidos e integrações que ainda não usam modelos aprovados na Meta."
+        },
+        {
+          "type": "feature",
+          "module": "Canais",
+          "title": "canal_id em provedores com vários WhatsApp",
+          "description": "Quando há mais de um canal WhatsApp ativo, informe canal_id na URL ou no JSON do disparo. Com um único canal, o sistema escolhe automaticamente."
+        },
+        {
+          "type": "improvement",
+          "module": "Canais",
+          "title": "ID do canal visível na configuração",
+          "description": "Na tela de canais, cada WhatsApp Oficial exibe o ID do canal com botão para copiar, facilitando configurar o SGP e outros gateways."
+        },
+        {
+          "type": "improvement",
+          "module": "Canais",
+          "title": "Editor de modelos com cabeçalho e prévia",
+          "description": "Criação de modelos de mensagem com suporte a cabeçalho (texto, imagem, vídeo ou documento), corpo limpo ao criar um novo modelo e prévia com cabeçalho em negrito, alinhada ao WhatsApp."
+        }
+      ]
+    },
+    {
+      "version": "2.41.0",
+      "version_type": "minor",
+      "date": "2026-05-15",
+      "title": "Modelos de cobrança com botões interativos",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Canais",
+          "title": "Modelos para disparo de cobrança",
+          "description": "Agora você pode enviar cobranças com botões interativos (PIX e boleto). Primeiro, gere o modelo em Canais > Modelo de mensagem. Na aba Modelos já possuímos alguns modelos prontos, caso queira começar mais rápido."
+        }
+      ]
+    },
+    {
+      "version": "2.40.2",
+      "version_type": "patch",
+      "date": "2026-05-13",
+      "title": "Correção no envio de áudio no chat",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Envio de áudio no painel do chat",
+          "description": "A prévia do áudio gravado e a barra de gravação deixavam de aparecer corretamente porque ficavam por baixo do rodapé fixo do compositor. Reorganizámos o compositor: resposta, prévias e gravação ficam sempre acima do campo de texto, com z-index adequado, e aumentámos o espaço inferior da lista de mensagens para o conteúdo não ficar oculto."
+        }
+      ]
+    },
+    {
+      "version": "2.40.1",
+      "version_type": "patch",
+      "date": "2026-05-13",
+      "title": "Correções internas",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Automação",
+          "title": "Correções internas",
+          "description": "Timeout de inatividade do chatbot mais fiável entre ambientes (tempo pela última mensagem do cliente), varredura também no ciclo periódico do ASGI e opção para desativar a thread em segundo plano quando convém (ex.: SQLite em desenvolvimento)."
+        }
+      ]
+    },
+    {
+      "version": "2.40.0",
+      "version_type": "minor",
+      "date": "2026-05-13",
+      "title": "Nova tela de canais e correções internas",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Canais",
+          "title": "Nova tela para configurar os canais",
+          "description": "Adicionamos uma nova interface mais completa para a configuração e gerenciamento dos canais de atendimento."
+        },
+        {
+          "type": "fix",
+          "module": "Sistema",
+          "title": "Correções internas",
+          "description": "Melhorias de estabilidade, incluindo correções no timeout do chatbot e roteamento preciso de faturas em ambientes multi-canal."
+        },
+        {
+          "type": "improvement",
+          "module": "Chatbot",
+          "title": "Melhoria no componente de transferência por inatividade",
+          "description": "Otimizamos a identificação de inatividade no menu inicial e permitimos que o timeout use a equipe de transferência configurada no bloco atual."
+        }
+      ]
+    },
+    {
+      "version": "2.39.0",
+      "version_type": "patch",
+      "date": "2026-05-12",
+      "title": "Mais estabilidade no envio e melhorias no chat",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Canais",
+          "title": "Mensagens sempre pelo número certo",
+          "description": "Corrigimos um caso raro em que o cliente estava conversando em um número, mas a resposta podia sair por outro. Agora o sistema mantém o envio sempre pelo mesmo número daquele atendimento."
+        },
+        {
+          "type": "fix",
+          "module": "Automação",
+          "title": "Aviso de inatividade sem repetição",
+          "description": "A mensagem informando que o atendimento foi encaminhado por inatividade agora é enviada apenas uma vez."
+        },
+        {
+          "type": "fix",
+          "module": "Galeria",
+          "title": "Imagens da galeria não somem mais",
+          "description": "Corrigimos um problema em que as imagens enviadas para a galeria apareciam e depois sumiam na tela."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "Pré-visualização de PDF no chat",
+          "description": "Agora o chat consegue mostrar a prévia do PDF quando ele é enviado, facilitando a conferência antes do cliente baixar."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Colar print no chat (Ctrl+V)",
+          "description": "Você pode colar uma imagem direto no chat usando Ctrl+V. O sistema já abre a prévia para você enviar."
+        }
+      ]
+    },
+    {
+      "version": "2.38.0",
+      "version_type": "patch",
+      "date": "2026-04-24",
+      "title": "Boleto com código e PDF em uma única mensagem",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Pagamentos",
+          "title": "Envio unificado de boleto no WhatsApp",
+          "description": "Agora é possível enviar o código do boleto e o PDF no mesmo card de pagamento, em uma única mensagem, facilitando a experiência do cliente."
+        }
+      ]
+    },
+    {
+      "version": "2.37.0",
+      "version_type": "patch",
+      "date": "2026-04-23",
+      "title": "Permissões e fluxo com inatividade global",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Usuários e Permissões",
+          "title": "Administradores podem gerenciar permissões dos atendentes",
+          "description": "Agora os administradores podem atribuir e remover permissões dos atendentes de forma centralizada, com mais controle sobre o acesso às funcionalidades."
+        },
+        {
+          "type": "improvement",
+          "module": "Fluxo de Atendimento",
+          "title": "Tempo de inatividade global no fluxo",
+          "description": "O tempo de inatividade passou a ser global para todo o fluxo. Agora é necessário configurar apenas as equipes de destino nos menus interativos."
+        }
+      ]
+    },
+    {
+      "version": "2.36.0",
+      "version_type": "patch",
+      "date": "2026-04-19",
+      "title": "Respostas citadas, filtros em Conversas, chat e áudios do celular",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Conversas",
+          "title": "Novo sistema de filtros na aba Conversas",
+          "description": "Filtros da lista de conversas revisados para localizar atendimentos com mais rapidez e clareza (estado, canal, equipe e critérios combinados conforme disponível no painel)."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "ChatArea mais estável e legível",
+          "description": "Melhorias na área de mensagens: sincronização ao trocar de conversa, indicador de envio pelo WhatsApp no celular e ajustes de layout para leitura e ações (responder, mídia, status)."
+        },
+        {
+          "type": "fix",
+          "module": "WhatsApp & Áudio",
+          "title": "Reproduzir áudios e voz enviados pelo celular (WhatsApp Business)",
+          "description": "Agora é possível reproduzir no painel áudios e mensagens de voz enviados pelo WhatsApp Business no celular, com a mídia baixada e associada corretamente ao eco oficial da Meta. Corrigido também o texto placeholder indevido que atrapalhava a leitura da conversa."
+        },
+        {
+          "type": "fix",
+          "module": "WhatsApp & Integrações",
+          "title": "Citação correta quando o cliente responde ao agente ou ao chatbot",
+          "description": "O painel exibia a resposta do cliente sem a prévia da mensagem citada. Agora o wamid retornado pela Cloud API é gravado nas mensagens enviadas pelo motor do chatbot e o webhook localiza a mensagem original também por atributos legados, preenchendo “Resposta a:” e o conteúdo citado."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Ir para a mensagem citada com um clique",
+          "description": "Ao clicar no bloco “Resposta a:” ou “Respondendo a:”, a conversa rola até a mensagem referenciada e destaca com anel e barra luminosa pulsante para o atendente localizar o contexto rapidamente."
+        },
+        {
+          "type": "fix",
+          "module": "Chatbot",
+          "title": "Envio de imagem da galeria (URL no fallback)",
+          "description": "Correção do link público ao enviar imagem da galeria quando o canal não usa exclusivamente a Cloud API oficial, evitando referência incorreta à URL da mídia."
+        }
+      ]
+    },
+    {
+      "version": "2.35.0",
+      "version_type": "minor",
+      "date": "2026-04-17",
+      "title": "Galeria no chat, melhorias visuais e notificações com links",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Galeria integrada ao envio de mensagens",
+          "description": "Adicionado botão de galeria ao lado do emoji no chat. Agora é possível visualizar imagens cadastradas (miniatura + nome) e enviar diretamente ao cliente."
+        },
+        {
+          "type": "feature",
+          "module": "Notificações",
+          "title": "Correções internas",
+          "description": "Ajustes internos e refinamentos técnicos para melhoria de estabilidade."
+        },
+        {
+          "type": "fix",
+          "module": "Interface",
+          "title": "Correção de contraste em textos e ícones",
+          "description": "Corrigidas cores de texto e ícones em pontos críticos do atendimento, incluindo campos de digitação, menu de novo contato e itens da galeria."
+        },
+        {
+          "type": "improvement",
+          "module": "Notificações",
+          "title": "Correções internas",
+          "description": "Melhorias internas de funcionamento e manutenção do sistema."
+        }
+      ]
+    },
+    {
+      "version": "2.34.0",
+      "version_type": "minor",
+      "date": "2026-04-16",
+      "title": "Dashboard, atendimento, chatbot e automação",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Dashboard & Atendimento",
+          "title": "Novo painel e tela de atendimento",
+          "description": "Dashboard aprimorado e nova experiência na tela de atendimento, com fluxo mais claro para a equipe acompanhar e responder conversas."
+        },
+        {
+          "type": "feature",
+          "module": "Chatbot",
+          "title": "Imagem na mensagem inicial",
+          "description": "Agora é possível enviar imagem como parte da mensagem inicial do fluxo do chatbot (automação com mídia na primeira interação)."
+        },
+        {
+          "type": "feature",
+          "module": "Automação",
+          "title": "Inatividade do cliente",
+          "description": "Implementado o sistema de inatividade do cliente na automação, permitindo ações programadas conforme o tempo sem resposta do contato."
+        }
+      ]
+    },
+    {
+      "version": "2.32.0",
+      "version_type": "patch",
+      "date": "2026-04-09",
+      "title": "Melhorias de Estabilidade e UX",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Interface",
+          "title": "Melhorias no painel",
+          "description": "corrigido o bug que nao deixava as mensagem serem mostrada em tempo real no chat area"
+        }
+      ]
+    },
+    {
+      "version": "2.31.0",
+      "version_type": "minor",
+      "date": "2026-04-06",
+      "title": "Integração SGP Direta & Estabilidade",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "SGP Sidebar",
+          "title": "Envio Direto de Faturas",
+          "description": "Agora é possível enviar boletos e códigos PIX para os clientes diretamente pelo painel de atendimento, eliminando a necessidade de abrir o sistema SGP externo."
+        },
+        {
+          "type": "fix",
+          "module": "Core",
+          "title": "Correção de Instabilidade Crítica",
+          "description": "Corrigido o bug que estava desestabilizando o sistema e gerando erros de carregamento."
+        },
+        {
+          "type": "improvement",
+          "module": "Interface",
+          "title": "Ajustes de UX no SGP",
+          "description": "Ajuste na visibilidade do botão de fechar e reorganização dos botões 'Alterar' para evitar sobreposição."
+        }
+      ]
+    },
+    {
+      "version": "2.30.0",
+      "version_type": "minor",
+      "date": "2026-03-31",
+      "title": "Horários Inteligentes & Precisão Regional",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Chatbot & IA",
+          "title": "Gestão de Horários Proativa",
+          "description": "O sistema agora detecta automaticamente se sua empresa está aberta antes de transferir um cliente. Caso esteja fechado, o chatbot e a IA informam proativamente o horário de retorno da equipe."
+        },
+        {
+          "type": "improvement",
+          "module": "Core",
+          "title": "Sincronização Regional (Belém)",
+          "description": "Corrigimos o fuso horário de todo o sistema para o horário de Belém. Agora as saudações (Bom dia/Boa tarde) e as regras de atendimento são 100% precisas com o relógio local."
+        }
+      ]
+    },
+    {
+      "version": "2.29.0",
+      "version_type": "minor",
+      "date": "2026-03-27",
+      "title": "Experiência Elevada e Precisão no Atendimento",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Notificações",
+          "title": "Agenda de Compromissos",
+          "description": "Agora você pode agendar lembretes para entrar em contato com clientes ou realizar tarefas importantes. Nunca perca um retorno ou acompanhamento!"
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "Comunicação mais Clara e Transparente",
+          "description": "Agora o sistema fala a sua língua! Traduzimos todas as mensagens de erro do WhatsApp para um português amigável e direto, ajudando você a entender exatamente o que está acontecendo em cada conversa."
+        },
+        {
+          "type": "feature",
+          "module": "Interface",
+          "title": "Expressividade sem Limites",
+          "description": "Lançamos um seletor de emojis completo e organizado. Encontre a reação perfeita para cada momento e torne seus atendimentos muito mais humanos e vibrantes."
+        },
+        {
+          "type": "improvement",
+          "module": "Notificações",
+          "title": "Notificações Elegantes e Eficazes",
+          "description": "Diga adeus aos avisos genéricos. Implementamos um novo sistema de notificações visuais suaves que informam erros e alertas importantes de forma discreta e profissional."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Concentração Total no seu Cliente",
+          "description": "Corrigimos o comportamento que movia a tela sozinho ao chegar novas mensagens. Agora, sua conversa ativa permanece estável, permitindo que você foque 100% no atendimento atual."
+        },
+        {
+          "type": "improvement",
+          "module": "Interface",
+          "title": "Harmonia Visual e Detalhes que Encantam",
+          "description": "Refinamos as cores, bordas e os avatares dos contatos para proporcionar uma interface mais limpa, moderna e agradável de usar durante todo o dia."
+        }
+      ]
+    },
+    {
+      "version": "2.28.0",
+      "version_type": "minor",
+      "date": "2026-03-18",
+      "title": "Exportação/Importação de Fluxos & Melhorias no Chatbot",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Chatbot",
+          "title": "Melhorias no Sistema de Chatbot",
+          "description": "Diversas otimizações na estabilidade e processamento do motor de chatbot."
+        },
+        {
+          "type": "feature",
+          "module": "Chatbot",
+          "title": "Portabilidade de Fluxos",
+          "description": "Agora é possível importar e exportar fluxos de atendimentos."
+        }
+      ]
+    },
+    {
+      "version": "2.27.0",
+      "version_type": "minor",
+      "date": "2026-03-12",
+      "title": "Múltiplos Fluxos & Isolamento de Canais",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Chatbot",
+          "title": "Gestão de Múltiplos Fluxos",
+          "description": "Implementada interface para criação e gestão de múltiplos fluxos de atendimento por provedor."
+        },
+        {
+          "type": "feature",
+          "module": "Chatbot",
+          "title": "Isolamento por Canal",
+          "description": "Agora é possível vincular fluxos específicos a canais de comunicação (WhatsApp, Uazapi, etc), garantindo que cada canal tenha sua própria lógica de automação."
+        },
+        {
+          "type": "improvement",
+          "module": "Interface",
+          "title": "Novo Chatbot Manager",
+          "description": "Painel renovado para visualização rápida dos fluxos ativos e seus respectivos canais vinculados."
+        }
+      ]
+    },
+    {
+      "version": "2.26.9",
+      "version_type": "patch",
+      "date": "2026-03-11",
+      "title": "Melhorias Visuais e Correção de Duplicidade",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Dashboard",
+          "title": "Correção de Cores e Contraste",
+          "description": "Ajustada a cor dos textos e labels para branco em todo o painel, garantindo legibilidade perfeita no modo escuro."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Correção de Duplicação de Atendimentos",
+          "description": "Corrigida falha na normalização de números brasileiros que causava a abertura de novos atendimentos para o mesmo cliente devido ao nono dígito."
+        },
+        {
+          "type": "improvement",
+          "module": "Banco de Dados",
+          "title": "Limpeza Definitiva",
+          "description": "Removidos registros órfãos e implementada exclusão em cascata automática para canais e inboxes."
+        }
+      ]
+    },
+    {
+      "version": "2.26.8",
+      "version_type": "patch",
+      "date": "2026-03-11",
+      "title": "Melhorias de Estabilidade e Volume de Notificações",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Notificações",
+          "title": "Controle de Volume",
+          "description": "Implementado sistema de ajuste de volume independente para notificações de novas mensagens e atendimentos."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Seletor de Templates",
+          "description": "Corrigida a exibição de templates ao iniciar novos atendimentos."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento",
+          "title": "Correções Gerais",
+          "description": "Melhorias na estabilidade do envio de mensagens e correções na listagem de contatos existentes."
+        }
+      ]
+    },
+    {
+      "version": "2.26.7",
+      "version_type": "patch",
+      "date": "2026-03-07",
+      "title": "Configuração de Sons e Melhorias Visuais",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Configuração de Sons",
+          "description": "Agora é possível configurar som para novas mensagens e novos atendimentos."
+        },
+        {
+          "type": "improvement",
+          "module": "Interface",
+          "title": "Novas Cores de Status",
+          "description": "Atualização das cores dos cards de status para melhor visualização (Indigo, Laranja e Verde)."
+        }
+      ]
+    },
+    {
+      "version": "2.26.6",
+      "version_type": "minor",
+      "date": "2026-03-06",
+      "title": "Implantação de Respostas Rápidas",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Nova Implantação de Respostas Rápidas",
+          "description": "Com as Respostas Rápidas os atendentes ganham agilidade usando atalhos no chat com a barra (/)."
+        }
+      ]
+    },
+    {
+      "version": "2.26.5",
+      "version_type": "patch",
+      "date": "2026-03-03",
+      "title": "Melhorias no Pagamento WhatsApp e Chatbot",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Pagamentos",
+          "title": "Novo Layout de Pagamento Interativo",
+          "description": "Implementado layout profissional de duas mensagens para faturas: um resumo em texto seguido por um card interativo da Meta."
+        },
+        {
+          "type": "improvement",
+          "module": "Pagamentos",
+          "title": "Unificação do Fluxo de Fatura",
+          "description": "Padronização das instruções de pagamento de acordo com o método escolhido."
+        },
+        {
+          "type": "fix",
+          "module": "Chatbot",
+          "title": "Estabilidade do Motor do Chatbot",
+          "description": "Corrigido erro de processamento que interrompia o fluxo do chatbot."
+        }
+      ]
+    },
+    {
+      "version": "2.26.4",
+      "version_type": "patch",
+      "date": "2026-02-27",
+      "title": "Correções no Chatbot SGP e Bloqueio de Contatos",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Bloqueio de Chatbot por Contato Específico",
+          "description": "Agora é possível desativar o chatbot para contatos específicos através do toggle 'ATENDER'."
+        },
+        {
+          "type": "fix",
+          "module": "Integrações",
+          "title": "Busca de Faturas SGP (contratoId)",
+          "description": "Corrigido bug onde o ID do contrato não era enviado ao SGP. Campo correto: 'contratoId'."
+        },
+        {
+          "type": "fix",
+          "module": "Integrações",
+          "title": "Método listar_titulos do SGP",
+          "description": "Corrigido retorno nulo após refatoração, redirecionando para listar_faturas_v2."
+        }
+      ]
+    },
+    {
+      "version": "2.26.3",
+      "version_type": "patch",
+      "date": "2026-01-24",
+      "title": "Ativar e desativar IA por canal",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Chatbot",
+          "title": "Ativar e desativar IA por Canal",
+          "description": "Controle individual de IA diretamente no card do canal."
+        }
+      ]
+    },
+    {
+      "version": "2.26.2",
+      "version_type": "patch",
+      "date": "2026-01-20",
+      "title": "Blindagem de Autenticação e Persistência",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Segurança",
+          "title": "Reforço na Persistência do Token",
+          "description": "Blindagem dupla para evitar perda de token em Refresh (F5)."
+        },
+        {
+          "type": "improvement",
+          "module": "Core",
+          "title": "Timeout de Sessão Configurável",
+          "description": "Respeito fiel à configuração do perfil do usuário."
+        }
+      ]
+    },
+    {
+      "version": "2.26.1",
+      "version_type": "patch",
+      "date": "2026-01-20",
+      "title": "Correções de Autenticação e WebSocket",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Segurança",
+          "title": "Persistência de Sessão (F5)",
+          "description": "Validação robusta do token ao atualizar a página."
+        },
+        {
+          "type": "fix",
+          "module": "Core",
+          "title": "Estabilidade do WebSocket",
+          "description": "Correção no roteamento Nginx para conexões em produção."
+        }
+      ]
+    },
+    {
+      "version": "2.26.0",
+      "version_type": "minor",
+      "date": "2026-01-14",
+      "title": "Sistema de Correção de Texto & Melhorias de Estabilidade",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "IA",
+          "title": "Sistema de Correção de Texto com IA",
+          "description": "Correção gramatical e ortográfica diretamente no campo de digitação."
+        }
+      ]
+    },
+    {
+      "version": "2.25.0",
+      "version_type": "minor",
+      "date": "2026-01-12",
+      "title": "IA Melhorada & Sistema de Equipes",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Financeiro",
+          "title": "Bloqueio de Chamados para Contratos Suspensos",
+          "description": "Proteção impede abertura de chamados para inadimplentes."
+        },
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Equipe IA Automática",
+          "description": "Conversas iniciam automaticamente na equipe 'IA'."
+        },
+        {
+          "type": "improvement",
+          "module": "Core",
+          "title": "Isolamento de Usuários por Provedor",
+          "description": "Segurança reforçada na listagem de usuários."
+        }
+      ]
+    }
+  ]
+}

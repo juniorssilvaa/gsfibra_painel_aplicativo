@@ -1,0 +1,353 @@
+version: "3.8"
+
+services:
+
+  # ===============================
+  # 🐘 POSTGRESQL (VOLUME PERSISTENTE)
+  # Swarm: DNS interno = «{nome_da_stack}_postgres» na rede overlay «internal».
+  # O backend usa wait-for-postgres.sh (timeout) porque depends_on é ignorado no Swarm.
+  # ===============================
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=64MB", "-c", "work_mem=4MB"]
+    volumes:
+      - niochat-postgres:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+      restart_policy:
+        condition: on-failure
+
+  # ===============================
+  # 🔴 REDIS (CHANNEL LAYERS + CACHE)
+  # ===============================
+  redis:
+    image: redis:7-alpine
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - niochat-redis:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+        reservations:
+          memory: 32M
+      restart_policy:
+        condition: on-failure
+
+  # ===============================
+  # 📞 NIOHUB TELEFONIA (VOZ WHATSAPP QR 1:1)
+  # Código: services/niohub-telefonia — imagem publicada como *-calls.
+  # Nome do serviço Docker permanece "niohub-calls" (DNS da stack / NIOHUB_CALLS_BASE_URL).
+  # Mesmo Postgres da stack (WACALLS_PG_URL); API só na rede internal.
+  # WebRTC: publique UDP+TCP na VPS (WACALLS_UDP_PORT único por stack).
+  # ===============================
+  niohub-calls:
+    image: ghcr.io/juniorssilvaa/niohub_chat-calls:${PROVIDER_IMAGE_TAG:-stable}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - postgres
+    networks:
+      - internal
+    environment:
+      WACALLS_PG_URL: ${WACALLS_PG_URL}
+      # Fallback usado pelo binário quando WACALLS_PG_URL ainda não foi propagada
+      # para a stack (ex.: stack antiga não redeployada) — evita crash-loop.
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      WACALLS_PG_NAMESPACE: ${WACALLS_PG_NAMESPACE:-niohub_calls}
+      WACALLS_API_KEY: ${NIOHUB_CALLS_API_KEY}
+      WACALLS_MAX_CALLS: ${WACALLS_MAX_CALLS:-8}
+      WACALLS_PUBLIC_IP: ${WACALLS_PUBLIC_IP:-auto}
+      WACALLS_UDP_PORT: ${WACALLS_UDP_PORT:-3478}
+      SUBDOMAIN: ${SUBDOMAIN}
+      WACALLS_PAINEL_WEBHOOK_BASE: ${NIOHUB_CALLS_WEBHOOK_SELF_URL}
+    # Sobrescreve CMD legado da imagem (-db SQLite) — Postgres só via env.
+    command: ["-addr", ":8080", "-static", "/app/client/dist"]
+    ports:
+      - target: ${WACALLS_UDP_PORT:-3478}
+        published: ${WACALLS_UDP_PORT:-3478}
+        protocol: udp
+        mode: host
+      - target: ${WACALLS_UDP_PORT:-3478}
+        published: ${WACALLS_UDP_PORT:-3478}
+        protocol: tcp
+        mode: host
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+
+  # ===============================
+  # 🧠 BACKEND DJANGO (API + WS)
+  # ===============================
+  niochat-backend:
+    image: ghcr.io/juniorssilvaa/niohub_chat-backend:${PROVIDER_IMAGE_TAG:-stable}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Sem dns: customizado — usa o resolver embutido do Docker (127.0.0.11) para serviços da stack.
+    depends_on:
+      - postgres
+      - redis
+      - niohub-calls
+    networks:
+      - internal
+      - nethub
+    volumes:
+      # MEDIA_ROOT do backend image = /app/painel-provedor/backend/media (WORKDIR do Daphne)
+      # NÃO usar /app/backend/media — esse path não é o MEDIA_ROOT e a mídia se perdia a cada redeploy.
+      - niochat-media:/app/painel-provedor/backend/media
+      - niochat-static:/app/painel-provedor/backend/staticfiles
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG}
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL}
+      DOCKER_STACK_NAME: ${DOCKER_STACK_NAME}
+      TRAEFIK_ROUTER_PREFIX: ${TRAEFIK_ROUTER_PREFIX}
+      SUBDOMAIN: ${SUBDOMAIN}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_URL: ${REDIS_URL}
+      REDIS_DB: 0
+      REDIS_AI_DB: 1
+      REDIS_CONVERSATION_DB: 2
+      REDIS_CACHE_DB: 3
+      DRAMATIQ_BROKER_URL: ${DRAMATIQ_BROKER_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      EVOLUTION_URL: ${EVOLUTION_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET}
+      INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID}
+      INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN}
+      WHATSAPP_SYSTEM_USER_TOKEN: ${WHATSAPP_SYSTEM_USER_TOKEN}
+      # Integração Superadmin <-> Tenant (SUBDOMAIN define URLs públicas do tenant)
+      SUPERADMIN_API_URL: ${SUPERADMIN_API_URL}
+      SUPERADMIN_ID_PROVEDOR_API: ${SUPERADMIN_ID_PROVEDOR_API}
+      SUPERADMIN_PROVIDER_TOKEN: ${SUPERADMIN_PROVIDER_TOKEN}
+      SUPERADMIN_PROVEDOR_ID: ${SUPERADMIN_PROVEDOR_ID}
+      ADMIN_WEBHOOK_SECRET: ${ADMIN_WEBHOOK_SECRET}
+      # NioHub Calls — voz WhatsApp (serviço Go na mesma stack)
+      NIOHUB_CALLS_BASE_URL: ${NIOHUB_CALLS_BASE_URL}
+      NIOHUB_CALLS_API_KEY: ${NIOHUB_CALLS_API_KEY}
+      NIOHUB_CALLS_WEBHOOK_SELF_URL: ${NIOHUB_CALLS_WEBHOOK_SELF_URL}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=nethub"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-api.rule=${TRAEFIK_RULE_API}"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-api.entrypoints=websecure"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-api.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-api.priority=20"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-api.service=${TRAEFIK_ROUTER_PREFIX}-api-svc"
+        - "traefik.http.services.${TRAEFIK_ROUTER_PREFIX}-api-svc.loadbalancer.server.port=8010"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-ws.rule=${TRAEFIK_RULE_WS}"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-ws.entrypoints=websecure"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-ws.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-ws.priority=30"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-ws.service=${TRAEFIK_ROUTER_PREFIX}-api-svc"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-hooks.rule=${TRAEFIK_RULE_HOOKS}"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-hooks.entrypoints=websecure"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-hooks.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-hooks.priority=20"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-hooks.service=${TRAEFIK_ROUTER_PREFIX}-api-svc"
+
+  # ===============================
+  # ⚙️ DRAMATIQ WORKER
+  # ===============================
+  niochat-dramatiq:
+    image: ghcr.io/juniorssilvaa/niohub_chat-dramatiq:${PROVIDER_IMAGE_TAG:-stable}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - internal
+      - nethub
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG}
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL}
+      DOCKER_STACK_NAME: ${DOCKER_STACK_NAME}
+      TRAEFIK_ROUTER_PREFIX: ${TRAEFIK_ROUTER_PREFIX}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DRAMATIQ_BROKER_URL: ${DRAMATIQ_BROKER_URL}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_URL: ${REDIS_URL}
+      RUN_HEARTBEAT: "true"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      EVOLUTION_URL: ${EVOLUTION_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      # Integração Superadmin <-> Tenant
+      SUPERADMIN_API_URL: ${SUPERADMIN_API_URL}
+      SUPERADMIN_ID_PROVEDOR_API: ${SUPERADMIN_ID_PROVEDOR_API}
+      SUPERADMIN_PROVIDER_TOKEN: ${SUPERADMIN_PROVIDER_TOKEN}
+      SUPERADMIN_PROVEDOR_ID: ${SUPERADMIN_PROVEDOR_ID}
+      ADMIN_WEBHOOK_SECRET: ${ADMIN_WEBHOOK_SECRET}
+      # Evita rodar o monitor de timeout de chatbot duplicado (já roda no niochat-backend)
+      CHATBOT_TIMEOUT_DISABLE_BACKGROUND_THREAD: "1"
+    volumes:
+      # Imagem dramatiq usa WORKDIR /app/backend → mesmo volume, path da imagem worker
+      - niochat-media:/app/backend/media
+    command: ["python", "-m", "dramatiq", "conversations.dramatiq_tasks", "integrations.dramatiq_tasks", "--processes", "1", "--threads", "8", "--path", "/app/backend"]
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+
+  # ===============================
+  # 📱 TELEGRAM WORKER
+  # ===============================
+  niochat-telegram:
+    image: ghcr.io/juniorssilvaa/niohub_chat-backend:${PROVIDER_IMAGE_TAG:-stable}
+    depends_on:
+      - postgres
+    networks:
+      - internal
+      - nethub
+    volumes:
+      - niochat-media:/app/painel-provedor/backend/media
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG}
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL}
+      DOCKER_STACK_NAME: ${DOCKER_STACK_NAME}
+      TRAEFIK_ROUTER_PREFIX: ${TRAEFIK_ROUTER_PREFIX}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_URL: ${REDIS_URL}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # Evita rodar o monitor de timeout de chatbot duplicado (já roda no niochat-backend)
+      CHATBOT_TIMEOUT_DISABLE_BACKGROUND_THREAD: "1"
+      # Integração Superadmin <-> Tenant (SUBDOMAIN define URLs públicas do tenant)
+    command: ["python", "manage.py", "telegram_worker", "start"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  # ===============================
+  # 🌐 FRONTEND
+  # ===============================
+  niochat-frontend:
+    image: ghcr.io/juniorssilvaa/niohub_chat-frontend:${PROVIDER_IMAGE_TAG:-stable}
+    networks:
+      - internal
+      - nethub
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 16M
+      restart_policy:
+        condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=nethub"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-fe.rule=${TRAEFIK_RULE_FE}"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-fe.entrypoints=websecure"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-fe.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-fe.priority=1"
+        - "traefik.http.routers.${TRAEFIK_ROUTER_PREFIX}-fe.service=${TRAEFIK_ROUTER_PREFIX}-fe-svc"
+        - "traefik.http.services.${TRAEFIK_ROUTER_PREFIX}-fe-svc.loadbalancer.server.port=8012"
+
+networks:
+  nethub:
+    external: true
+  # Rede privada por stack (o nome final será prefixado pela stack no Swarm).
+  internal:
+    driver: overlay
+
+volumes:
+  niochat-postgres:
+  niochat-redis:
+  niochat-media:
+  niochat-static:

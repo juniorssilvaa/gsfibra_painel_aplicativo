@@ -1,0 +1,454 @@
+# Clone de referência do app mobile (repo separado)
+app_provedor/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Python cache files (recursive)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+!services/niohub-telefonia/native/
+!services/niohub-telefonia/internal/voip/media/
+!services/niohub-telefonia/internal/voip/media/**
+staticfiles/
+static/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Frontend
+frontend/frontend/dist/
+frontend/frontend/build/
+frontend/frontend/.env.local
+frontend/frontend/.env.development.local
+frontend/frontend/.env.test.local
+frontend/frontend/.env.production.local
+
+# Configurações de PRODUÇÃO (NÃO COMMITAR - contém dados sensíveis)
+production.env
+docker.env
+.env.production
+*.env.production
+
+# Configurações de desenvolvimento (podem ser commitadas se necessário)
+# frontend/frontend/vite.config.dev.js
+frontend/frontend/vite.dev.js
+.env.local
+
+# Executáveis
+cloudflared.exe
+ngrok.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+# Keep .dockerignore versioned to avoid copying host artifacts into builds
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.test
+.env.production
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# --- Exceptions: Vite public assets we DO want versioned ---
+# This repo has multiple Vite apps that rely on `public/` at build time.
+# Keep the directories ignored by default, but allow the assets we ship.
+!painel-provedor/front/public/
+!painel-provedor/front/public/favicon*
+!painel-provedor/front/public/apple-touch-icon.png
+!painel-provedor/front/public/site.webmanifest
+!painel-provedor/front/public/web-app-manifest-*.png
+!painel-provedor/front/public/logo.png
+!painel-provedor/front/public/sounds/
+!painel-provedor/front/public/sounds/**
+
+!superadmin/front/public/
+!superadmin/front/public/favicon*
+!superadmin/front/public/apple-touch-icon.png
+!superadmin/front/public/site.webmanifest
+!superadmin/front/public/web-app-manifest-*.png
+!superadmin/front/public/logo.png
+!superadmin/front/public/sounds/
+!superadmin/front/public/sounds/**
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local development files
+docker-compose.override.yml
+docker-compose.local.yml
+.env.local
+.env.development
+.env.test
+env.local
+expose-local.js
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Certificate files
+*.pem
+*.key
+*.crt
+*.csr
+
+# Local configuration
+config.local.py
+settings.local.py
+
+# Test files
+test_*.py
+*_test.py
+tests/
+test/
+
+# Documentation build
+docs/_build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# Local media and uploads
+backend/media/
+backend/staticfiles/
+backend/static/
+frontend/frontend/public/uploads/
+
+# Local database
+backend/db.sqlite3
+backend/db.sqlite3-journal
+
+# Local logs
+backend/logs/
+frontend/frontend/logs/
+
+# Local certificates
+*.pem
+*.key
+*.crt
+
+# Local development scripts
+dev_*.py
+local_*.py
+test_*.py
+*_test.py
+
+# Local configuration overrides
+backend/local_settings.py
+backend/settings_local.py
+frontend/frontend/.env.local
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Temporary files
+*.tmp
+*.temp
+
+# Cloudflare Tunnel (conforme CLOUDFLARE_TUNNEL_REPORT.md)
+.cloudflared/
+*.cloudflared/
+
+# Nginx local (conforme CLOUDFLARE_TUNNEL_REPORT.md)
+/etc/nginx/sites-available/front.niochat.com.br.conf
+/etc/nginx/sites-enabled/front.niochat.com.br.conf
+
+# Certificados SSL locais (conforme CLOUDFLARE_TUNNEL_REPORT.md)
+/etc/ssl/localcerts/
+
+# Configurações de sistema (conforme CLOUDFLARE_TUNNEL_REPORT.md)
+/etc/hosts
+
+# Logs locais (conforme CLOUDFLARE_TUNNEL_REPORT.md)
+logs/
+*.log
+
+# Configurações de ambiente local (conforme CLOUDFLARE_TUNNEL_REPORT.md)
+.env.local
+.env.development
+
+# Configurações de desenvolvimento (NÃO COMMITAR)
+frontend/frontend/vite.config.dev.js
+frontend/frontend/.env.development
+frontend/frontend/src/config/environment.dev.js
+frontend/frontend/scripts/switch-env.js
+frontend/frontend/ENVIRONMENT_SETUP.md
+
+# Configurações de produção (COMMITAR)
+# frontend/frontend/vite.config.js - MANTER (PRODUÇÃO)
+# frontend/frontend/vite.config.prod.js - MANTER
+# frontend/frontend/src/config/environment.js - MANTER
+
+# Arquivos de desenvolvimento local (conforme CLOUDFLARE_TUNNEL_REPORT.md)
+CLOUDFLARE_TUNNEL_REPORT.md
+cloudflare-redirect.html
+nginx/sites/front.niochat.com.br.conf
+ngrok-config.yml
+test-nginx.conf
+.gitignore.local
+
+# Arquivos de cache Python
+# Arquivos de ambiente específicos do projeto
+/.env.production
+/.env.development
+
+backend/*/__pycache__/
+backend/*/__pycache__/*.pyc
+
+# Arquivos de sessão do Telegram (desenvolvimento local)
+backend/telegram_session_niochat_*.session
+backend/telegram_session_niochat_*.session-journal
+backend/test_session_niochat.session
+niochat_session.session
+
+# Scripts de desenvolvimento local do Cloudflare Tunnel
+cloudflare-tunnel-config.yml
+run-tunnel.ps1
+start-cloudflare-tunnel.ps1
+start-tunnel.ps1
+EXECUTAR_TUNNEL.md
+tunnel-error.log
+tunnel-output.log
+
+# Scripts de desenvolvimento local (Windows)
+build_dramatiq_image.bat
+usar_rabbitmq_vps.bat
+usar_rabbitmq_local.bat
+runserver_daphne.bat
+run_dramatiq_worker.bat
+rodar_worker_csat.ps1
+backend/runserver_daphne.bat
+backend/run_dramatiq_worker.bat
+backend/rodar_worker_csat.ps1
+backend/usar_rabbitmq_local.bat
+backend/usar_rabbitmq_vps.bat
+
+# Configuração do ngrok
+ngrok.yml
+
+# Arquivos de documentação de debug (temporários)
+CORRECAO_*.md
+IMPLEMENTACAO_*.md
+PROBLEMA_*.md
+FLUXO_*.md
+
+# Arquivos de teste locais
+test_*.py
+check_*.py
+backend/check_*.py
+backend/scripts/check_*.py
+
+# Arquivos de stack/deploy específicos de ambiente
+stack-*.yml
+docker-compose.override.yml
+
+# Certificados e credenciais
+certs/
+*.pem
+*.key
+*.crt
+**/firebase-credentials.json
+**/firebase_credentials.json
+**/service_account_key.json
+
+# Arquivos de versão local
+version_manager.py
+
+# Docs build
+docs/site/
+docs/mkdocs_env/
+
+# NioHub Telefonia — credenciais locais + toolchains (não versionar)
+services/niohub-telefonia/.env
+services/niohub-telefonia/w64devkit/
+services/niohub-telefonia/postgres/
+services/niohub-telefonia/client/node_modules/
+services/niohub-telefonia/client/dist/
+services/niohub-telefonia/*.exe
+services/niohub-telefonia/*.log
+services/niohub-telefonia/chamada de voz/
+
+# Redis dumps locais
+dump.rdb
+**/dump.rdb

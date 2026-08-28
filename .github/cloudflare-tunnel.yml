@@ -1,0 +1,49 @@
+tunnel: d1ea2c7b-849c-4aa6-a8cb-d42fd4b92697
+credentials-file: C:\Users\Junio\.cloudflared\d1ea2c7b-849c-4aa6-a8cb-d42fd4b92697.json
+
+ingress:
+  # Frontend - porta 8012
+  - hostname: front.niochat.com.br
+    service: http://localhost:8012
+    originRequest:
+      httpHostHeader: front.niochat.com.br
+      noHappyEyeballs: false
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+
+  # Frontend Local - porta 8012
+  - hostname: front-local.niochat.com.br
+    service: http://localhost:8012
+    originRequest:
+      httpHostHeader: front-local.niochat.com.br
+      noHappyEyeballs: false
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+
+  # Backend - porta 8010
+  - hostname: api.niochat.com.br
+    service: http://localhost:8010
+    originRequest:
+      httpHostHeader: api.niochat.com.br
+      noHappyEyeballs: false
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      disableChunkedEncoding: false
+
+  # Backend Local - porta 8010
+  - hostname: api-local.niochat.com.br
+    service: http://localhost:8010
+    originRequest:
+      httpHostHeader: api-local.niochat.com.br
+      noHappyEyeballs: false
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      disableChunkedEncoding: false
+
+  # Catch-all - retornar 404 para outros hosts
+  - service: http_status:404
+
