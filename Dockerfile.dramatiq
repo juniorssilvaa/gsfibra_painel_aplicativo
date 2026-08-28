@@ -1,0 +1,88 @@
+# ===============================
+# 🎯 Dramatiq Worker Dockerfile
+# ===============================
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# -------------------------------
+# 🧩 System dependencies
+# -------------------------------
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    ffmpeg \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# -------------------------------
+# 📁 Set working directory
+# -------------------------------
+WORKDIR /app
+
+# -------------------------------
+# 📦 Install Python dependencies
+# -------------------------------
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# -------------------------------
+# 📂 Copy backend project
+# -------------------------------
+COPY backend /app/backend
+
+WORKDIR /app/backend
+
+# -------------------------------
+# 🚀 Dramatiq Entrypoint
+# -------------------------------
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "🚀 Starting Dramatiq Worker..."\n\
+exec "$@"' > /app/dramatiq_entrypoint.sh && chmod +x /app/dramatiq_entrypoint.sh
+
+# -------------------------------
+# ❤️ Healthcheck - RabbitMQ
+# -------------------------------
+COPY <<EOF /app/healthcheck.py
+import os, socket, sys
+from urllib.parse import urlparse
+
+url = os.getenv("DRAMATIQ_BROKER_URL", "")
+if not url:
+    print("❌ DRAMATIQ_BROKER_URL não configurada")
+    sys.exit(1)
+
+p = urlparse(url)
+host = p.hostname
+port = p.port or 5672
+
+try:
+    s = socket.socket()
+    s.settimeout(5)
+    s.connect((host, port))
+    s.close()
+    print("✅ RabbitMQ OK")
+except Exception as e:
+    print("❌ Falha no healthcheck:", e)
+    sys.exit(1)
+EOF
+
+HEALTHCHECK --interval=20s --timeout=10s --start-period=60s --retries=5 \
+  CMD python /app/healthcheck.py || exit 1
+
+# -------------------------------
+# 🧠 Django settings
+# -------------------------------
+ENV DJANGO_SETTINGS_MODULE=niochat.settings
+
+# -------------------------------
+# 🏁 Entrypoint and command
+# -------------------------------
+ENTRYPOINT ["/app/dramatiq_entrypoint.sh"]
+
+CMD ["python", "-m", "dramatiq", "conversations.dramatiq_tasks", "--processes", "1", "--threads", "8", "--path", "/app/backend"]

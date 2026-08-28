@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/png" href="/favicon.png?v=1.0" />
+    <link rel="shortcut icon" type="image/png" href="/favicon.png?v=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIOCHAT SERVIÇOS TECNOLÓGICOS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '{% if request.user.is_superuser or not request.user.provider %}#3b82f6{% else %}{{ request.user.provider.primary_color|default:"#3b82f6" }}{% endif %}',
+                        dark: {
+                            900: '#0f172a',
+                            800: '#1e293b',
+                            700: '#334155',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: {
+                % if request.user.is_superuser or not request.user.provider %
+            }
+
+            #3b82f6 {
+                % else %
+            }
+
+                {
+                    {
+                    request.user.provider.primary_color|default: "#3b82f6"
+                }
+            }
+
+                {
+                % endif %
+            }
+
+            ;
+
+            --glass-intensity: {
+                % if request.user.is_superuser or not request.user.provider %
+            }
+
+            82 {
+                % else %
+            }
+
+                {
+                    {
+                    request.user.provider.glass_intensity|default: "82"
+                }
+            }
+
+                {
+                % endif %
+            }
+
+            %;
+
+            --glass-blur: {
+                % if request.user.is_superuser or not request.user.provider %
+            }
+
+            18 {
+                % else %
+            }
+
+                {
+                    {
+                    request.user.provider.glass_blur|default: "18"
+                }
+            }
+
+                {
+                % endif %
+            }
+
+            px;
+
+            --ambient-shadow: {
+                % if request.user.is_superuser or not request.user.provider %
+            }
+
+            55 {
+                % else %
+            }
+
+                {
+                    {
+                    request.user.provider.ambient_shadow|default: "55"
+                }
+            }
+
+                {
+                % endif %
+            }
+
+            %;
+        }
+
+        .active-nav {
+            background-color: color-mix(in srgb, var(--primary-color), transparent 90%);
+            color: var(--primary-color);
+            border-right: 3px solid var(--primary-color);
+        }
+
+        .glass-panel,
+        :root.dark .sidebar-glass {
+            background-color: rgba(30, 41, 59, var(--glass-intensity));
+            backdrop-filter: blur(var(--glass-blur));
+            border-color: rgba(55, 65, 81, 0.5);
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 dark:bg-dark-900 text-gray-800 dark:text-gray-200 transition-colors duration-200">
+
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-white sidebar-glass border-r border-gray-200 dark:border-gray-700 flex flex-col">
+            <div class="p-6">
+                <div class="flex items-center space-x-3">
+                    <div
+                        class="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-bold">
+                        {% if request.user.provider and request.user.provider.logo %}
+                        <img src="{{ request.user.provider.logo.url }}" alt="Logo"
+                            class="w-full h-full rounded-full object-cover">
+                        {% else %}
+                        {{ request.user.username|make_list|first|upper }}
+                        {% endif %}
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-sm">
+                            {{ request.user.username|upper }}
+                        </h1>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            {% if request.user.provider %}
+                            {{ request.user.provider.name|upper }}
+                            {% else %}
+                            {% if request.user.is_superuser %}SUPER ADMIN{% else %}ADMIN{% endif %}
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="flex-1 overflow-y-auto py-4">
+                <ul class="space-y-1">
+                    {% if request.user.user_type == 'superadmin' or request.user.is_superuser %}
+                    <!-- SUPER ADMIN MENU -->
+                    <li>
+                        <a href="{% url 'super_admin_dashboard' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'super_admin' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
+                                </path>
+                            </svg>
+                            Dashboard
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'super_admin_providers' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'super_admin_providers' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
+                                </path>
+                            </svg>
+                            Provedores
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'super_admin_users' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'super_admin_users' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                                </path>
+                            </svg>
+                            Usuários
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'super_admin_contacts' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'super_admin_contacts' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
+                                </path>
+                            </svg>
+                            Clientes
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'super_admin_ai_config' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'super_admin_ai' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
+                                </path>
+                            </svg>
+                            Agente de IA
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'swagger-ui' %}" target="_blank"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'api_docs' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
+                                </path>
+                            </svg>
+                            Docs
+                        </a>
+                    </li>
+                    {% else %}
+                    <!-- PROVIDER MENU -->
+                    <li>
+                        <a href="{% url 'dashboard' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'dashboard' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
+                                </path>
+                            </svg>
+                            Dashboard
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'panel_user_list' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'panel_users' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                                </path>
+                            </svg>
+                            Usuários
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'user_list' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'users' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
+                                </path>
+                            </svg>
+                            Clientes App
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'notification_list' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'notifications' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
+                                </path>
+                            </svg>
+                            Envio de Push
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'in_app_warnings' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'in_app_warnings' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z">
+                                </path>
+                            </svg>
+                            Avisos In-App
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'app_config' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'app_config' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
+                                </path>
+                            </svg>
+                            Configurações App
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'provider_plans' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'plans_config' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2">
+                                </path>
+                            </svg>
+                            Configurar Planos
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'provider_sgp_integrations' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'provider_integrations_sgp' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            Integrações
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'profile_settings' %}"
+                            class="flex items-center px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 {% if segment == 'profile' %}active-nav{% endif %}">
+                            <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                                </path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            </svg>
+                            Perfil do Painel
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+
+            <div class="p-4 border-t border-gray-200 dark:border-gray-700">
+                <a href="{% url 'logout' %}"
+                    class="flex items-center px-2 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                        </path>
+                    </svg>
+                    Sair
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header
+                class="bg-white sidebar-glass border-b border-gray-200 dark:border-gray-700 h-16 flex items-center justify-between px-6">
+                <h2 class="text-xl font-semibold">NIOCHAT SERVIÇOS TECNOLÓGICOS</h2>
+
+                <div class="flex items-center space-x-4">
+                    <!-- Relógio do Servidor -->
+                    <div id="server-clock-container"
+                        class="hidden md:flex items-center space-x-2 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full border border-gray-200 dark:border-gray-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                            stroke="currentColor" class="w-4 h-4 text-primary">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div class="flex flex-col">
+                            <span id="server-time-display"
+                                class="text-xs font-bold text-gray-700 dark:text-gray-200 leading-tight">--:--:--</span>
+                            <span id="server-date-display"
+                                class="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">--/--/----</span>
+                        </div>
+                    </div>
+
+                    <button id="theme-toggle"
+                        class="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                        <span id="theme-toggle-dark-icon" class="hidden">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+                            </svg>
+                        </span>
+                        <span id="theme-toggle-light-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="flex-1 overflow-auto p-6">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const darkIcon = document.getElementById('theme-toggle-dark-icon');
+        const lightIcon = document.getElementById('theme-toggle-light-icon');
+
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            darkIcon.classList.remove('hidden');
+            lightIcon.classList.add('hidden');
+        } else {
+            document.documentElement.classList.remove('dark');
+            darkIcon.classList.add('hidden');
+            lightIcon.classList.remove('hidden');
+        }
+
+        themeToggleBtn.addEventListener('click', function () {
+            document.documentElement.classList.toggle('dark');
+
+            if (document.documentElement.classList.contains('dark')) {
+                localStorage.setItem('color-theme', 'dark');
+                darkIcon.classList.remove('hidden');
+                lightIcon.classList.add('hidden');
+            } else {
+                localStorage.setItem('color-theme', 'light');
+                darkIcon.classList.add('hidden');
+                lightIcon.classList.remove('hidden');
+            }
+        });
+
+        // Lógica do Relógio do Servidor
+        (function () {
+            const timeDisplay = document.getElementById('server-time-display');
+            const dateDisplay = document.getElementById('server-date-display');
+            const clockContainer = document.getElementById('server-clock-container');
+            let serverOffset = 0;
+
+            async function syncTime() {
+                try {
+                    const start = Date.now();
+                    const response = await fetch('/api/public/server-time/');
+                    const data = await response.json();
+                    const serverTime = new Date(data.server_time);
+                    // Compensação simples de latência (metade da ida e volta)
+                    const latency = (Date.now() - start) / 2;
+                    serverOffset = serverTime.getTime() - Date.now() + latency;
+                    clockContainer.classList.remove('hidden');
+                } catch (e) {
+                    console.error('Erro ao sincronizar relógio:', e);
+                }
+            }
+
+            function updateClock() {
+                if (serverOffset === 0) return;
+
+                const now = new Date(Date.now() + serverOffset);
+
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+
+                const day = String(now.getDate()).padStart(2, '0');
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const year = now.getFullYear();
+
+                timeDisplay.textContent = `${hours}:${minutes}:${seconds}`;
+                dateDisplay.textContent = `${day}/${month}/${year}`;
+            }
+
+            syncTime();
+            setInterval(updateClock, 1000);
+            // Ressincronizar a cada 10 minutos para garantir precisão
+            setInterval(syncTime, 600000);
+        })();
+    </script>
+</body>
+
+</html>

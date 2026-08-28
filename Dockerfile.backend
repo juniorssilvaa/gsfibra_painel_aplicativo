@@ -1,0 +1,183 @@
+# Backend Dockerfile - NioChat
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    ffmpeg \
+    curl \
+    postgresql-client \
+    netcat-openbsd \
+    cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project files
+COPY . .
+
+# Go to backend directory
+WORKDIR /app/backend
+
+# Tornar scripts executáveis (para cron)
+RUN chmod +x backend/scripts/finalize_closing_cron.py || true
+
+# ============================================
+# Create ENTRYPOINT script (GitHub Actions safe)
+# ============================================
+RUN cat << 'EOF' > /app/entrypoint.sh
+#!/bin/bash
+set -e
+
+echo "Starting NioChat Backend..."
+
+# Extrair host e porta para o teste de conexão
+if [ -n "$DATABASE_URL" ]; then
+    DB_HOST=$(echo $DATABASE_URL | sed -e 's|.*@||' -e 's|/.*||' -e 's|:.*||')
+    DB_PORT=$(echo $DATABASE_URL | sed -e 's|.*:||' -e 's|/.*||')
+    [[ ! "$DB_PORT" =~ ^[0-9]+$ ]] && DB_PORT=5432
+else
+    DB_HOST="postgres"
+    DB_PORT=5432
+fi
+
+echo "⏳ Waiting for PostgreSQL at $DB_HOST:$DB_PORT..."
+
+until nc -z -v -w3 "$DB_HOST" "$DB_PORT"; do
+  echo "⏳ PostgreSQL ainda não disponível... aguardando 1s"
+  sleep 1
+done
+
+echo "✅ PostgreSQL disponível!"
+
+echo "Running migrations..."
+echo "Running migrations..."
+# Sincronização inteligente do histórico de migrações com a realidade física do banco
+python -c "
+import os, django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'niochat.settings')
+django.setup()
+from django.db import connection
+
+def column_exists(table, column):
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT EXISTS (SELECT FROM information_schema.columns WHERE table_name = %s AND column_name = %s)', [table, column])
+        return cursor.fetchone()[0]
+
+def table_exists(table):
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = %s)', [table])
+        return cursor.fetchone()[0]
+
+# Mapeamento: (nome_migracao, condicao_de_existencia_fisica)
+checks = [
+    ('0058_add_openai_transcription_api_key', column_exists('core_systemconfig', 'openai_transcription_api_key')),
+    ('0061_canal_ia_ativa', column_exists('core_canal', 'ia_ativa')),
+    ('0062_chatbotflow', table_exists('core_chatbotflow')),
+    ('0063_add_bot_mode_to_provedor', column_exists('core_provedor', 'bot_mode')),
+    ('0067_add_canal_to_chatbotflow', column_exists('core_chatbotflow', 'canal_id')),
+    ('0070_add_asaas_fields', column_exists('core_systemconfig', 'asaas_access_token')),
+    ('0071_provedor_asaas_details', column_exists('core_provedor', 'asaas_customer_id')),
+    ('0072_provedor_subscription_fields', column_exists('core_provedor', 'asaas_subscription_id')),
+    ('0073_provedor_subscription_next_due_date', column_exists('core_provedor', 'subscription_next_due_date')),
+]
+
+with connection.cursor() as cursor:
+    # 1. Garantir migrações base que fundamentam o resto
+    for name in ['0055_1_alter_provedor_redes_sociais_default', '0055_add_more']:
+        cursor.execute(
+            'INSERT INTO django_migrations (app, name, applied) SELECT %s, %s, NOW() WHERE NOT EXISTS (SELECT 1 FROM django_migrations WHERE app=%s AND name=%s)',
+            ['core', name, 'core', name]
+        )
+    
+    # 2. Sincronizar migrações problemáticas baseadas na realidade física
+    for name, exists in checks:
+        if exists:
+            cursor.execute(
+                'INSERT INTO django_migrations (app, name, applied) SELECT %s, %s, NOW() WHERE NOT EXISTS (SELECT 1 FROM django_migrations WHERE app=%s AND name=%s)',
+                ['core', name, 'core', name]
+            )
+            print(f'[MIGRATE-FIX] {name} garantida no historico (existe fisicamente).')
+        else:
+            cursor.execute(\"DELETE FROM django_migrations WHERE app='core' AND name=%s\", [name])
+            print(f'[MIGRATE-FIX] {name} removida do historico (NAO existe fisicamente).')
+    connection.commit()
+"
+python manage.py migrate --noinput
+
+echo "Collecting static files..."
+python manage.py collectstatic --noinput
+
+echo "Launching Daphne server..."
+exec "$@"
+EOF
+
+RUN chmod +x /app/entrypoint.sh
+
+# ============================================
+# Create CRON entrypoint script
+# ============================================
+RUN cat << 'EOF' > /app/cron-entrypoint.sh
+#!/bin/bash
+set -e
+
+echo "Starting NioChat Cron Service..."
+
+if [ -n "$DATABASE_URL" ]; then
+    DB_HOST=$(echo $DATABASE_URL | sed -e 's|.*@||' -e 's|/.*||' -e 's|:.*||')
+    DB_PORT=$(echo $DATABASE_URL | sed -e 's|.*:||' -e 's|/.*||')
+    [[ ! "$DB_PORT" =~ ^[0-9]+$ ]] && DB_PORT=5432
+else
+    DB_HOST="postgres"
+    DB_PORT=5432
+fi
+
+echo "⏳ Waiting for PostgreSQL at $DB_HOST:$DB_PORT..."
+
+until nc -z -v -w3 "$DB_HOST" "$DB_PORT"; do
+  echo "⏳ PostgreSQL ainda não disponível... aguardando 1s"
+  sleep 1
+done
+
+echo "✅ PostgreSQL disponível!"
+
+# Criar diretório de logs
+mkdir -p /var/log/niochat
+
+# Configurar cron
+echo "Configurando cron..."
+echo '*/2 * * * * cd /app/backend && python scripts/finalize_closing_cron.py >> /var/log/niochat/finalize_closing.log 2>&1' | crontab -
+
+echo "✅ Cron configurado. Executando a cada 2 minutos."
+echo "📋 Logs disponíveis em: /var/log/niochat/finalize_closing.log"
+
+# Iniciar cron em foreground
+exec cron -f
+EOF
+
+RUN chmod +x /app/cron-entrypoint.sh
+
+# Expose port
+EXPOSE 8010
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f -L http://localhost:8010/api/health/ || exit 1
+
+# Use entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Default command → Daphne WebSocket/HTTP
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8010", "niochat.asgi:application"]

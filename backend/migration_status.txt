@@ -1,0 +1,10 @@
+Sucesso
+Migrations for 'conversations':
+  conversations\migrations\0020_rename_message_rea_message_emoji_idx_message_rea_message_7f9ef3_idx_and_more.py
+    ~ Rename index message_rea_message_emoji_idx on messagereaction to message_rea_message_7f9ef3_idx
+    + Add field waiting_for_agent to conversation
+    ~ Alter field status on conversation
+Operations to perform:
+  Apply all migrations: conversations
+Running migrations:
+  Applying conversations.0020_rename_message_rea_message_emoji_idx_message_rea_message_7f9ef3_idx_and_more... OK
