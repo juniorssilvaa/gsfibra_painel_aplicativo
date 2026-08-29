@@ -612,6 +612,24 @@ class DatabaseTools:
                     ),
                 }
 
+                motivo_l = (motivo or '').lower()
+                equipe_l = (equipe_nome or '').lower()
+                if (
+                    any(x in motivo_l for x in ('comprovante', 'pagamento', 'baixa', 'recibo', 'pix'))
+                    or 'financ' in equipe_l
+                ):
+                    resultado['instrucao_ia'] = (
+                        'Comprovante/financeiro: NÃO diga ao cliente que transferiu para o '
+                        'FINANCEIRO, setor financeiro ou equipe financeira. '
+                        'Confirme de forma simples que o comprovante/documento será encaminhado '
+                        'para ser ADICIONADO AO SISTEMA e realizar a BAIXA DO PAGAMENTO. '
+                        'Se horario_info.dentro_horario=false, informe quando o atendimento humano '
+                        'retoma (proximo_horario/feriado), sem citar o setor.'
+                    )
+                    resultado['nota'] = (
+                        resultado['nota'] + ' ' + resultado['instrucao_ia']
+                    )
+
             # Fora da transaction: notificar WhatsApp no modo suporte (não reverte a transferência)
             try:
                 from core.support_transfer_notify import notify_support_transfer

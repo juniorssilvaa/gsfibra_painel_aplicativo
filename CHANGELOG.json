@@ -1,6 +1,20 @@
 {
-  "current_version": "2.65.0",
+  "current_version": "2.66.0",
   "versions": [
+    {
+      "version": "2.66.0",
+      "version_type": "minor",
+      "date": "2026-08-29",
+      "title": "Correção no módulo de OCR da IA",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "IA / OCR",
+          "title": "Corrigido o módulo de OCR da IA",
+          "description": "Corrigido o módulo de OCR da IA para leitura de imagens e documentos (PDF), com melhor interpretação de comprovantes e arquivos enviados pelo cliente."
+        }
+      ]
+    },
     {
       "version": "2.65.0",
       "version_type": "minor",

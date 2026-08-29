@@ -260,11 +260,31 @@ def build_provider_config_block(provedor: Provedor) -> str:
     if regras:
         partes.append(
             "\n## Base de conhecimento / Regras específicas do provedor\n"
-            "Priorize estas regras ao responder (exceto quando uma ferramenta for necessária).\n"
+            "OBRIGATÓRIO: estas regras têm prioridade máxima sobre o estilo de resposta.\n"
+            "Se alguma regra pedir transferir, encaminhar ou acionar uma equipe/tool, "
+            "execute a ferramenta correspondente IMEDIATAMENTE — não ignore, não adie e "
+            "não responda só com texto.\n"
             "Se alguma regra pedir fatura completa / boleto e PIX / ambas as formas de pagamento, "
             "ao chamar gerar_fatura use tipo_pagamento=ambos.\n\n"
             + regras
         )
+        from ai.media_inbound import provider_kb_requires_comprovante_transfer
+
+        if provider_kb_requires_comprovante_transfer(provedor):
+            partes.append(
+                "\n## Comprovantes e documentos de pagamento (regras do provedor)\n"
+                "A base de conhecimento acima exige transferência imediata de comprovantes/"
+                "documentos de pagamento. Cumprir assim:\n"
+                "1. Chame IMEDIATAMENTE transferir_conversa para FINANCEIRO (ou o nome EXATO "
+                "da equipe financeira nas regras).\n"
+                "2. Trate como comprovante mesmo no nome de outra pessoa/outro cliente.\n"
+                "3. Se não conseguir ler a imagem/PDF: também transfira ao FINANCEIRO.\n"
+                "4. NÃO diga ao cliente que está transferindo para o FINANCEIRO/setor.\n"
+                "5. Confirme que o comprovante será encaminhado para ser ADICIONADO AO SISTEMA "
+                "e realizar a BAIXA DO PAGAMENTO.\n"
+                "Se houver marcação [OBRIGATÓRIO — COMPROVANTE] na mensagem do cliente, "
+                "chame transferir_conversa na primeira resposta (antes de qualquer outra tool)."
+            )
 
     return "\n".join(partes)
 

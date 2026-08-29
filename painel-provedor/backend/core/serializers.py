@@ -1048,14 +1048,14 @@ class CanalSerializer(serializers.ModelSerializer):
             except Exception as e:
                 return 'disconnected'
         
-        # Para WhatsApp Oficial - usar status do canal ou verificar se tem credenciais
+        # Para WhatsApp Oficial — credenciais + status persistido (webhook/verify podem marcar disconnected)
         elif obj.tipo == 'whatsapp_oficial':
-            # Se tem token e phone_number_id, considerar conectado
+            st = (obj.status or '').strip().lower()
+            if st in ('disconnected', 'expired', 'suspended', 'restricted'):
+                return st
             if obj.token and obj.phone_number_id:
-                # Usar o status do canal se disponível, senão 'connected'
-                return obj.status if obj.status else 'connected'
-            else:
-                return 'disconnected'
+                return st or 'connected'
+            return 'disconnected'
         
         # Para Telegram - verificar se tem sessão E dados do usuário salvos
         elif obj.tipo == 'telegram' and obj.nome:

@@ -686,6 +686,18 @@ class PainelConsumer(TokenAuthMixin, SafeConsumerMixin, AsyncWebsocketConsumer):
             )
         )
 
+    async def channel_status_update(self, event):
+        """WhatsApp Oficial / canais: conectado/desconectado (sem apagar o canal)."""
+        data = event.get("data") or {}
+        await self._safe_send(
+            text_data=json.dumps(
+                {
+                    "type": "channel_status_update",
+                    **data,
+                }
+            )
+        )
+
 
 class UserStatusConsumer(TokenAuthMixin, SafeConsumerMixin, AsyncWebsocketConsumer):
     async def connect(self):

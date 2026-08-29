@@ -4,6 +4,11 @@ Todas as mudanças notáveis do projeto NioChat serão documentadas neste arquiv
 
 **Fonte oficial do histórico no produto:** `CHANGELOG.json` na raiz do repositório (servido por `/api/changelog/` e exibido no modal de versões). Atualize apenas esse JSON para novas versões.
 
+## [2.66.0] - 2026-08-29
+
+### 🐛 Corrigido
+- **IA / OCR**: corrigido o módulo de OCR da IA para leitura de imagens e documentos (PDF), com melhor interpretação de comprovantes e arquivos enviados pelo cliente.
+
 ## [2.65.0] - 2026-08-28
 
 ### 🐛 Corrigido

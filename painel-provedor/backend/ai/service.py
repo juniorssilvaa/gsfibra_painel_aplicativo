@@ -864,6 +864,9 @@ class AIService:
             prompt = (
                 "Analise a imagem enviada pelo cliente de um provedor de internet. "
                 "Descreva o que vê de forma objetiva em português. "
+                "Se for COMPROVANTE DE PAGAMENTO (PIX, transferência, boleto, recibo bancário), "
+                "comece a descrição com a frase exata: \"A imagem enviada é um comprovante de pagamento.\" "
+                "e liste valor, data/hora, destino/origem e instituição quando visíveis. "
                 "Se for modem/roteador, identifique os LEDs visíveis (Power, LOS/PON/fibra, LAN, Wi-Fi) "
                 "e a cor de cada um. Se houver LED vermelho, diga qual parece ser "
                 "(muitas vezes é o LOS/fibra). Não conclua sozinho que precisa de técnico."

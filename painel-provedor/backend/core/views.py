@@ -203,14 +203,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.65.0"
+                "current_version": "2.66.0"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.65.0"
+            "current_version": "2.66.0"
         }, safe=False)
 
 
@@ -4052,6 +4052,30 @@ class CanalViewSet(CanalVoiceCallsMixin, viewsets.ModelViewSet):
                 'success': False,
                 'error': str(e)
             }, status=500)
+
+    @action(detail=True, methods=['post'], url_path='verificar-conexao')
+    def verificar_conexao(self, request, pk=None):
+        """
+        Verifica na Graph API se o WhatsApp Oficial ainda está autorizado.
+        Se o token estiver inválido, marca o canal como desconectado (mantém o ID)
+        para o provedor poder clicar em Conectar sem excluir o canal.
+        """
+        canal = self.get_object()
+        if canal.tipo != 'whatsapp_oficial':
+            return Response(
+                {'success': False, 'error': 'Apenas WhatsApp Oficial'},
+                status=400,
+            )
+        from integrations.whatsapp_oficial_status import verify_whatsapp_oficial_connection
+        from core.serializers import CanalSerializer
+
+        result = verify_whatsapp_oficial_connection(canal)
+        canal.refresh_from_db()
+        return Response({
+            'success': bool(result.get('ok')),
+            **result,
+            'canal': CanalSerializer(canal, context={'request': request}).data,
+        })
 
     @action(detail=False, methods=['get'], url_path='disponiveis')
     def disponiveis(self, request):

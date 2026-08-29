@@ -365,6 +365,12 @@ def route_webhook_event(field: str, waba_id: str, value: dict):
     if field == "business_status_update":
         process_business_status_update(waba_id, value)
         return
+
+    # 1b. account_update - desconexão / app removido
+    if field == "account_update":
+        from .webhook_handlers.account_update import process_account_update
+        process_account_update(waba_id, value)
+        return
     
     # 2. account_alerts - IMPORTANTE
     if field == "account_alerts":
@@ -1567,9 +1573,10 @@ def process_incoming_messages(waba_id: str, value: dict):
             # IMPORTANTE: Fazer refresh antes de enviar via WebSocket para garantir dados atualizados (incluindo reply)
             message_obj.refresh_from_db()
 
+            media_extra: dict = {}
             if (
                 message_obj.is_from_customer
-                and message_type in ('audio', 'ptt', 'image', 'video')
+                and message_type in ('audio', 'ptt', 'image', 'video', 'document')
                 and file_url
                 and provedor
             ):
@@ -1582,6 +1589,7 @@ def process_incoming_messages(waba_id: str, value: dict):
                         message_type,
                         media_path,
                         caption=content or '',
+                        file_name=file_name or '',
                     )
                     if media_extra:
                         attrs = dict(message_obj.additional_attributes or {})
@@ -1601,6 +1609,7 @@ def process_incoming_messages(waba_id: str, value: dict):
                         conversation.id,
                         media_ai_err,
                     )
+                    media_extra = {}
             
             # ==========================================================
             # SALVAR MENSAGEM NO REDIS PARA MEMÓRIA DA IA
@@ -1907,7 +1916,9 @@ def process_incoming_messages(waba_id: str, value: dict):
             # ==========================================================
             # CHAMAR IA PARA RESPONDER AUTOMATICAMENTE (WhatsApp Official)
             # ==========================================================
-            # Texto, localização, áudio, imagem e vídeo (mídia já convertida em texto acima).
+            # Texto, localização, áudio, imagem, vídeo e documento (mídia já convertida em texto acima).
+            # Comprovante: se a KB exigir, a diretiva [OBRIGATÓRIO] já vai no content —
+            # a IA chama transferir_conversa (sem transferência automática no código).
             canal_ia_ativa = canal.ia_ativa if canal else True
             
             should_call_ai = (
@@ -1916,7 +1927,7 @@ def process_incoming_messages(waba_id: str, value: dict):
                 and (bot_mode or '').strip().lower() == 'ia'  # só se superadmin habilitou modo IA
                 and content
                 and message_obj.is_from_customer
-                and message_type in ("text", "location", "audio", "ptt", "image", "video")
+                and message_type in ("text", "location", "audio", "ptt", "image", "video", "document")
                 and canal_ia_ativa  # Apenas se a IA estiver ativa no canal
                 and getattr(provedor, 'is_active', True)  # Apenas se o provedor estiver ativo
             )

@@ -3,7 +3,7 @@ import { toast } from '../lib/notify';
 import axios from 'axios';
 import { MessageCircle, Send, XCircle, Edit2, Plus, Save, Globe, MoreVertical, Trash2, Bot, Copy, Check, Phone, Smartphone } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
-import fotoPerfilNull from '../assets/foto-perfil-null.png';
+import niohubLogo from '../assets/logo.png';
 import { buildAuthenticatedWebSocketUrl, buildPainelWebSocketEndpoint } from '../utils/websocketUrl';
 import { getApiBaseUrl, buildApiPath } from '../utils/apiBaseUrl';
 import { useNavigate } from 'react-router-dom';
@@ -336,17 +336,17 @@ function ChannelCard({ channel, onConnect, onDelete, onDisconnect, onCheckStatus
     <div className="bg-card p-6 rounded-xl shadow-lg border border-border flex justify-between items-center relative">
       <div className="flex items-center gap-4">
         {channel.tipo === 'whatsapp_session' ? (
-          <div className={`w-16 h-16 rounded-full overflow-hidden flex items-center justify-center relative -top-1 ${!shouldShowGif && profilePic ? 'bg-orange-500' : ''}`}>
+          <div className={`w-16 h-16 rounded-full overflow-hidden flex items-center justify-center relative -top-1 ${!shouldShowGif && profilePic ? 'bg-orange-500' : 'bg-black'}`}>
             {shouldShowGif ? (
-              <img key={`null-${channel.id}-${status}`} src={fotoPerfilNull} alt="Avatar" className="w-full h-full object-contain p-1" />
+              <img key={`null-${channel.id}-${status}`} src={niohubLogo} alt="NioHub" className="w-full h-full object-contain p-1" />
             ) : (
               <img key={`profile-${channel.id}-${status}`} src={profilePic} alt="Profile" className="w-full h-full object-cover" />
             )}
           </div>
         ) : channel.tipo === 'whatsapp' ? (
-          <div className={`w-16 h-16 rounded-full overflow-hidden flex items-center justify-center relative -top-1 ${!shouldShowGif && profilePic ? 'bg-green-500' : ''}`}>
+          <div className={`w-16 h-16 rounded-full overflow-hidden flex items-center justify-center relative -top-1 ${!shouldShowGif && profilePic ? 'bg-green-500' : 'bg-black'}`}>
             {shouldShowGif ? (
-              <img key={`null-${channel.id}-${status}`} src={fotoPerfilNull} alt="Avatar" className="w-full h-full object-contain p-1" />
+              <img key={`null-${channel.id}-${status}`} src={niohubLogo} alt="NioHub" className="w-full h-full object-contain p-1" />
             ) : (
               <img key={`profile-${channel.id}-${status}`} src={profilePic} alt="Profile" className="w-full h-full object-cover" />
             )}
@@ -360,9 +360,9 @@ function ChannelCard({ channel, onConnect, onDelete, onDisconnect, onCheckStatus
             )}
           </div>
         ) : channel.tipo === 'whatsapp_oficial' ? (
-          <div className={`w-16 h-16 rounded-full overflow-hidden flex items-center justify-center relative -top-1 ${!shouldShowGif && displayProfilePic ? 'bg-green-500' : 'bg-green-600'}`}>
+          <div className={`w-16 h-16 rounded-full overflow-hidden flex items-center justify-center relative -top-1 ${!shouldShowGif && displayProfilePic ? 'bg-green-500' : 'bg-black'}`}>
             {shouldShowGif ? (
-              <img key={`null-${channel.id}-${status}`} src={fotoPerfilNull} alt="Avatar" className="w-full h-full object-contain p-1" />
+              <img key={`null-${channel.id}-${status}`} src={niohubLogo} alt="NioHub" className="w-full h-full object-contain p-1" />
             ) : displayProfilePic && !profileLoadFailed ? (
               <img
                 key={`profile-${channel.id}-${status}`}
@@ -1037,10 +1037,36 @@ export default function Integrations({ provedorId, mode = 'full' }) {
     }
 
     fetchCanais(token)
-      .then(res => {
-
-        setChannels(res.data.results || res.data);
+      .then(async (res) => {
+        const list = res.data.results || res.data;
+        setChannels(list);
         setLoading(false);
+
+        // Verificar na Meta se canais Oficiais "conectados" ainda têm token válido
+        const oficiais = (Array.isArray(list) ? list : []).filter(
+          (c) => c.tipo === 'whatsapp_oficial' && c.token && c.phone_number_id
+        );
+        if (oficiais.length) {
+          await Promise.all(
+            oficiais.map(async (c) => {
+              try {
+                const vr = await axios.post(
+                  `/api/canais/${c.id}/verificar-conexao/`,
+                  {},
+                  { headers: { Authorization: `Token ${token}` } }
+                );
+                const updated = vr.data?.canal;
+                if (updated) {
+                  setChannels((prev) =>
+                    prev.map((ch) => (ch.id === updated.id ? { ...ch, ...updated } : ch))
+                  );
+                }
+              } catch (_) {
+                /* verificação best-effort */
+              }
+            })
+          );
+        }
       })
       .catch((error) => {
         setError(t('erro_carregar_canais'));
@@ -1526,6 +1552,30 @@ export default function Integrations({ provedorId, mode = 'full' }) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if (data.type === 'channel_status_update') {
+            const canalId = data.canal_id;
+            if (!canalId) return;
+            setChannels((prev) =>
+              prev.map((c) => {
+                if (c.id !== canalId) return c;
+                return {
+                  ...c,
+                  status: data.status_novo || c.status,
+                  state: data.status_novo || c.state,
+                  ativo: typeof data.ativo === 'boolean' ? data.ativo : c.ativo,
+                };
+              })
+            );
+            if (data.status_novo && data.status_novo !== 'connected') {
+              pushToast({
+                show: true,
+                message: 'WhatsApp Oficial desconectado. Clique em Conectar para reconectar sem perder o ID do canal.',
+                type: 'warning',
+              });
+              setTimeout(() => pushToast({ show: false, message: '', type: 'info' }), 6000);
+            }
+            return;
+          }
           if (data.type === 'whatsapp_session_status') {
             const canalId = data.canal_id;
             const status = data.status;

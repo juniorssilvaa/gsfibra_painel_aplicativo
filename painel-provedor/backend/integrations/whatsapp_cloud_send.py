@@ -707,6 +707,12 @@ def send_via_whatsapp_cloud_api(
             
             # Traduzir o erro para português
             translated_error = translate_whatsapp_error(error_code, error_subcode, error_message, error_details)
+
+            try:
+                from integrations.whatsapp_oficial_status import maybe_disconnect_on_graph_error
+                maybe_disconnect_on_graph_error(canal, error_code, error_message or '')
+            except Exception:
+                pass
             
             # Retornar erro em formato JSON para incluir código e mensagem
             error_response = {
