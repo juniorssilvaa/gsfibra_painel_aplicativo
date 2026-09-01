@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download, FileText, File, Image, Video, Music } from 'lucide-react';
-import { buildMediaUrl } from '../config/environment';
+import { buildMediaUrl, openMediaInNewTab } from '../config/environment';
 
 // pdfjs-dist será carregado dinamicamente no useEffect para compatibilidade com Vite
 
@@ -34,21 +34,7 @@ const FilePreview = ({ file, isCustomer = false, className = '', content = null 
   // o que impede o pdf.js de gerar miniatura.
   const getPreviewUrl = () => {
     if (!url) return null;
-
-    // Se já é URL completa, remover barra final e retornar
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return url.endsWith('/') ? url.slice(0, -1) : url;
-    }
-
-    // Construir URL usando buildMediaUrl (URL local)
-    let mediaUrl = buildMediaUrl(url);
-
-    // Remover barra final se houver (importante para evitar 404)
-    if (mediaUrl && mediaUrl.endsWith('/')) {
-      mediaUrl = mediaUrl.slice(0, -1);
-    }
-
-    return mediaUrl;
+    return buildMediaUrl(url);
   };
 
   // URL para download (tenta URL original se for pública; senão usa a local).
@@ -315,64 +301,11 @@ const FilePreview = ({ file, isCustomer = false, className = '', content = null 
 
   const handleDownload = async (e) => {
     e.stopPropagation();
-    e.preventDefault();
-    
-    if (!fileUrl) {
-      return;
-    }
+    await openMediaInNewTab(getDownloadUrl() || url, e);
+  };
 
-    // Construir URL completa
-    let downloadUrl = getDownloadUrl();
-    if (!downloadUrl) {
-      return;
-    }
-
-    // Remover barra final se houver
-    downloadUrl = downloadUrl.endsWith('/') ? downloadUrl.slice(0, -1) : downloadUrl;
-
-    try {
-      // Obter token de autenticação
-      const token = localStorage.getItem('token');
-      
-      // Tentar fazer download com fetch e autenticação
-      const response = await fetch(downloadUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Token ${token}`,
-          'Accept': '*/*'
-        },
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        // Obter blob do arquivo
-        const blob = await response.blob();
-        
-        if (blob && blob.size > 0) {
-          // Criar URL temporária do blob
-          const blobUrl = window.URL.createObjectURL(blob);
-          
-          // Criar link temporário para download
-          const link = document.createElement('a');
-          link.href = blobUrl;
-          link.download = displayName;
-          link.style.display = 'none';
-          document.body.appendChild(link);
-          link.click();
-          
-          // Limpar após um pequeno delay
-          setTimeout(() => {
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(blobUrl);
-          }, 100);
-          return;
-        }
-      }
-    } catch (error) {
-    }
-
-    // Fallback: abrir em nova aba (comportamento padrão do navegador)
-    window.open(downloadUrl, '_blank');
+  const handleOpenPreview = (e) => {
+    openMediaInNewTab(url || uazapiUrl, e);
   };
 
   // Componente de placeholder/shimmer para loading
@@ -412,6 +345,12 @@ const FilePreview = ({ file, isCustomer = false, className = '', content = null 
     return (
       <div 
         className={`file-preview-container ${className}`}
+        onClick={handleOpenPreview}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') handleOpenPreview(e);
+        }}
         style={{
           maxWidth: '320px',
           borderRadius: '8px',
@@ -578,6 +517,12 @@ const FilePreview = ({ file, isCustomer = false, className = '', content = null 
     return (
       <div 
         className={`file-preview-container ${className}`}
+        onClick={handleOpenPreview}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') handleOpenPreview(e);
+        }}
         style={{
           maxWidth: '320px',
           borderRadius: '8px',
@@ -713,6 +658,12 @@ const FilePreview = ({ file, isCustomer = false, className = '', content = null 
   return (
     <div 
       className={`file-preview-container ${className}`}
+      onClick={handleOpenPreview}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') handleOpenPreview(e);
+      }}
       style={{
         backgroundColor: fileConfig.bgColor,
         borderRadius: '8px',

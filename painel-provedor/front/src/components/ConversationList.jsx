@@ -932,6 +932,8 @@ const ConversationList = memo(({ onConversationSelect, selectedConversation, pro
       }
 
       if (convAtualizada && convAtualizada.id) {
+        let mergedForSelected = null;
+
         setConversations(prev => {
           const previousConversation = prev.find(c => c.id === convAtualizada.id);
           const isSelected = selectedId && Number(convAtualizada.id) === Number(selectedId);
@@ -958,6 +960,11 @@ const ConversationList = memo(({ onConversationSelect, selectedConversation, pro
               unread_count: unreadCount,
             }
             : { ...convAtualizada, unread_count: unreadCount };
+
+          if (isSelected) {
+            mergedForSelected = mergedConversation;
+          }
+
           const listaSemAntiga = prev.filter(c => c.id !== convAtualizada.id);
           const novaLista = [mergedConversation, ...listaSemAntiga];
           return novaLista.sort((a, b) => {
@@ -967,7 +974,10 @@ const ConversationList = memo(({ onConversationSelect, selectedConversation, pro
           });
         });
 
-        onConversationUpdateRef.current?.(convAtualizada);
+        // Só atualizar a conversa aberta no ChatArea se for a mesma — evita pular para outro atendimento
+        if (mergedForSelected) {
+          onConversationUpdateRef.current?.(mergedForSelected);
+        }
       } else if (isConversationEvent) {
         if (fetchTimeoutRef.current) {
           clearTimeout(fetchTimeoutRef.current);

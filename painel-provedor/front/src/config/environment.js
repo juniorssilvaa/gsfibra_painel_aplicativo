@@ -156,6 +156,47 @@ export const buildMediaUrl = (fileUrl) => {
   return stripTrailingSlashKeepQuery(fullUrl)
 }
 
+/** Abre mídia em nova aba sem navegar o painel (usa token para /api/media/). */
+export const openMediaInNewTab = async (fileUrl, event) => {
+  if (event) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  const mediaUrl = buildMediaUrl(fileUrl)
+  if (!mediaUrl) return
+
+  const token = localStorage.getItem('auth_token') || localStorage.getItem('token')
+
+  if (mediaUrl.includes('/api/media/') && token) {
+    try {
+      const response = await fetch(mediaUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Token ${token}`,
+          Accept: '*/*',
+        },
+        credentials: 'include',
+      })
+      if (response.ok) {
+        const blob = await response.blob()
+        if (blob && blob.size > 0) {
+          const blobUrl = window.URL.createObjectURL(blob)
+          const popup = window.open(blobUrl, '_blank', 'noopener,noreferrer')
+          if (popup) {
+            setTimeout(() => window.URL.revokeObjectURL(blobUrl), 120000)
+            return
+          }
+          window.URL.revokeObjectURL(blobUrl)
+        }
+      }
+    } catch (_) {
+      /* fallback abaixo */
+    }
+  }
+
+  window.open(mediaUrl, '_blank', 'noopener,noreferrer')
+}
+
 // Função para construir URLs de API
 export const buildApiUrl = (endpoint) => {
   return `${config.apiUrl}${endpoint}`

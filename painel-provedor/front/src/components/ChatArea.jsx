@@ -47,7 +47,7 @@ import chatBgPatternLight from '../assets/modo_claro.png';
 import CustomAudioPlayer from './ui/CustomAudioPlayer';
 import FilePreview from './FilePreview';
 import { formatWhatsAppPreviewHtml } from './InvoiceCardMessagePreview';
-import { buildMediaUrl } from '../config/environment';
+import { buildMediaUrl, openMediaInNewTab } from '../config/environment';
 import { buildAuthenticatedWebSocketUrl } from '../utils/websocketUrl';
 import { useTheme } from '../hooks/useTheme';
 import {
@@ -1521,8 +1521,13 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
           }
 
           if (data.type === 'conversation_updated') {
-            // Conversa atualizada via WebSocket
-            const updatedConversation = data.conversation || conversation;
+            const updatedConversation = data.conversation;
+            if (
+              !updatedConversation?.id
+              || Number(updatedConversation.id) !== Number(conversationRef.current?.id)
+            ) {
+              return;
+            }
 
             const wasHidden = isWaitingQueueContentHiddenForAgent(conversationRef.current, userRef.current);
             const nowHidden = isWaitingQueueContentHiddenForAgent(updatedConversation, userRef.current);
@@ -3237,9 +3242,8 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
     setPendingFilePreview(null);
   };
 
-  const openImageInNewTab = (imageUrl) => {
-    if (!imageUrl) return;
-    window.open(imageUrl, '_blank', 'noopener,noreferrer');
+  const openImageInNewTab = (imageUrl, event) => {
+    openMediaInNewTab(imageUrl, event);
   };
 
   // Função para renderizar mensagem com links clicáveis
@@ -3859,7 +3863,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                       {hasImage && hasRenderableAttachments && attachmentList.filter(att => att.file_type === 'image').map((attachment, index) => (
                         <div key={index} className={isPureImageMessage ? '' : 'mb-2'}>
                           <img
-                            src={attachment.data_url}
+                            src={buildMediaUrl(attachment.data_url)}
                             alt="Imagem"
                             className={`max-w-full h-auto cursor-pointer hover:opacity-95 transition-opacity block ${
                               isPureImageMessage
@@ -3868,7 +3872,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                                   ? 'w-full rounded-t-2xl'
                                   : 'rounded-lg'
                             }`}
-                            onClick={() => openImageInNewTab(attachment.data_url)}
+                            onClick={(e) => openImageInNewTab(attachment.data_url, e)}
                             style={{ maxHeight: isPureImageMessage ? '420px' : '300px' }}
                           />
 
@@ -3888,7 +3892,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                                   ? 'w-full rounded-t-2xl'
                                   : 'rounded-lg'
                             }`}
-                            onClick={() => openImageInNewTab(buildMediaUrl(msg.file_url))}
+                            onClick={(e) => openImageInNewTab(msg.file_url, e)}
                             style={{ maxHeight: isPureImageMessage ? '420px' : '300px' }}
                             onError={(e) => {
                               e.target.style.display = 'none';
@@ -3957,15 +3961,14 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                       {/* Anexos de documento */}
                       {hasDocument && hasRenderableAttachments && attachmentList.filter(att => att.file_type === 'file').map((attachment, index) => (
                         <div key={index} className="mb-2">
-                          <a
-                            href={attachment.data_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center space-x-2 p-2 bg-black/10 rounded-lg hover:bg-black/20 transition-colors"
+                          <button
+                            type="button"
+                            onClick={(e) => openMediaInNewTab(attachment.data_url, e)}
+                            className="flex w-full items-center space-x-2 p-2 bg-black/10 rounded-lg hover:bg-black/20 transition-colors text-left"
                           >
                             <Paperclip className="w-4 h-4" />
                             <span className="text-sm">{attachment.file_name || 'Documento'}</span>
-                          </a>
+                          </button>
 
                         </div>
                       ))}
@@ -4175,8 +4178,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                                   <button
                                     type="button"
                                     onClick={(e) => {
-                                      e.stopPropagation();
-                                      window.open(pdfUrl, '_blank');
+                                      openMediaInNewTab(buildMediaUrl(pdfUrl), e);
                                     }}
                                     className="m-2 flex w-[calc(100%-1rem)] items-center justify-between rounded-md border border-[#d9dce0] bg-[#f2f3f5] p-3 text-left transition-colors hover:bg-[#e8eaed]"
                                   >
@@ -4286,7 +4288,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                                       navigator.clipboard.writeText(lineCode.trim());
                                       copyFeedback(e.currentTarget, 'Código do boleto copiado!');
                                     } else if (pdfUrl) {
-                                      window.open(pdfUrl, '_blank');
+                                      openMediaInNewTab(buildMediaUrl(pdfUrl), e);
                                     } else {
                                       toast.info('Código do boleto indisponível nesta mensagem');
                                     }

@@ -218,6 +218,15 @@ class MessageSerializer(serializers.ModelSerializer):
 
         if not raw:
             return None
+
+        # IDs numéricos da Meta (download falhou) não são URLs servíveis
+        if isinstance(raw, str) and raw.isdigit():
+            return None
+
+        if isinstance(raw, str) and not raw.startswith(('http://', 'https://', '/')):
+            if not raw.startswith('api/media/') and 'media/messages/' not in raw:
+                return None
+
         return sign_media_url(raw)
     
     def get_sender(self, obj):

@@ -4,6 +4,11 @@ Todas as mudanças notáveis do projeto NioChat serão documentadas neste arquiv
 
 **Fonte oficial do histórico no produto:** `CHANGELOG.json` na raiz do repositório (servido por `/api/changelog/` e exibido no modal de versões). Atualize apenas esse JSON para novas versões.
 
+## [2.67.0] - 2026-09-01
+
+### 🐛 Corrigido
+- **Atendimento / Mídia**: corrigido erro em que, em alguns casos, as mídias retornavam 404 por assinatura expirada ao abrir PDF ou imagem no painel. A abertura passa a usar autenticação do atendente e a conversa aberta não troca mais ao visualizar anexos.
+
 ## [2.66.0] - 2026-08-29
 
 ### 🐛 Corrigido
