@@ -129,9 +129,30 @@ export default function Contacts({ provedorId }) {
         }
       });
 
-      const { created, updated, skipped, errors } = res.data || {};
+      const { created, updated, skipped, skipped_no_phone, skipped_unchanged, errors, headers } = res.data || {};
       const errCount = Array.isArray(errors) ? errors.length : 0;
-      toast.success(`Importação concluída.\nCriados: ${created || 0}\nAtualizados: ${updated || 0}\nIgnorados: ${skipped || 0}\nErros: ${errCount}`);
+      const parts = [
+        `Criados: ${created || 0}`,
+        `Atualizados: ${updated || 0}`,
+        `Ignorados: ${skipped || 0}`,
+      ];
+      if (skipped_no_phone) parts.push(`Sem telefone: ${skipped_no_phone}`);
+      if (skipped_unchanged) parts.push(`Já existiam: ${skipped_unchanged}`);
+      if (errCount) parts.push(`Erros: ${errCount}`);
+
+      if ((created || 0) === 0 && (updated || 0) === 0) {
+        const hint = skipped_no_phone
+          ? ' Nenhuma coluna de telefone válida foi encontrada (use Telefone, Celular, WhatsApp ou Número).'
+          : skipped_unchanged
+            ? ' Todos os contatos do CSV já estavam cadastrados.'
+            : '';
+        toast.error(`Importação sem novos contatos. ${parts.join(' · ')}.${hint}`);
+      } else {
+        toast.success(`Importação concluída. ${parts.join(' · ')}`);
+      }
+      if (headers && (created || 0) === 0 && skipped_no_phone) {
+        console.warn('[import-csv] Cabeçalhos detectados:', headers);
+      }
       await fetchContacts();
     } catch (err) {
       const msg =

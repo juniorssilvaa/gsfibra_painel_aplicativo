@@ -4,6 +4,11 @@ Todas as mudanças notáveis do projeto NioChat serão documentadas neste arquiv
 
 **Fonte oficial do histórico no produto:** `CHANGELOG.json` na raiz do repositório (servido por `/api/changelog/` e exibido no modal de versões). Atualize apenas esse JSON para novas versões.
 
+## [2.68.0] - 2026-09-02
+
+### 🐛 Corrigido
+- **Contatos**: corrigido importe de contatos de outros sistemas — corrigido erro em que, em alguns casos, ao importar uma lista de contatos em CSV a coluna de telefone vinha com nome diferente e, com isso, era rejeitada pelo NioHub.
+
 ## [2.67.0] - 2026-09-01
 
 ### 🐛 Corrigido

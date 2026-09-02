@@ -203,14 +203,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.67.0"
+                "current_version": "2.68.0"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.67.0"
+            "current_version": "2.68.0"
         }, safe=False)
 
 
@@ -8887,25 +8887,55 @@ class InboundWebhookView(APIView):
         )
 
         ok, send_err, extra = process_inbound_webhook_dispatch(provedor, payload)
-        if not ok:
-            logger.warning('[inbound-webhook] Falha no envio: %s', send_err)
-            return Response(
-                {
-                    'success': False,
-                    'received': False,
-                    'error': send_err or 'Falha ao enviar mensagem.',
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         extra = extra if isinstance(extra, dict) else {}
+        phone = extract_recipient_phone(payload) or ''
+        template_name = (
+            payload.get('template_name')
+            or template_meta.get('template_name')
+            or ''
+        )
+        mode = (extra.get('mode') or '').strip()
+        channel = (extra.get('send_channel') or '').strip()
+        message_id = extra.get('message_id') or ''
+
+        if not ok:
+            err_detail = send_err or 'Falha ao enviar mensagem.'
+            logger.warning('[inbound-webhook] Falha no envio: %s', err_detail)
+            body = {
+                'status': 'Erro',
+                'detail': err_detail,
+                'success': False,
+            }
+            logger.info('[inbound-webhook] Resposta SGP: %s', body)
+            return Response(body, status=status.HTTP_400_BAD_REQUEST)
+
+        if mode == 'template' and template_name:
+            detail = f'Template "{template_name}" enviado via WhatsApp'
+            channel_label = 'WhatsApp (template)'
+        elif channel in ('interactive', 'order_details'):
+            detail = 'Cobrança interativa enviada via WhatsApp'
+            channel_label = 'WhatsApp (cobrança)'
+        elif channel == 'text' or mode == 'plain':
+            detail = 'Mensagem de texto enviada via WhatsApp'
+            channel_label = 'WhatsApp (texto)'
+        else:
+            detail = 'Mensagem enviada via WhatsApp'
+            channel_label = 'WhatsApp'
+
+        if phone:
+            detail = f'{detail} para {phone}'
+
         body = {
+            'status': 'Enviado',
+            'detail': detail,
+            'channel': channel_label,
             'success': True,
-            'received': True,
-            'message_id': extra.get('message_id'),
-            'send_channel': extra.get('send_channel'),
-            'mode': extra.get('mode'),
         }
+        if message_id:
+            body['message_id'] = message_id
+        if template_name and mode == 'template':
+            body['template'] = template_name
+
         logger.info('[inbound-webhook] Resposta SGP: %s', body)
         return Response(body, status=status.HTTP_200_OK)
 

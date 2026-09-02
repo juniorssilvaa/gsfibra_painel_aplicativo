@@ -232,28 +232,35 @@ class ContactViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         
-        # Filtrar por provedor específico se fornecido (para superadmin)
+        # Filtrar por provedor específico se fornecido
         provedor_id = self.request.query_params.get('provedor_id')
-        if provedor_id and user.user_type == 'superadmin':
+        provedor_id_int = None
+        if provedor_id:
             try:
                 provedor_id_int = int(provedor_id)
-                return Contact.objects.filter(provedor_id=provedor_id_int)
             except (ValueError, TypeError):
-                pass
-        
+                provedor_id_int = None
+
         if user.user_type == 'superadmin':
+            if provedor_id_int:
+                return Contact.objects.filter(provedor_id=provedor_id_int)
             return Contact.objects.all()
-        else:
-            provedores = Provedor.objects.filter(admins=user)
-            if provedores.exists():
-                # Verificar se algum provedor está suspenso
-                for provedor in provedores:
-                    if not provedor.is_active:
-                        from rest_framework.exceptions import PermissionDenied
-                        raise PermissionDenied('Seu provedor está temporariamente suspenso. Entre em contato com o suporte.')
-                return Contact.objects.filter(provedor__in=provedores)
+
+        provedores = Provedor.objects.filter(admins=user)
+        if not provedores.exists():
             return Contact.objects.none()
-    
+
+        for provedor in provedores:
+            if not provedor.is_active:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied('Seu provedor está temporariamente suspenso. Entre em contato com o suporte.')
+
+        if provedor_id_int:
+            if provedores.filter(id=provedor_id_int).exists():
+                return Contact.objects.filter(provedor_id=provedor_id_int)
+            return Contact.objects.none()
+
+        return Contact.objects.filter(provedor__in=provedores)    
     def perform_create(self, serializer):
         """Define provedor ao criar contato quando não enviado (contexto da conta atual)."""
         user = self.request.user
@@ -302,32 +309,45 @@ class ContactViewSet(viewsets.ModelViewSet):
         """
         Importa contatos via CSV.
 
-        Aceita colunas (case-insensitive) típicas do export do painel:
-        - Nome / name
-        - Email / email
-        - Telefone / phone
+        Aceita colunas (case-insensitive) típicas do export do painel e de ERPs:
+        - Nome / name / cliente / nome do cliente
+        - Email / email / e-mail
+        - Telefone / phone / celular / whatsapp / numero / fone
         Colunas extras são ignoradas.
         """
         import csv
         import io
         import re
+        import unicodedata
 
         user = request.user
         upload = request.FILES.get('file') or request.FILES.get('csv') or request.FILES.get('arquivo')
         if not upload:
             return Response({'error': 'Arquivo CSV é obrigatório (campo file).'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Resolver provedor alvo
+        # Resolver provedor alvo (respeita provedor_id quando o usuário tem acesso)
         provedor = None
-        provedor_id = request.data.get('provedor') or request.data.get('provedor_id') or request.query_params.get('provedor_id')
+        provedor_id = (
+            request.data.get('provedor')
+            or request.data.get('provedor_id')
+            or request.query_params.get('provedor_id')
+        )
+        provedor_id_int = None
+        if provedor_id not in (None, ''):
+            try:
+                provedor_id_int = int(provedor_id)
+            except (TypeError, ValueError):
+                provedor_id_int = None
+
         if user.user_type == 'superadmin':
-            if provedor_id:
-                try:
-                    provedor = Provedor.objects.filter(id=int(provedor_id)).first()
-                except (TypeError, ValueError):
-                    provedor = None
+            if provedor_id_int:
+                provedor = Provedor.objects.filter(id=provedor_id_int).first()
         else:
-            provedor = Provedor.objects.filter(admins=user, is_active=True).first()
+            admin_qs = Provedor.objects.filter(admins=user, is_active=True)
+            if provedor_id_int:
+                provedor = admin_qs.filter(id=provedor_id_int).first()
+            if not provedor:
+                provedor = admin_qs.first()
 
         if not provedor:
             return Response({'error': 'Provedor não encontrado para o usuário atual.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -335,7 +355,7 @@ class ContactViewSet(viewsets.ModelViewSet):
         raw = upload.read()
         # Tentar UTF-8 e fallback para latin-1 (export do Excel)
         text = None
-        for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
+        for enc in ('utf-8-sig', 'utf-8', 'cp1252', 'latin-1'):
             try:
                 text = raw.decode(enc)
                 break
@@ -344,60 +364,179 @@ class ContactViewSet(viewsets.ModelViewSet):
         if text is None:
             return Response({'error': 'Não foi possível ler o CSV (encoding inválido).'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Detectar delimitador comum
-        sample = text[:4096]
-        delimiter = ';' if sample.count(';') > sample.count(',') else ','
+        # Detectar delimitador comum (; , ou tab)
+        sample = text[:8192]
+        counts = {
+            ';': sample.count(';'),
+            ',': sample.count(','),
+            '\t': sample.count('\t'),
+        }
+        delimiter = max(counts, key=counts.get) if any(counts.values()) else ','
 
         f = io.StringIO(text)
         reader = csv.DictReader(f, delimiter=delimiter)
         if not reader.fieldnames:
             return Response({'error': 'CSV sem cabeçalho (header).'}, status=status.HTTP_400_BAD_REQUEST)
 
-        def _norm_key(k: str) -> str:
-            return re.sub(r'\s+', ' ', str(k or '').strip().lower())
+        def _fold(k: str) -> str:
+            s = unicodedata.normalize('NFKD', str(k or ''))
+            s = ''.join(ch for ch in s if not unicodedata.combining(ch))
+            s = re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+            return re.sub(r'\s+', ' ', s)
 
-        field_map = {_norm_key(k): k for k in (reader.fieldnames or [])}
+        field_map = {_fold(k): k for k in (reader.fieldnames or []) if k is not None}
 
-        def _get(row, *keys):
+        NAME_KEYS = (
+            'nome', 'name', 'cliente', 'nome do cliente', 'nome cliente',
+            'razao social', 'contato', 'full name', 'organization name',
+            'organization', 'empresa',
+        )
+        # Export Google Contacts (nomes separados)
+        GOOGLE_FIRST = ('first name', 'given name', 'primeiro')
+        GOOGLE_MIDDLE = ('middle name', 'additional name')
+        GOOGLE_LAST = ('last name', 'family name', 'sobrenome')
+        GOOGLE_NICK = ('nickname', 'apelido')
+        EMAIL_KEYS = (
+            'email', 'e mail', 'mail', 'correo',
+            'e mail 1 value', 'email 1 value', 'email address',
+        )
+        PHONE_KEYS = (
+            'telefone', 'phone', 'celular', 'whatsapp', 'whats app', 'fone',
+            'numero', 'número', 'numero telefone', 'telefone celular',
+            'tel', 'mobile', 'cell', 'cellphone', 'msisdn',
+            # Google Contacts
+            'phone 1 value', 'phone 2 value', 'phone 3 value',
+            'mobile phone', 'home phone', 'work phone',
+        )
+
+        def _get(row, keys):
             for k in keys:
-                col = field_map.get(_norm_key(k))
-                if col and col in row:
+                col = field_map.get(_fold(k))
+                if col and col in row and row.get(col) not in (None, ''):
                     return row.get(col)
             return None
+
+        def _cell(row, *keys):
+            raw = _get(row, keys)
+            return str(raw).strip() if raw not in (None, '') else ''
+
+        def _compose_name(row) -> str:
+            """Monta nome do painel/ERP ou do export Google Contacts."""
+            direct = _cell(row, *NAME_KEYS)
+            if direct:
+                return direct[:255]
+
+            parts = [
+                _cell(row, *GOOGLE_FIRST),
+                _cell(row, *GOOGLE_MIDDLE),
+                _cell(row, *GOOGLE_LAST),
+            ]
+            composed = ' '.join(p for p in parts if p).strip()
+            if composed:
+                return composed[:255]
+
+            nick = _cell(row, *GOOGLE_NICK)
+            if nick:
+                return nick[:255]
+            return ''
 
         def _clean_phone(v: str) -> str:
             s = str(v or '').strip()
             if not s:
                 return ''
             s = s.replace('@s.whatsapp.net', '').replace('@lid', '')
-            # manter + se vier; remover tudo que não é dígito
+            # Excel às vezes exporta como 5,563E+12
+            if re.match(r'^\d+[,\.]\d+[eE]\+\d+$', s):
+                try:
+                    s = str(int(float(s.replace(',', '.'))))
+                except Exception:
+                    pass
             digits = re.sub(r'\D', '', s)
             return digits
+
+        def _looks_like_phone(digits: str) -> bool:
+            return 10 <= len(digits) <= 15
+
+        def _extract_phone(row) -> str:
+            phone_raw = _get(row, PHONE_KEYS)
+            if phone_raw in (None, '') and phone_col_fallback:
+                phone_raw = row.get(phone_col_fallback)
+            # Google: qualquer coluna "Phone N - Value"
+            if phone_raw in (None, ''):
+                for folded, col in field_map.items():
+                    if folded.startswith('phone ') and folded.endswith(' value'):
+                        val = row.get(col)
+                        if val not in (None, ''):
+                            phone_raw = val
+                            break
+            return _clean_phone(phone_raw)
+
+        # Se headers não baterem, tentar achar coluna de telefone pelo conteúdo da 1ª linha
+        phone_col_fallback = None
+        has_phone_header = any(
+            _fold(k) in field_map for k in PHONE_KEYS
+        ) or any(
+            f.startswith('phone ') and f.endswith(' value') for f in field_map
+        )
+        if not has_phone_header:
+            peek = io.StringIO(text)
+            peek_reader = csv.DictReader(peek, delimiter=delimiter)
+            first = next(peek_reader, None) or {}
+            for col, val in first.items():
+                digits = _clean_phone(val)
+                if _looks_like_phone(digits):
+                    phone_col_fallback = col
+                    break
 
         created = 0
         updated = 0
         skipped = 0
+        skipped_no_phone = 0
+        skipped_unchanged = 0
         errors = []
 
         with transaction.atomic():
             for idx, row in enumerate(reader, start=2):  # 1 = header
                 try:
-                    name = (_get(row, 'Nome', 'name') or '').strip()
-                    email = (_get(row, 'Email', 'email') or '').strip() or None
-                    phone = _clean_phone(_get(row, 'Telefone', 'phone') or '')
+                    name = _compose_name(row)
+                    email_raw = _get(row, EMAIL_KEYS)
+                    if email_raw in (None, ''):
+                        for folded, col in field_map.items():
+                            if 'mail' in folded and folded.endswith('value'):
+                                email_raw = row.get(col)
+                                if email_raw not in (None, ''):
+                                    break
+                    email = (str(email_raw).strip() if email_raw not in (None, '') else '') or None
+                    phone = _extract_phone(row)
 
-                    if not phone:
+                    if not phone or not _looks_like_phone(phone):
                         skipped += 1
+                        skipped_no_phone += 1
                         continue
                     if not name:
                         name = 'Sem nome'
 
+                    # Normalizar Brasil: se veio sem 55 e tem 10/11 dígitos, prefixar
+                    if len(phone) in (10, 11) and not phone.startswith('55'):
+                        phone = f'55{phone}'
+
+                    if len(phone) > 20:
+                        skipped += 1
+                        skipped_no_phone += 1
+                        continue
+
                     obj = Contact.objects.filter(provedor=provedor, phone=phone).first()
                     if obj:
                         changed = False
-                        if name and obj.name != name:
-                            obj.name = name
-                            changed = True
+                        # Atualiza nome se veio vazio/"Sem nome" ou mudou
+                        if name and name != 'Sem nome' and (
+                            not (obj.name or '').strip()
+                            or obj.name.strip() in ('Sem nome',)
+                            or obj.name != name
+                        ):
+                            if obj.name != name:
+                                obj.name = name
+                                changed = True
                         if email != obj.email:
                             obj.email = email
                             changed = True
@@ -406,6 +545,7 @@ class ContactViewSet(viewsets.ModelViewSet):
                             updated += 1
                         else:
                             skipped += 1
+                            skipped_unchanged += 1
                     else:
                         Contact.objects.create(
                             provedor=provedor,
@@ -424,6 +564,10 @@ class ContactViewSet(viewsets.ModelViewSet):
                 'created': created,
                 'updated': updated,
                 'skipped': skipped,
+                'skipped_no_phone': skipped_no_phone,
+                'skipped_unchanged': skipped_unchanged,
+                'delimiter': delimiter,
+                'headers': list(reader.fieldnames or []),
                 'errors': errors[:50],
             },
             status=status.HTTP_200_OK

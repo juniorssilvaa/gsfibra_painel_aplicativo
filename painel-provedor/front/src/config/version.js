@@ -1,7 +1,7 @@
 /**
  * Configuração de versão do aplicativo
  */
-export const APP_VERSION = '2.67.0';
+export const APP_VERSION = '2.68.0';
 
 /**
  * Informações da versão
