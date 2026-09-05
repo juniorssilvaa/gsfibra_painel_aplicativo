@@ -1,0 +1,208 @@
+version: "3.8"
+
+services:
+  # Credenciais Postgres: POSTGRES_PASSWORD é obrigatório (evita stack subir com env vazio).
+  # POSTGRES_DB / POSTGRES_USER têm padrão; pode sobrescrever no Portainer ou stack.env.
+  # pgAdmin fora da rede Docker: túnel SSH (não exponha 5432 na internet sem firewall).
+  superadmin-postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-niohub_superadmin}
+      POSTGRES_USER: ${POSTGRES_USER:-niohub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no Portainer ou em stack.env}
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=64MB"]
+    volumes:
+      - superadmin-postgres:/var/lib/postgresql/data
+    networks:
+      - NioNet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  superadmin-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - superadmin-redis:/data
+    networks:
+      - NioNet
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  superadmin-rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - superadmin-rabbitmq:/var/lib/rabbitmq
+    networks:
+      - NioNet
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  superadmin-backend:
+    image: ghcr.io/juniorssilvaa/niohub_chat-superadmin-backend:admin
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG:-False}
+      ENVIRONMENT: production
+      POSTGRES_DB: ${POSTGRES_DB:-niohub_superadmin}
+      POSTGRES_USER: ${POSTGRES_USER:-niohub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no Portainer ou em stack.env}
+      POSTGRES_HOST: superadmin-postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: superadmin-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: 0
+      REDIS_AI_DB: 1
+      REDIS_CONVERSATION_DB: 2
+      REDIS_CACHE_DB: 3
+      DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@superadmin-rabbitmq:5672//
+      BACKEND_URL: https://app.niohub.com.br
+      FRONTEND_URL: https://app.niohub.com.br
+      ALLOWED_HOSTS: app.niohub.com.br,api.niohub.com.br,localhost,127.0.0.1
+      CORS_ALLOWED_ORIGINS: https://app.niohub.com.br,https://api.niohub.com.br
+      CSRF_TRUSTED_ORIGINS: https://app.niohub.com.br,https://api.niohub.com.br
+      SUBDOMAIN_TENANT_ENABLED: "true"
+      SUBDOMAIN_PRIMARY_DOMAINS: niohub.com.br
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      EVOLUTION_URL: ${EVOLUTION_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET}
+      INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID}
+      INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN}
+      WHATSAPP_SYSTEM_USER_TOKEN: ${WHATSAPP_SYSTEM_USER_TOKEN}
+      SKIP_WEBHOOK_SIGNATURE: ${SKIP_WEBHOOK_SIGNATURE:-false}
+      ADMIN_WEBHOOK_SECRET: ${ADMIN_WEBHOOK_SECRET}
+      SUPERADMIN_CI_TOKEN: ${SUPERADMIN_CI_TOKEN:-}
+      GITHUB_USERNAME: ${GITHUB_USERNAME:-}
+      GHCR_TOKEN: ${GHCR_TOKEN:-}
+      # Base pública do App Mobile (webhooks SGP / Flutter)
+      MOBILE_API_PUBLIC_BASE: ${MOBILE_API_PUBLIC_BASE:-https://api.niohub.com.br/v1}
+      FIREBASE_CREDENTIALS: ${FIREBASE_CREDENTIALS:-/opt/app_provedor/firebase-credentials.json}
+    volumes:
+      - superadmin-media:/app/backend/media
+      - superadmin-static:/app/backend/staticfiles
+      - /opt/app_provedor/firebase-credentials.json:/opt/app_provedor/firebase-credentials.json:ro
+    networks:
+      - NioNet
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=NioNet"
+      - "traefik.http.routers.superadmin-api.rule=Host(`app.niohub.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/v1`) || PathPrefix(`/api-token-auth`) || PathPrefix(`/auth`) || PathPrefix(`/webhook`) || PathPrefix(`/webhooks`) || PathPrefix(`/media`) || PathPrefix(`/ws`))"
+      - "traefik.http.routers.superadmin-api.entrypoints=websecure"
+      - "traefik.http.routers.superadmin-api.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.superadmin-api.priority=30"
+      - "traefik.http.services.superadmin-api.loadbalancer.server.port=8010"
+      # api.niohub.com.br → backend (Meta webhooks + App Mobile /v1/)
+      - "traefik.http.routers.superadmin-api-webhook.rule=Host(`api.niohub.com.br`)"
+      - "traefik.http.routers.superadmin-api-webhook.entrypoints=websecure"
+      - "traefik.http.routers.superadmin-api-webhook.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.superadmin-api-webhook.priority=30"
+      - "traefik.http.routers.superadmin-api-webhook.service=superadmin-api"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  superadmin-dramatiq:
+    image: ghcr.io/juniorssilvaa/niohub_chat-dramatiq:stable
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: "False"
+      ENVIRONMENT: production
+      POSTGRES_DB: ${POSTGRES_DB:-niohub_superadmin}
+      POSTGRES_USER: ${POSTGRES_USER:-niohub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no Portainer ou em stack.env}
+      POSTGRES_HOST: superadmin-postgres
+      POSTGRES_PORT: 5432
+      DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@superadmin-rabbitmq:5672//
+      REDIS_HOST: superadmin-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # Worker do painel-provedor: não usar heartbeat de cobrança no DB do superadmin
+      RUN_HEARTBEAT: "false"
+      BACKEND_URL: https://app.niohub.com.br
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      EVOLUTION_URL: ${EVOLUTION_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+    networks:
+      - NioNet
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  superadmin-frontend:
+    image: ghcr.io/juniorssilvaa/niohub_chat-superadmin:admin
+    networks:
+      - NioNet
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=NioNet"
+      - "traefik.http.routers.superadmin-front.rule=Host(`app.niohub.com.br`)"
+      - "traefik.http.routers.superadmin-front.entrypoints=websecure"
+      - "traefik.http.routers.superadmin-front.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.superadmin-front.priority=1"
+      - "traefik.http.services.superadmin-front.loadbalancer.server.port=80"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  # Painel provedor (bundle com /app/meta/connect-inner). Imagem stable com VITE_META_CONNECT_ORIGIN na CI.
+  niohub-meta-connect-frontend:
+    image: ghcr.io/juniorssilvaa/niohub_chat-frontend:stable
+    networks:
+      - NioNet
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=NioNet"
+      - "traefik.http.routers.niohub-connect-fe.rule=Host(`connect.niohub.com.br`)"
+      - "traefik.http.routers.niohub-connect-fe.entrypoints=websecure"
+      - "traefik.http.routers.niohub-connect-fe.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.niohub-connect-fe.priority=1"
+      - "traefik.http.routers.niohub-connect-fe.service=niohub-connect-fe-svc"
+      - "traefik.http.services.niohub-connect-fe-svc.loadbalancer.server.port=8012"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+networks:
+  NioNet:
+    external: true
+
+volumes:
+  superadmin-postgres:
+  superadmin-redis:
+  superadmin-rabbitmq:
+  superadmin-media:
+  superadmin-static:
