@@ -97,6 +97,33 @@ COMPROVANTE_DIRECTIVE = (
     'humano retoma, sem citar o setor financeiro.'
 )
 
+COMPROVANTE_DIRECTIVE_NO_HOURS = (
+    '[OBRIGATÓRIO — COMPROVANTE DE PAGAMENTO] '
+    'Na PRIMEIRA resposta, chame APENAS transferir_conversa com equipe_nome=FINANCEIRO '
+    '(ou o nome exato da equipe financeira nas regras do provedor). '
+    'NÃO chame consultar_horario_atendimento nem outras tools antes da transferência. '
+    'Não peça CPF, não faça perguntas e não espere confirmação. '
+    'Na resposta ao cliente: NÃO diga que está transferindo para o FINANCEIRO/setor '
+    'nem informe horário de atendimento, feriado ou próximo horário. '
+    'Confirme de forma simples que o comprovante será encaminhado para ser '
+    'ADICIONADO AO SISTEMA e realizar a BAIXA DO PAGAMENTO. '
+    'Após "Obrigada!" (ou a frase do provedor na base de conhecimento), ENCERRAR a resposta. '
+    'NÃO envie segunda mensagem com horário. NÃO use despedida/emoji extras além do que '
+    'as regras do provedor pedirem para comprovante.'
+)
+
+
+def provider_informs_hours_after_comprovante(provedor) -> bool:
+    """True se o provedor optou por informar horário após transferir comprovante."""
+    return bool(getattr(provedor, 'ai_inform_hours_after_comprovante_transfer', False))
+
+
+def comprovante_directive_for_provedor(provedor) -> str:
+    if provider_informs_hours_after_comprovante(provedor):
+        return COMPROVANTE_DIRECTIVE
+    return COMPROVANTE_DIRECTIVE_NO_HOURS
+
+
 UNREADABLE_DOC_DIRECTIVE = (
     '[OBRIGATÓRIO — DOCUMENTO ILEGÍVEL] '
     'Não foi possível ler ou interpretar o arquivo enviado. '
@@ -284,7 +311,12 @@ def enrich_inbound_media_for_ai(
         if reason:
             extra['payment_receipt_reason'] = reason
         if kb_force:
-            _append_directive(parts, extra, COMPROVANTE_DIRECTIVE, 'comprovante_kb_directive')
+            _append_directive(
+                parts,
+                extra,
+                comprovante_directive_for_provedor(provedor),
+                'comprovante_kb_directive',
+            )
             logger.info(
                 '[media_inbound] Comprovante + regra KB → diretiva para a IA provedor=%s',
                 getattr(provedor, 'id', None),

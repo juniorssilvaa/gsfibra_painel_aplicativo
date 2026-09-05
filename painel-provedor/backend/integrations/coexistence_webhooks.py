@@ -1715,12 +1715,51 @@ def process_incoming_messages(waba_id: str, value: dict):
             # Verificar o modo de atendimento do provedor
             bot_mode = getattr(provedor, 'bot_mode', 'ia')
             chatbot_handled = False
+            csat_processed_early = False
             skip_auto_resolve_chatbot = suppress_inbound_reopen and inbound_was_closed
             automacao_agendada = verificar_automacao_agendada(provedor)
             
             if is_customer_message and not skip_auto_resolve_chatbot:
-                # Bloqueio financeiro: não permitir IA/Chatbot para provedor inativo
-                if not getattr(provedor, 'is_active', True):
+                # Liberar trava de CSAT se o cliente pediu algo novo (não é nota CSAT)
+                from conversations.inbound_routing import resolve_inbound_csat_gate
+
+                csat_gate = resolve_inbound_csat_gate(
+                    conversation,
+                    message_text=content or '',
+                    button_id=additional_attrs.get('button_id'),
+                    contact=contact,
+                    ia_team=ia_team,
+                    provedor=provedor,
+                    allow_closing_reopen=True,
+                )
+                if csat_gate.get('reopened'):
+                    conversation.refresh_from_db()
+                    conversation.created_at = timezone.now()
+                    conversation.save(update_fields=['created_at'])
+                if csat_gate.get('csat_feedback'):
+                    csat_processed_early = True
+                    logger.info(
+                        '[WhatsAppWebhook] CSAT explícito processado — IA/chatbot não serão chamados conv=%s',
+                        conversation.id,
+                    )
+                    try:
+                        from core.chat_migration_service import chat_migration_service
+                        chat_migration_service.encerrar_e_migrar(
+                            conversation_id=conversation.id,
+                            metadata={
+                                'migrado_apos_csat': True,
+                                'csat_feedback_id': csat_gate['csat_feedback'].id,
+                                'rating': csat_gate['csat_feedback'].rating_value,
+                            },
+                        )
+                    except Exception as migration_err:
+                        logger.error(
+                            '[WhatsAppWebhook] Erro ao migrar pós-CSAT: %s',
+                            migration_err,
+                            exc_info=True,
+                        )
+                    chatbot_handled = False
+                elif not getattr(provedor, 'is_active', True):
                     logger.info(
                         f"[WhatsAppWebhook] IA/Chatbot suprimidos para provedor {provedor.id}: "
                         f"provedor inativo. Motivo: {getattr(provedor, 'block_reason', '')}"
@@ -1825,93 +1864,59 @@ def process_incoming_messages(waba_id: str, value: dict):
                     logger.debug(f"[WhatsAppWebhook] Provedor {provedor.id} em modo IA. Pulando ChatbotEngine.")
 
             # ==========================================================
-            # VERIFICAR CSAT (independente de modo bot/IA)
+            # CSAT: já tratado em resolve_inbound_csat_gate (acima).
+            # Fallback só se o gate não rodou (ex.: auto-resolve mantendo fechado).
             # ==========================================================
-            csat_processed = False
-            button_id_csat = (additional_attrs.get('button_id') or '')
-            is_csat_message = (
-                message_obj.is_from_customer
-                and content
-                and message_type in ('text', 'interactive')
-            ) or (
-                message_obj.is_from_customer
-                and str(button_id_csat).lower().startswith('csat_')
-            )
-            if is_csat_message:
+            csat_processed = bool(csat_processed_early)
+            if (
+                not csat_processed
+                and message_obj.is_from_customer
+                and (content or additional_attrs.get('button_id'))
+            ):
                 try:
-                    from conversations.models import CSATRequest
+                    from conversations.inbound_routing import (
+                        has_blocking_csat,
+                        is_explicit_csat_reply,
+                    )
                     from conversations.csat_automation import CSATAutomationService
-                    
-                    csat_pendente = CSATRequest.objects.filter(
-                        conversation=conversation,
-                        contact=contact,
-                        status__in=['sent', 'pending'],
-                    ).first()
-                    if not csat_pendente:
-                        csat_pendente = (
-                            CSATRequest.objects.filter(
-                                contact=contact,
-                                provedor=provedor,
-                                status__in=['sent', 'pending'],
-                            )
-                            .select_related('conversation')
-                            .order_by('-created_at')
-                            .first()
-                        )
-                    
-                    if csat_pendente:
-                        csat_conversation = csat_pendente.conversation or conversation
-                        logger.info(
-                            f"[WhatsAppWebhook] CSAT pendente conversa {csat_conversation.id} "
-                            f"(reply_conv={conversation.id}, tipo={message_type}, "
-                            f"button_id={additional_attrs.get('button_id')})"
-                        )
-                        
+
+                    button_id_csat = additional_attrs.get('button_id')
+                    if has_blocking_csat(conversation) and is_explicit_csat_reply(
+                        content or '', button_id_csat
+                    ):
                         csat_feedback = CSATAutomationService.process_csat_response(
-                            message_text=str(content or button_id_csat),
-                            conversation=csat_conversation,
+                            message_text=str(content or button_id_csat or ''),
+                            conversation=conversation,
                             contact=contact,
-                            button_id=additional_attrs.get('button_id'),
+                            button_id=button_id_csat,
                         )
-                        
                         if csat_feedback:
-                            # CSAT processado com sucesso
                             csat_processed = True
-                            logger.info(f"[WhatsAppWebhook] CSAT processado com sucesso - rating={csat_feedback.rating_value} ({csat_feedback.emoji_rating})")
-                            
-                            # Garantir que conversa do CSAT permaneça fechada (não reabrir)
-                            if csat_conversation.status != 'closed':
-                                csat_conversation.status = 'closed'
-                                csat_conversation.save(update_fields=['status'])
-                            # Se a resposta abriu outra conversa, fechar também
-                            if conversation.id != csat_conversation.id and conversation.status != 'closed':
+                            if conversation.status != 'closed':
                                 conversation.status = 'closed'
                                 conversation.save(update_fields=['status'])
-                            
-                            # Migrar histórico para Supabase APÓS receber feedback CSAT
                             try:
                                 from core.chat_migration_service import chat_migration_service
-                                migration_result = chat_migration_service.encerrar_e_migrar(
-                                    conversation_id=csat_conversation.id,
+                                chat_migration_service.encerrar_e_migrar(
+                                    conversation_id=conversation.id,
                                     metadata={
                                         'migrado_apos_csat': True,
                                         'csat_feedback_id': csat_feedback.id,
-                                        'rating': csat_feedback.rating_value
-                                    }
+                                        'rating': csat_feedback.rating_value,
+                                    },
                                 )
-                                if migration_result.get('success'):
-                                    logger.info(f"[WhatsAppWebhook] Histórico migrado para Supabase após feedback CSAT - conversa {csat_conversation.id}")
-                                else:
-                                    logger.warning(f"[WhatsAppWebhook] Falha ao migrar histórico após CSAT: {migration_result.get('errors', [])}")
                             except Exception as migration_err:
-                                logger.error(f"[WhatsAppWebhook] Erro ao migrar histórico após CSAT: {migration_err}", exc_info=True)
-                            
-                            # Não chamar IA - apenas processar CSAT e agradecer
-                            logger.info(f"[WhatsAppWebhook] CSAT processado - IA não será chamada para conversa {csat_conversation.id}")
-                        else:
-                            logger.warning(f"[WhatsAppWebhook] Falha ao processar resposta CSAT para conversa {csat_conversation.id}")
+                                logger.error(
+                                    '[WhatsAppWebhook] Erro ao migrar pós-CSAT (fallback): %s',
+                                    migration_err,
+                                    exc_info=True,
+                                )
                 except Exception as csat_err:
-                    logger.error(f"[WhatsAppWebhook] Erro ao verificar/processar CSAT: {csat_err}", exc_info=True)
+                    logger.error(
+                        '[WhatsAppWebhook] Erro no fallback CSAT: %s',
+                        csat_err,
+                        exc_info=True,
+                    )
             
             # ==========================================================
             # CHAMAR IA PARA RESPONDER AUTOMATICAMENTE (WhatsApp Official)

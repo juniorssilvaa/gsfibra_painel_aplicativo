@@ -112,6 +112,104 @@ def has_blocking_csat(conversation) -> bool:
     ).exists()
 
 
+def is_explicit_csat_reply(message_text=None, button_id=None) -> bool:
+    """True só para lista interativa csat_*, emoji CSAT ou nota curta explícita."""
+    from conversations.csat_whatsapp import parse_csat_rating
+
+    return parse_csat_rating(message_text or '', button_id=button_id) is not None
+
+
+def expire_blocking_csat(conversation) -> int:
+    """
+    Expira CSAT pendente/enviado desta conversa e do contato.
+    Usado quando o cliente manda um novo pedido em vez de avaliar.
+    """
+    from conversations.models import CSATRequest
+
+    now = timezone.now()
+    count = CSATRequest.objects.filter(
+        conversation=conversation,
+        status__in=['sent', 'pending'],
+    ).update(status='expired', responded_at=now)
+
+    contact = getattr(conversation, 'contact', None)
+    if contact:
+        count += CSATRequest.objects.filter(
+            contact=contact,
+            status__in=['sent', 'pending'],
+        ).exclude(conversation=conversation).update(
+            status='expired',
+            responded_at=now,
+        )
+
+    if count:
+        logger.info(
+            '[InboundRouting] CSAT expirado para novo atendimento conv=%s count=%s',
+            getattr(conversation, 'id', None),
+            count,
+        )
+    return count
+
+
+def resolve_inbound_csat_gate(
+    conversation,
+    *,
+    message_text='',
+    button_id=None,
+    contact=None,
+    ia_team=None,
+    provedor=None,
+    allow_closing_reopen: bool = True,
+) -> dict:
+    """
+    Decide o que fazer com CSAT pendente em mensagem inbound.
+
+    Retorna:
+      - csat_feedback: feedback se a mensagem for CSAT explícito (bots devem parar)
+      - reopened: True se a conversa foi reaberta para IA/chatbot
+      - csat_expired: True se CSAT foi expirado para liberar atendimento
+    """
+    result = {
+        'csat_feedback': None,
+        'reopened': False,
+        'csat_expired': False,
+    }
+
+    blocking = has_blocking_csat(conversation)
+    if blocking and is_explicit_csat_reply(message_text, button_id):
+        try:
+            from conversations.csat_automation import CSATAutomationService
+
+            feedback = CSATAutomationService.process_csat_response(
+                message_text=str(message_text or ''),
+                conversation=conversation,
+                contact=contact or getattr(conversation, 'contact', None),
+                button_id=button_id,
+            )
+            result['csat_feedback'] = feedback
+            if feedback and conversation.status != 'closed':
+                conversation.status = 'closed'
+                conversation.save(update_fields=['status'])
+        except Exception:
+            logger.exception(
+                '[InboundRouting] Falha ao processar CSAT explícito conv=%s',
+                getattr(conversation, 'id', None),
+            )
+        return result
+
+    if blocking:
+        expire_blocking_csat(conversation)
+        result['csat_expired'] = True
+
+    result['reopened'] = reopen_conversation_for_bot(
+        conversation,
+        ia_team=ia_team,
+        provedor=provedor,
+        allow_closing_reopen=allow_closing_reopen,
+    )
+    return result
+
+
 def reopen_conversation_for_bot(
     conversation,
     *,

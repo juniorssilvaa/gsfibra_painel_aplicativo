@@ -275,45 +275,50 @@ def _parse_attachments(attachments, conversation_id, mid):
 
 
 def _maybe_process_csat(conversation, contact, content: str, button_id=None) -> bool:
-    """Processa resposta CSAT se houver pesquisa pendente (espelha WhatsApp webhook)."""
+    """
+    Processa CSAT explícito se houver pesquisa pendente.
+    Se a mensagem não for nota CSAT, expira a pesquisa e reabre atendimento (retorna False).
+    """
     if not content and not button_id:
         return False
     try:
-        from conversations.models import CSATRequest
+        from conversations.inbound_routing import (
+            expire_blocking_csat,
+            has_blocking_csat,
+            is_explicit_csat_reply,
+            reopen_conversation_for_bot,
+        )
         from conversations.csat_automation import CSATAutomationService
 
-        csat_pendente = CSATRequest.objects.filter(
-            conversation=conversation,
-            contact=contact,
-            status__in=['sent', 'pending'],
-        ).first()
-        if not csat_pendente:
-            csat_pendente = (
-                CSATRequest.objects.filter(
-                    contact=contact,
-                    status__in=['sent', 'pending'],
-                )
-                .select_related('conversation')
-                .order_by('-created_at')
-                .first()
-            )
-        if not csat_pendente:
+        if not has_blocking_csat(conversation):
             return False
 
-        csat_conversation = csat_pendente.conversation or conversation
-        logger.info(
-            '[InstagramWebhook] CSAT pendente conv=%s (reply_conv=%s) button_id=%s',
-            csat_conversation.id,
-            conversation.id,
-            button_id,
-        )
+        provedor = getattr(getattr(conversation, 'inbox', None), 'provedor', None)
+
+        if not is_explicit_csat_reply(content or '', button_id):
+            expire_blocking_csat(conversation)
+            reopen_conversation_for_bot(
+                conversation, provedor=provedor, allow_closing_reopen=True
+            )
+            conversation.refresh_from_db()
+            logger.info(
+                '[InstagramWebhook] CSAT expirado — novo atendimento conv=%s',
+                conversation.id,
+            )
+            return False
+
         csat_feedback = CSATAutomationService.process_csat_response(
             message_text=str(content or ''),
-            conversation=csat_conversation,
+            conversation=conversation,
             contact=contact,
             button_id=button_id,
         )
         if not csat_feedback:
+            expire_blocking_csat(conversation)
+            reopen_conversation_for_bot(
+                conversation, provedor=provedor, allow_closing_reopen=True
+            )
+            conversation.refresh_from_db()
             return False
 
         logger.info(

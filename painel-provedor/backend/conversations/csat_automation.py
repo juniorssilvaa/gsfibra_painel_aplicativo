@@ -286,48 +286,23 @@ Pode deixar sua opinião em uma única mensagem:
             
             from .csat_whatsapp import parse_csat_rating
             parsed = parse_csat_rating(message_text, button_id=button_id)
-            emoji_rating, rating_value = None, None
-            if parsed:
-                rating_value, emoji_rating = parsed
+            if not parsed:
+                # Não é resposta CSAT explícita (lista/emoji/nota curta).
+                # Não forçar rating — o inbound deve expirar o CSAT e reabrir atendimento.
                 logger.info(
-                    f"[CSAT] Resposta lista/botão: rating={rating_value} "
-                    f"button_id={button_id} texto={message_text!r}"
+                    '[CSAT] Mensagem ignorada como CSAT (não explícita) conv=%s texto=%r button_id=%r',
+                    getattr(conversation, 'id', None),
+                    (message_text or '')[:120],
+                    button_id,
                 )
-            
-            # 1. Primeiro tentar detectar emoji diretamente
-            if not emoji_rating:
-                for emoji, value in cls.EMOJI_RATINGS.items():
-                    if emoji in message_text:
-                        emoji_rating, rating_value = emoji, value
-                        break
-            
-            # 2. Se não encontrou emoji, tentar detectar palavras-chave no texto
-            if not emoji_rating:
-                message_lower = message_text.lower().strip()
-                # Remover aspas e caracteres especiais para comparação
-                message_clean = message_lower.replace('"', '').replace("'", '').replace('"', '').strip()
-                
-                # Procurar palavras-chave (ordem de prioridade: rating 5 -> 1)
-                for keyword, value in sorted(cls.TEXT_RATINGS.items(), key=lambda x: x[1], reverse=True):
-                    if keyword in message_clean:
-                        rating_value = value
-                        emoji_map = {1: '😡', 2: '😕', 3: '😐', 4: '🙂', 5: '🤩'}
-                        emoji_rating = emoji_map[value]
-                        logger.info(f"CSAT detectado por palavra-chave: '{keyword}' = rating {value}")
-                        break
-            
-            # 3. Se ainda não encontrou, usar IA para analisar sentimento
-            if not emoji_rating:
-                ai_analysis = cls._analyze_feedback_with_ai(message_text, csat_request.provedor)
-                if ai_analysis:
-                    emoji_rating, rating_value = ai_analysis['emoji'], ai_analysis['rating']
-                    logger.info(f"CSAT detectado por IA: rating {rating_value}")
-            
-            # 4. Se nada funcionou, usar neutro como padrão
-            if not emoji_rating:
-                emoji_rating, rating_value = '😐', 3
-                logger.info(f"CSAT usando padrão neutro (rating 3) para: '{message_text}'")
-            
+                return None
+
+            rating_value, emoji_rating = parsed
+            logger.info(
+                f"[CSAT] Resposta explícita: rating={rating_value} "
+                f"button_id={button_id} texto={message_text!r}"
+            )
+
             response_time = timezone.now() - csat_request.conversation_ended_at
             response_time_minutes = int(response_time.total_seconds() / 60)
             

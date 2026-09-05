@@ -4,6 +4,14 @@ Todas as mudanças notáveis do projeto NioChat serão documentadas neste arquiv
 
 **Fonte oficial do histórico no produto:** `CHANGELOG.json` na raiz do repositório (servido por `/api/changelog/` e exibido no modal de versões). Atualize apenas esse JSON para novas versões.
 
+## [2.69.0] - 2026-09-05
+
+### 🐛 Corrigido
+- **CSAT**: corrigido módulo do CSAT.
+
+### 🔧 Melhoria
+- **IA**: melhorias no módulo da IA.
+
 ## [2.68.0] - 2026-09-02
 
 ### 🐛 Corrigido

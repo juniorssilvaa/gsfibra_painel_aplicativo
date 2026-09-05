@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { SlidersHorizontal, ArrowLeft, ShieldAlert, Receipt, Filter, FileText } from 'lucide-react';
+import { SlidersHorizontal, ArrowLeft, ShieldAlert, Receipt, Filter, FileText, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import InvoiceCardMessagePreview, {
   INVOICE_PREVIEW_SAMPLES,
@@ -41,6 +41,7 @@ export default function AttendanceRulesSettings({ provedorId }) {
   const [chatbotName, setChatbotName] = useState('');
   const [invoiceIntroTemplate, setInvoiceIntroTemplate] = useState('');
   const [provedorNome, setProvedorNome] = useState('');
+  const [informHoursAfterComprovante, setInformHoursAfterComprovante] = useState(false);
 
   const authHeaders = () => ({
     Authorization: `Token ${localStorage.getItem('auth_token') || localStorage.getItem('token') || ''}`,
@@ -82,6 +83,7 @@ export default function AttendanceRulesSettings({ provedorId }) {
         setChatbotName(prov.chatbot_name || '');
         setInvoiceIntroTemplate(prov.invoice_intro_message_template || '');
         setProvedorNome(prov.nome || '');
+        setInformHoursAfterComprovante(Boolean(prov.ai_inform_hours_after_comprovante_transfer));
       } catch {
         setError('Erro ao carregar regras de atendimento.');
       } finally {
@@ -138,6 +140,7 @@ export default function AttendanceRulesSettings({ provedorId }) {
           auto_resolve_keywords: autoResolveKeywords.trim(),
           chatbot_name: chatbotName.trim().slice(0, 80),
           invoice_intro_message_template: invoiceIntroTemplate.trim(),
+          ai_inform_hours_after_comprovante_transfer: informHoursAfterComprovante,
         },
         { headers: authHeaders() }
       );
@@ -354,6 +357,33 @@ export default function AttendanceRulesSettings({ provedorId }) {
               </div>
             </div>
           )}
+        </section>
+
+        <section className="bg-card border border-border rounded-xl p-6 space-y-6 w-full">
+          <div className="flex items-center justify-between gap-2 border-b border-border pb-4">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-violet-400" strokeWidth={2.5} />
+              <h2 className="text-lg font-semibold text-foreground">Comprovante</h2>
+            </div>
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <h3 className="text-base font-medium text-foreground mb-1">
+                Informar horário de atendimento após comprovante
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {informHoursAfterComprovante
+                  ? 'Ligado: se as regras da base de conhecimento levarem a uma transferência após o comprovante e estiver fora do expediente, a IA pode informar horário/feriado ao cliente.'
+                  : 'Desligado (recomendado): a IA segue o que estiver na base de conhecimento do provedor (confirmar, encerrar, etc.) e não informa horário de funcionamento ao cliente após o comprovante.'}
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={informHoursAfterComprovante}
+              onChange={setInformHoursAfterComprovante}
+              label="Informar horário após comprovante"
+            />
+          </div>
         </section>
 
         <section className="bg-card border border-border rounded-xl p-6 space-y-6 w-full">

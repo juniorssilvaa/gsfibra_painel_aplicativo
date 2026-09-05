@@ -203,14 +203,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.68.0"
+                "current_version": "2.69.0"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.68.0"
+            "current_version": "2.69.0"
         }, safe=False)
 
 
@@ -2366,6 +2366,17 @@ def webhook_evolution_uazapi(request):
                     pass
                 return JsonResponse({'success': True, 'csat_processed': True, 'rating': csat_feedback.emoji_rating})
                 """
+            else:
+                # Não é nota CSAT — liberar e seguir atendimento normal
+                try:
+                    from conversations.inbound_routing import expire_blocking_csat, reopen_conversation_for_bot
+                    expire_blocking_csat(conversation)
+                    reopen_conversation_for_bot(
+                        conversation, provedor=provedor, allow_closing_reopen=True
+                    )
+                    conversation.refresh_from_db()
+                except Exception as reopen_err:
+                    logger.warning('[UAZAPI] Falha ao liberar CSAT/reabrir: %s', reopen_err)
         
         # Se não foi processado como CSAT, continuar fluxo normal da IA
         

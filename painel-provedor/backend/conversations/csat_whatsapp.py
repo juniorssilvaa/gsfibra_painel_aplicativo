@@ -59,17 +59,25 @@ def parse_csat_rating(
         if emoji in text:
             return rating, emoji
 
-    title_to_rating = {
+    # Texto livre: só nota explícita / curta (evita "bom dia", "ok, quero boleto", etc.)
+    lower = text.lower().strip()
+    # Remover prefixos comuns de título da lista ("😡 péssimo")
+    for emoji in ('😡', '😕', '😐', '🙂', '🤩'):
+        if lower.startswith(emoji):
+            lower = lower[len(emoji):].strip()
+            break
+    exact = {
         'péssimo': (1, '😡'), 'pessimo': (1, '😡'),
         'ruim': (2, '😕'),
-        'regular': (3, '😐'),
+        'regular': (3, '😐'), 'neutro': (3, '😐'),
         'bom': (4, '🙂'),
         'excelente': (5, '🤩'),
+        '1': (1, '😡'), '2': (2, '😕'), '3': (3, '😐'), '4': (4, '🙂'), '5': (5, '🤩'),
+        'nota 1': (1, '😡'), 'nota 2': (2, '😕'), 'nota 3': (3, '😐'),
+        'nota 4': (4, '🙂'), 'nota 5': (5, '🤩'),
     }
-    lower = text.lower()
-    for keyword, pair in title_to_rating.items():
-        if keyword in lower:
-            return pair
+    if lower in exact:
+        return exact[lower]
 
     return None
 

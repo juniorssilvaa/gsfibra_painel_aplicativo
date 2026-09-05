@@ -587,6 +587,40 @@ class DatabaseTools:
                 # Verificar horário de atendimento
                 horario_info = self._verificar_horario_atendimento()
 
+                motivo_l = (motivo or '').lower()
+                equipe_l = (equipe_nome or '').lower()
+                is_comprovante_transfer = (
+                    any(x in motivo_l for x in ('comprovante', 'pagamento', 'baixa', 'recibo', 'pix'))
+                    or 'financ' in equipe_l
+                )
+                inform_hours_comprovante = bool(
+                    getattr(self.provedor, 'ai_inform_hours_after_comprovante_transfer', False)
+                )
+                suppress_hours = is_comprovante_transfer and not inform_hours_comprovante
+
+                if suppress_hours:
+                    mensagem_sugerida = ''
+                    nota = (
+                        'Transferencia realizada (comprovante). NÃO informe horário, feriado '
+                        'nem próximo horário. NÃO diga que transferiu para o FINANCEIRO/setor. '
+                        'Responda só com a confirmação/mensagem do provedor sobre o comprovante '
+                        '(ex.: encaminhado para baixa) e encerre.'
+                    )
+                else:
+                    mensagem_sugerida = (
+                        '' if horario_info.get('dentro_horario')
+                        else formatar_aviso_transferencia_fora_horario(
+                            horario_info,
+                            setor=equipe_nome,
+                        ).strip()
+                    )
+                    nota = (
+                        'Transferencia realizada. Se horario_info.dentro_horario=false, INFORME o cliente '
+                        'com o motivo (feriado, se houver em horario_info.feriado/mensagem) e quando sera '
+                        'atendido (proximo_horario). Nao omita o nome do feriado. '
+                        'Pode usar mensagem_cliente_sugerida como base e reescrever com suas palavras.'
+                    )
+
                 resultado = {
                     'success': True,
                     'transferencia_realizada': True,
@@ -597,35 +631,28 @@ class DatabaseTools:
                     'motivo': motivo,
                     'em_espera': True,
                     'horario_info': horario_info,
-                    'mensagem_cliente_sugerida': (
-                        '' if horario_info.get('dentro_horario')
-                        else formatar_aviso_transferencia_fora_horario(
-                            horario_info,
-                            setor=equipe_nome,
-                        ).strip()
-                    ),
-                    'nota': (
-                        'Transferencia realizada. Se horario_info.dentro_horario=false, INFORME o cliente '
-                        'com o motivo (feriado, se houver em horario_info.feriado/mensagem) e quando sera '
-                        'atendido (proximo_horario). Nao omita o nome do feriado. '
-                        'Pode usar mensagem_cliente_sugerida como base e reescrever com suas palavras.'
-                    ),
+                    'mensagem_cliente_sugerida': mensagem_sugerida,
+                    'nota': nota,
                 }
 
-                motivo_l = (motivo or '').lower()
-                equipe_l = (equipe_nome or '').lower()
-                if (
-                    any(x in motivo_l for x in ('comprovante', 'pagamento', 'baixa', 'recibo', 'pix'))
-                    or 'financ' in equipe_l
-                ):
-                    resultado['instrucao_ia'] = (
-                        'Comprovante/financeiro: NÃO diga ao cliente que transferiu para o '
-                        'FINANCEIRO, setor financeiro ou equipe financeira. '
-                        'Confirme de forma simples que o comprovante/documento será encaminhado '
-                        'para ser ADICIONADO AO SISTEMA e realizar a BAIXA DO PAGAMENTO. '
-                        'Se horario_info.dentro_horario=false, informe quando o atendimento humano '
-                        'retoma (proximo_horario/feriado), sem citar o setor.'
-                    )
+                if is_comprovante_transfer:
+                    if suppress_hours:
+                        resultado['instrucao_ia'] = (
+                            'Comprovante/financeiro: NÃO diga ao cliente que transferiu para o '
+                            'FINANCEIRO/setor. NÃO informe horário de atendimento. '
+                            'Confirme de forma simples que o comprovante será encaminhado '
+                            'para ser ADICIONADO AO SISTEMA e realizar a BAIXA DO PAGAMENTO. '
+                            'Ignore mensagem_cliente_sugerida e horario_info para a resposta ao cliente.'
+                        )
+                    else:
+                        resultado['instrucao_ia'] = (
+                            'Comprovante/financeiro: NÃO diga ao cliente que transferiu para o '
+                            'FINANCEIRO, setor financeiro ou equipe financeira. '
+                            'Confirme de forma simples que o comprovante/documento será encaminhado '
+                            'para ser ADICIONADO AO SISTEMA e realizar a BAIXA DO PAGAMENTO. '
+                            'Se horario_info.dentro_horario=false, informe quando o atendimento humano '
+                            'retoma (proximo_horario/feriado), sem citar o setor.'
+                        )
                     resultado['nota'] = (
                         resultado['nota'] + ' ' + resultado['instrucao_ia']
                     )

@@ -589,20 +589,29 @@ class TelegramService:
 
             # ---------- Modo CHATBOT (mesmo fluxo do WhatsApp) ----------
             if bot_mode == 'chatbot':
-                from conversations.inbound_routing import reopen_conversation_for_bot
+                from conversations.inbound_routing import resolve_inbound_csat_gate
                 from core.chatbot_engine import ChatbotEngine
 
                 def _prepare_chatbot_conv():
-                    reopen_conversation_for_bot(
+                    gate = resolve_inbound_csat_gate(
                         conversation,
-                        ia_team=None,
+                        message_text=content or '',
+                        contact=contact,
                         provedor=provedor,
                         allow_closing_reopen=True,
                     )
                     conversation.refresh_from_db()
-                    return conversation
+                    return gate
 
-                conversation = await sync_to_async(_prepare_chatbot_conv)()
+                csat_gate = await sync_to_async(_prepare_chatbot_conv)()
+                if csat_gate.get('csat_feedback'):
+                    logger.info(
+                        '[Telegram] CSAT explícito processado — chatbot não chamado conv=%s',
+                        conversation.id,
+                    )
+                    return
+
+                conversation = await sync_to_async(Conversation.objects.get)(id=conversation.id)
 
                 is_assigned = conversation.assignee_id is not None
                 is_human_queue = bool(getattr(conversation, 'waiting_for_agent', False))
@@ -686,6 +695,27 @@ class TelegramService:
             if bot_mode != 'ia':
                 logger.info(
                     f"[Telegram] Automação ignorada: provedor {provedor.id} bot_mode={bot_mode}"
+                )
+                return
+
+            # Liberar CSAT pendente se o cliente pediu algo novo (não nota explícita)
+            def _release_csat_for_ia():
+                from conversations.inbound_routing import resolve_inbound_csat_gate
+                gate = resolve_inbound_csat_gate(
+                    conversation,
+                    message_text=content or '',
+                    contact=contact,
+                    provedor=provedor,
+                    allow_closing_reopen=True,
+                )
+                conversation.refresh_from_db()
+                return gate
+
+            csat_gate = await sync_to_async(_release_csat_for_ia)()
+            if csat_gate.get('csat_feedback'):
+                logger.info(
+                    '[Telegram] CSAT explícito processado — IA não chamada conv=%s',
+                    conversation.id,
                 )
                 return
 

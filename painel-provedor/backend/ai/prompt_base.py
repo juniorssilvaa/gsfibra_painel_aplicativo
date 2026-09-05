@@ -40,7 +40,7 @@ Nunca use respostas engessadas ou textos prontos: redija sempre a mensagem ao cl
 Nunca diga que realizou uma ação sem executar a ferramenta correspondente.
 
 Para transferir a um humano, prefira transferir_inteligente (analisa a conversa e escolhe a equipe). Se falhar, use buscar_equipes e depois transferir_conversa com o nome EXATO de uma equipe listada.
-Se a transferência ocorrer fora do horário ou em feriado (horario_info.dentro_horario=false), informe o cliente o motivo (nome do feriado, se houver) e quando será atendido (proximo_horario), com base no retorno da tool.
+Se a transferência ocorrer fora do horário ou em feriado (horario_info.dentro_horario=false), informe o cliente o motivo (nome do feriado, se houver) e quando será atendido (proximo_horario), com base no retorno da tool — exceto quando as regras de comprovante abaixo pedirem o contrário.
 
 Caso existam várias ferramentas possíveis, escolha a mais específica.
 
@@ -268,9 +268,24 @@ def build_provider_config_block(provedor: Provedor) -> str:
             "ao chamar gerar_fatura use tipo_pagamento=ambos.\n\n"
             + regras
         )
-        from ai.media_inbound import provider_kb_requires_comprovante_transfer
+        from ai.media_inbound import (
+            provider_informs_hours_after_comprovante,
+            provider_kb_requires_comprovante_transfer,
+        )
 
         if provider_kb_requires_comprovante_transfer(provedor):
+            inform_hours = provider_informs_hours_after_comprovante(provedor)
+            hours_rule = (
+                "6. Se a transferência for fora do horário/feriado, informe quando o atendimento "
+                "humano retoma (proximo_horario), sem citar o setor financeiro.\n"
+                if inform_hours
+                else (
+                    "6. NÃO informe horário de atendimento, feriado nem próximo horário após "
+                    "comprovante — mesmo se horario_info.dentro_horario=false. "
+                    "Ignore mensagem_cliente_sugerida de horário nesses casos. "
+                    "Não anuncie a transferência; só a confirmação/mensagem do provedor.\n"
+                )
+            )
             partes.append(
                 "\n## Comprovantes e documentos de pagamento (regras do provedor)\n"
                 "A base de conhecimento acima exige transferência imediata de comprovantes/"
@@ -282,7 +297,8 @@ def build_provider_config_block(provedor: Provedor) -> str:
                 "4. NÃO diga ao cliente que está transferindo para o FINANCEIRO/setor.\n"
                 "5. Confirme que o comprovante será encaminhado para ser ADICIONADO AO SISTEMA "
                 "e realizar a BAIXA DO PAGAMENTO.\n"
-                "Se houver marcação [OBRIGATÓRIO — COMPROVANTE] na mensagem do cliente, "
+                + hours_rule
+                + "Se houver marcação [OBRIGATÓRIO — COMPROVANTE] na mensagem do cliente, "
                 "chame transferir_conversa na primeira resposta (antes de qualquer outra tool)."
             )
 

@@ -1509,56 +1509,66 @@ def webhook_evolution_uazapi(request):
                     )
                     conv_created = True
             else:
-                # Conversa estava fechada ('closed') — reabrir para bot ou criar nova se CSAT ainda pendente
-                from conversations.inbound_routing import has_blocking_csat, reopen_conversation_for_bot
+                # Conversa estava fechada ('closed') — reabrir para bot;
+                # se CSAT pendente e mensagem NÃO for nota CSAT, expira CSAT e reabre.
+                from conversations.inbound_routing import (
+                    expire_blocking_csat,
+                    has_blocking_csat,
+                    is_explicit_csat_reply,
+                    reopen_conversation_for_bot,
+                )
 
-                if has_blocking_csat(existing_conversation):
-                    # Ainda aguardando resposta CSAT — manter conversa fechada neste turno
+                msg_text_for_csat = str(content or '') if not isinstance(content, dict) else ''
+                if has_blocking_csat(existing_conversation) and is_explicit_csat_reply(msg_text_for_csat):
+                    # Nota CSAT explícita — manter fechada; o bloco CSAT abaixo processa
                     conversation = existing_conversation
                     if conversation.status != 'closed':
                         conversation.status = 'closed'
                         conversation.save(update_fields=['status'])
                     conv_created = False
-                elif reopen_conversation_for_bot(
-                    existing_conversation,
-                    provedor=provedor,
-                    allow_closing_reopen=True,
-                ):
-                    conversation = existing_conversation
-                    if conversation.inbox != inbox:
-                        conversation.inbox = inbox
-                        conversation.save(update_fields=['inbox'])
-                    conv_created = False
                 else:
-                    # Limpar memória Redis total (Reset de IA e Cronômetro)
-                    try:
-                        from core.redis_memory_service import redis_memory_service
-                        redis_memory_service.clear_conversation_memory_sync(
-                            provedor_id=existing_conversation.inbox.provedor_id if existing_conversation.inbox else None,
-                            conversation_id=existing_conversation.id
+                    if has_blocking_csat(existing_conversation):
+                        expire_blocking_csat(existing_conversation)
+                    if reopen_conversation_for_bot(
+                        existing_conversation,
+                        provedor=provedor,
+                        allow_closing_reopen=True,
+                    ):
+                        conversation = existing_conversation
+                        if conversation.inbox != inbox:
+                            conversation.inbox = inbox
+                            conversation.save(update_fields=['inbox'])
+                        conv_created = False
+                    else:
+                        # Limpar memória Redis total (Reset de IA e Cronômetro)
+                        try:
+                            from core.redis_memory_service import redis_memory_service
+                            redis_memory_service.clear_conversation_memory_sync(
+                                provedor_id=existing_conversation.inbox.provedor_id if existing_conversation.inbox else None,
+                                conversation_id=existing_conversation.id
+                            )
+                            redis_memory_service.clear_memory_sync(
+                                existing_conversation.inbox.provedor_id if existing_conversation.inbox else None,
+                                existing_conversation.id,
+                                existing_conversation.inbox.channel_type if existing_conversation.inbox else 'whatsapp',
+                                contact.phone
+                            )
+                        except Exception as e:
+                            logger.error(f"Erro ao limpar memória total após fechamento {existing_conversation.id}: {e}")
+                        
+                        # Criar nova conversa para novo atendimento (Reset de Cronômetro)
+                        conversation = ConversationModel.objects.create(
+                            contact=contact,
+                            inbox=inbox,
+                            status='snoozed',  # Nova conversa começa com IA
+                            assignee=None,
+                            additional_attributes={
+                                'instance': instance,
+                                'event': event_type,
+                                'reset_cycle': True
+                            }
                         )
-                        redis_memory_service.clear_memory_sync(
-                            existing_conversation.inbox.provedor_id if existing_conversation.inbox else None,
-                            existing_conversation.id,
-                            existing_conversation.inbox.channel_type if existing_conversation.inbox else 'whatsapp',
-                            contact.phone
-                        )
-                    except Exception as e:
-                        logger.error(f"Erro ao limpar memória total após fechamento {existing_conversation.id}: {e}")
-                    
-                    # Criar nova conversa para novo atendimento (Reset de Cronômetro)
-                    conversation = ConversationModel.objects.create(
-                        contact=contact,
-                        inbox=inbox,
-                        status='snoozed',  # Nova conversa começa com IA
-                        assignee=None,
-                        additional_attributes={
-                            'instance': instance,
-                            'event': event_type,
-                            'reset_cycle': True
-                        }
-                    )
-                    conv_created = True
+                        conv_created = True
         else:
             # Criar nova conversa
             conversation = ConversationModel.objects.create(
@@ -2196,7 +2206,20 @@ def webhook_evolution_uazapi(request):
                 # Retornar ANTES de processar pela IA - não reabrir conversa
                 return JsonResponse({'status': 'csat_processed', 'message': 'CSAT processado, conversa permanece fechada'})
             else:
-                logger.warning(f"✗ CSAT não foi processado para conversa {conversation.id} - process_csat_response retornou None")
+                # Mensagem não é nota CSAT — liberar trava e seguir para IA/chatbot
+                logger.info(
+                    f"[UAZAPI] Mensagem após CSAT não é avaliação explícita conv={conversation.id} — "
+                    f"expirando CSAT e reabrindo atendimento"
+                )
+                try:
+                    from conversations.inbound_routing import expire_blocking_csat, reopen_conversation_for_bot
+                    expire_blocking_csat(conversation)
+                    reopen_conversation_for_bot(
+                        conversation, provedor=provedor, allow_closing_reopen=True
+                    )
+                    conversation.refresh_from_db()
+                except Exception as reopen_err:
+                    logger.warning(f"[UAZAPI] Falha ao liberar CSAT/reabrir conv={conversation.id}: {reopen_err}")
                 
                 # CÓDIGO REMOVIDO - estava causando mensagem duplicada
                 """
@@ -2500,13 +2523,26 @@ def webhook_evolution_uazapi(request):
                     'bloqueado': True
                 }
             else:
-                # Verificar se há CSAT pendente - se houver, NÃO chamar IA (já foi processado acima)
+                # Se ainda houver CSAT pendente sem ser nota explícita, liberar antes da IA
                 csat_pendente_verificar = None
                 if CSATRequest:
                     csat_pendente_verificar = CSATRequest.objects.filter(
                         conversation=conversation,
                         status='sent'
                     ).first()
+                    if csat_pendente_verificar:
+                        from conversations.inbound_routing import (
+                            expire_blocking_csat,
+                            is_explicit_csat_reply,
+                            reopen_conversation_for_bot,
+                        )
+                        if not is_explicit_csat_reply(str(content or '')):
+                            expire_blocking_csat(conversation)
+                            reopen_conversation_for_bot(
+                                conversation, provedor=provedor, allow_closing_reopen=True
+                            )
+                            conversation.refresh_from_db()
+                            csat_pendente_verificar = None
                 
                 # Verificar se conversa está atribuída ou em espera
                 # Permitir resposta da IA se não estiver atribuída, não estiver fechada E não houver CSAT pendente

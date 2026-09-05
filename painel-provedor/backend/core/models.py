@@ -347,6 +347,16 @@ class Provedor(models.Model):
         verbose_name='Termos do filtro',
         help_text='Um termo por linha. Obrigatório quando o filtro estiver ligado.',
     )
+    ai_inform_hours_after_comprovante_transfer = models.BooleanField(
+        default=False,
+        verbose_name='Informar horário após comprovante',
+        help_text=(
+            'Se ativado e as regras da base de conhecimento levarem a uma transferência '
+            'após comprovante fora do expediente, a IA pode informar horário/feriado. '
+            'Desativado (padrão): a IA segue a base de conhecimento do provedor e não '
+            'informa horário de funcionamento ao cliente após o comprovante.'
+        ),
+    )
     chatbot_name = models.CharField(
         max_length=80,
         blank=True,

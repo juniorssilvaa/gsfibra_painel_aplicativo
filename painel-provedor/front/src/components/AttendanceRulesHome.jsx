@@ -37,7 +37,7 @@ const cards = [
     badge: 'GERAL',
     badgeClass: 'bg-emerald-500 text-white',
     title: 'Configurações gerais',
-    description: 'Ajuste regras do chatbot como contrato suspenso, filtro de mensagens e nome do bot.',
+    description: 'Contrato suspenso, horário após comprovante, filtro de mensagens e nome do bot.',
   },
 ];
 
