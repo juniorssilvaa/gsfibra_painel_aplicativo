@@ -56,24 +56,24 @@
 
 :root {
   --radius: 0.5rem;
-  /* Marca: laranja forte + branco — fundos claros, primário #ea580c */
-  --background: #fff7ed;
-  --foreground: #1c1917;
+  /* Tema claro: fundos brancos/neutros; marca laranja só no primary */
+  --background: #ffffff;
+  --foreground: #18181b;
   --card: #ffffff;
-  --card-foreground: #1c1917;
+  --card-foreground: #18181b;
   --popover: #ffffff;
-  --popover-foreground: #1c1917;
+  --popover-foreground: #18181b;
   --primary: #ea580c;
   --primary-foreground: #ffffff;
-  --secondary: #ffedd5;
-  --secondary-foreground: #431407;
-  --muted: #f5f5f4;
-  --muted-foreground: #57534e;
-  --accent: rgba(234, 88, 12, 0.14);
-  --accent-foreground: #431407;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #27272a;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
   --destructive: #dc2626;
-  --border: #fed7aa;
-  --input: #e7e5e4;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
   --ring: #ea580c;
   --chart-1: #ea580c;
   --chart-2: #f97316;
@@ -81,27 +81,27 @@
   --chart-4: #2e7d32;
   --chart-5: #c2410c;
   --sidebar: #ffffff;
-  --sidebar-foreground: #1c1917;
+  --sidebar-foreground: #18181b;
   --sidebar-primary: #ea580c;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ffedd5;
-  --sidebar-accent-foreground: #431407;
-  --sidebar-border: #fed7aa;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
   --sidebar-ring: #ea580c;
 
   /* Topbar Colors */
   --topbar-background: #ffffff;
-  --topbar-foreground: #1c1917;
+  --topbar-foreground: #18181b;
 
   /* Custom NioChat Colors */
   --niochat-primary: #ea580c;
-  --niochat-secondary: #fff7ed;
+  --niochat-secondary: #ffffff;
   --niochat-accent: #f97316;
   --niochat-warning: #ca8a04;
   --niochat-danger: #dc2626;
   --niochat-success: #15803d;
   --niochat-info: #0369a1;
-  --niochat-bar-neutral: #57534e;
+  --niochat-bar-neutral: #71717a;
   --niochat-api-badge: #15803d;
 
   /* Label Colors */
@@ -109,7 +109,7 @@
   --label-blue: #0369a1;
   --label-red: #dc2626;
   --label-green: #15803d;
-  --label-purple: #c2410c;
+  --label-purple: #7c3aed;
   --label-orange: #ea580c;
 }
 
@@ -789,15 +789,18 @@
   color: #ffffff !important;
 }
 
-/* 10. Itens do menu "Novo atendimento" com texto branco */
-:root:not(.dark) .conversation-action-name,
-.dark .conversation-action-name {
-  color: #ffffff !important;
+/* 10. Itens do menu "Novo atendimento" — contraste por tema */
+:root:not(.dark) .conversation-action-name {
+  color: #18181b !important;
 }
 
-:root:not(.dark) .conversation-action-icon,
+:root:not(.dark) .conversation-action-icon {
+  color: #52525b !important;
+}
+
+.dark .conversation-action-name,
 .dark .conversation-action-icon {
-  color: #ffffff !important;
+  color: #fafafa !important;
 }
 
 /* react-day-picker: fundo da grelha + intervalo — sem “barra branca” ao lado do círculo.

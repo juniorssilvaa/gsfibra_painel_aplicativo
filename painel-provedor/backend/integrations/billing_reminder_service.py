@@ -150,12 +150,8 @@ def _filter_overdue_by_offsets(
 
 
 def _normalize_phone(phone: str) -> str:
-    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
-    if not digits:
-        return ""
-    if not digits.startswith("55") and len(digits) <= 11:
-        digits = f"55{digits}"
-    return f"+{digits}"
+    from core.phone_utils import normalize_whatsapp_phone_e164
+    return normalize_whatsapp_phone_e164(phone)
 
 
 def _format_currency(value: Any) -> str:

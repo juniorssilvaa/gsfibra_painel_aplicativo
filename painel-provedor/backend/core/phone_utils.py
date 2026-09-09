@@ -20,15 +20,28 @@ def looks_like_brazilian_local(digits: str) -> bool:
 
 def normalize_whatsapp_phone(value: str | None) -> str:
     """
-    Mantém DDI internacional.
-    Só prefixa 55 quando o número parece telefone BR local (10/11 dígitos).
+    Mantém DDI internacional (+1, +351, +55, etc.).
+    Só prefixa 55 quando o número parece telefone BR local (10/11 dígitos)
+    e NÃO veio com '+' explícito de outro país.
     """
-    d = digits_only(value)
+    raw = str(value or "").strip()
+    d = digits_only(raw)
     if not d:
         return ""
+
+    # Já veio com DDI explícito (ex.: +1..., +351..., +55...)
+    if raw.startswith("+"):
+        return d
+
     if not d.startswith("55") and looks_like_brazilian_local(d):
         d = f"55{d}"
     return d
+
+
+def normalize_whatsapp_phone_e164(value: str | None) -> str:
+    """Mesmo que normalize_whatsapp_phone, com prefixo '+' (Meta Cloud API)."""
+    d = normalize_whatsapp_phone(value)
+    return f"+{d}" if d else ""
 
 
 def is_valid_whatsapp_phone(value: str | None) -> bool:

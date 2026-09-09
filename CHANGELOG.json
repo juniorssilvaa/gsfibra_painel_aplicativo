@@ -1,6 +1,26 @@
 {
-  "current_version": "2.69.0",
+  "current_version": "2.70.0",
   "versions": [
+    {
+      "version": "2.70.0",
+      "version_type": "minor",
+      "date": "2026-09-09",
+      "title": "Números internacionais e melhorias no ChatArea",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "WhatsApp / Telefone",
+          "title": "Corrigido suporte a números internacionais",
+          "description": "Corrigido o tratamento de números internacionais: o sistema não força mais o prefixo +55 em telefones que já possuem outro código de país (por exemplo, +1)."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento / ChatArea",
+          "title": "Melhorias no ChatArea",
+          "description": "Melhorias no ChatArea, incluindo ajustes de contraste no tema claro e refinamentos na experiência do atendimento."
+        }
+      ]
+    },
     {
       "version": "2.69.0",
       "version_type": "minor",

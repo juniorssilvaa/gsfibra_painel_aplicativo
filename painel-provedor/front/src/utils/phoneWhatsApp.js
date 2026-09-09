@@ -21,12 +21,17 @@ export function looksLikeBrazilianLocal(digits) {
 
 /**
  * Normaliza para dígitos internacionais.
+ * - Já com '+' (ex.: +1… EUA, +351… PT) → mantém DDI
  * - BR local (10/11) → prefixa 55
- * - Já com DDI (ex.: 1… EUA, 55… BR, 44… UK) → mantém
+ * - Já com DDI sem '+' (ex.: 1… EUA, 55… BR) → mantém
  */
 export function normalizeWhatsAppPhone(value) {
-  let d = digitsOnly(value);
+  const raw = String(value || '').trim();
+  let d = digitsOnly(raw);
   if (!d) return '';
+  if (raw.startsWith('+')) {
+    return d;
+  }
   if (!d.startsWith('55') && looksLikeBrazilianLocal(d)) {
     d = `55${d}`;
   }

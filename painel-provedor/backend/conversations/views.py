@@ -516,10 +516,9 @@ class ContactViewSet(viewsets.ModelViewSet):
                     if not name:
                         name = 'Sem nome'
 
-                    # Normalizar Brasil: se veio sem 55 e tem 10/11 dígitos, prefixar
-                    if len(phone) in (10, 11) and not phone.startswith('55'):
-                        phone = f'55{phone}'
-
+                    # Normalizar: só prefixa 55 se parecer telefone BR local
+                    from core.phone_utils import normalize_whatsapp_phone
+                    phone = normalize_whatsapp_phone(phone)
                     if len(phone) > 20:
                         skipped += 1
                         skipped_no_phone += 1

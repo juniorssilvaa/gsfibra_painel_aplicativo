@@ -1269,7 +1269,7 @@ const ConversationList = memo(({ onConversationSelect, selectedConversation, pro
       {/* Header */}
       <div className="p-3 border-b border-border">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-zinc-100">Conversas</h2>
+          <h2 className="text-lg font-semibold text-foreground">Conversas</h2>
           <div className="flex items-center space-x-2">
             {/* Botão de ativar sons removido */}
 

@@ -1604,11 +1604,12 @@ class FaturaService:
                 return {"success": False, "error": erro_msg}
             
             recipient_number = conversation.contact.phone
-            recipient_number = ''.join(filter(str.isdigit, recipient_number))
-            
-            # Garantir que comece com código do país (se não tiver, assumir Brasil 55)
-            if not recipient_number.startswith('55') and len(recipient_number) <= 11:
-                recipient_number = '55' + recipient_number
+            from core.phone_utils import normalize_whatsapp_phone
+            recipient_number = normalize_whatsapp_phone(recipient_number)
+            if not recipient_number:
+                erro_msg = f"Contato sem telefone válido para envio (provedor {provedor_id})"
+                logger.error(f"[FATURA] {erro_msg}")
+                return {"success": False, "error": erro_msg}
             
             # Obter nome do provedor para merchant_name / rodapé
             from core.external_webhook_dispatch import resolve_merchant_display_name

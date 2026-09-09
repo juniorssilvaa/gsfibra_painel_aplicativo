@@ -4,6 +4,14 @@ Todas as mudanças notáveis do projeto NioChat serão documentadas neste arquiv
 
 **Fonte oficial do histórico no produto:** `CHANGELOG.json` na raiz do repositório (servido por `/api/changelog/` e exibido no modal de versões). Atualize apenas esse JSON para novas versões.
 
+## [2.70.0] - 2026-09-09
+
+### 🐛 Corrigido
+- **WhatsApp / Telefone**: corrigido suporte a números internacionais — o sistema não força mais o prefixo +55 em telefones que já possuem outro código de país (por exemplo, +1).
+
+### 🔧 Melhoria
+- **Atendimento / ChatArea**: melhorias no ChatArea, incluindo ajustes de contraste no tema claro e refinamentos na experiência do atendimento.
+
 ## [2.69.0] - 2026-09-05
 
 ### 🐛 Corrigido

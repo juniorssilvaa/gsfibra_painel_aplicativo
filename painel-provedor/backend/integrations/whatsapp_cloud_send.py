@@ -267,14 +267,14 @@ def send_via_whatsapp_cloud_api(
         
         # Obter número do destinatário do contato
         contact = conversation.contact
-        recipient_number = conversation.contact.phone.replace('@s.whatsapp.net', '').replace('@c.us', '')
-        
-        # Garantir formato com '+' para Meta Cloud API (conforme testes manuais do usuário)
-        if not recipient_number.startswith('+'):
-            if not recipient_number.startswith('55') and len(recipient_number) <= 11:
-                recipient_number = '55' + recipient_number
-            recipient_number = '+' + recipient_number
-        
+        from core.phone_utils import normalize_whatsapp_phone_e164
+        recipient_number = normalize_whatsapp_phone_e164(
+            (conversation.contact.phone or "")
+            .replace("@s.whatsapp.net", "")
+            .replace("@c.us", "")
+        )
+        if not recipient_number:
+            return False, "Contato sem telefone válido"
         payload: Dict[str, Any] = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -769,15 +769,10 @@ def send_reaction(
         
         # Obter número do destinatário do contato
         contact = conversation.contact
-        recipient_number = contact.phone
-        
-        # Remover caracteres não numéricos
-        recipient_number = ''.join(filter(str.isdigit, recipient_number))
-        
-        # Garantir que comece com código do país (se não tiver, assumir Brasil 55)
-        if not recipient_number.startswith('55') and len(recipient_number) <= 11:
-            recipient_number = '55' + recipient_number
-        
+        from core.phone_utils import normalize_whatsapp_phone
+        recipient_number = normalize_whatsapp_phone(contact.phone)
+        if not recipient_number:
+            return False, "Contato sem telefone válido"
         # Montar payload para reação
         payload = {
             "messaging_product": "whatsapp",
@@ -990,9 +985,10 @@ def send_template_message(
         if not canal.phone_number_id:
             return False, "Phone Number ID não configurado", None
         
-        recipient_number = ''.join(c for c in recipient_number if c.isdigit())
-        if not recipient_number.startswith('55') and len(recipient_number) <= 11:
-            recipient_number = '55' + recipient_number
+        from core.phone_utils import normalize_whatsapp_phone
+        recipient_number = normalize_whatsapp_phone(recipient_number)
+        if not recipient_number:
+            return False, "Número do destinatário inválido", None
         
         # IMPORTANTE: A API da Meta aceita o formato original (pt_BR com underscore)
         # Não precisamos converter, usar o formato que vem da API de listagem
@@ -1068,10 +1064,8 @@ def send_template_message(
 
 
 def _normalize_whatsapp_to_number(recipient_number: str) -> str:
-    recipient_number = "".join(c for c in recipient_number if c.isdigit())
-    if not recipient_number.startswith("55") and len(recipient_number) <= 11:
-        recipient_number = "55" + recipient_number
-    return recipient_number
+    from core.phone_utils import normalize_whatsapp_phone
+    return normalize_whatsapp_phone(recipient_number)
 
 
 def send_interactive_order_details_raw(

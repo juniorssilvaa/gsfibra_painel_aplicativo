@@ -98,7 +98,18 @@ const ConnectionBadge = ({ status, loading }) => {
   );
 };
 
-const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversationUpdate }) => {
+const SgpSidebar = ({
+  conversation,
+  user,
+  messages = [],
+  onClose,
+  onConversationUpdate,
+  billingSource = 'sgp',
+}) => {
+  const isAsaas = billingSource === 'asaas';
+  const apiBase = isAsaas ? '/api/asaas-support' : '/api/sgp';
+  const sourceName = isAsaas ? 'Asaas' : 'SGP';
+
   const [documento, setDocumento] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('cliente');
@@ -110,6 +121,8 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
   const [clienteData, setClienteData] = useState(null);
   const [selectedContrato, setSelectedContrato] = useState(null);
   const [faturas, setFaturas] = useState([]);
+  const [selectedFaturaId, setSelectedFaturaId] = useState(null);
+  const [asaasClientes, setAsaasClientes] = useState(null);
   const [loadingFaturas, setLoadingFaturas] = useState(false);
   const [loadingConexao, setLoadingConexao] = useState(false);
 
@@ -118,14 +131,22 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
     setDocumento('');
     setSelectedContrato(null);
     setFaturas([]);
+    setSelectedFaturaId(null);
+    setAsaasClientes(null);
     setActiveTab('cliente');
     setManuallyReset(true);
   };
 
   const provedorId = user?.provedor_id || user?.provedores_admin?.[0]?.id;
 
+  useEffect(() => {
+    if (isAsaas && activeTab === 'suporte') {
+      setActiveTab('cliente');
+    }
+  }, [isAsaas, activeTab]);
+
   const verificarConexao = useCallback(async (contratoId) => {
-    if (!contratoId || !provedorId) return null;
+    if (isAsaas || !contratoId || !provedorId) return null;
     setLoadingConexao(true);
     try {
       const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
@@ -139,16 +160,43 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
     } finally {
       setLoadingConexao(false);
     }
-  }, [provedorId]);
+  }, [provedorId, isAsaas]);
 
-  const selecionarContrato = useCallback(async (contrato, doc) => {
+  const carregarFaturas = async (contratoId, doc, prefetched = null) => {
+    if (Array.isArray(prefetched)) {
+      setFaturas(prefetched);
+      setSelectedFaturaId(prefetched[0]?.fatura || prefetched[0]?.id || null);
+      return;
+    }
+    if (isAsaas) {
+      setFaturas([]);
+      setSelectedFaturaId(null);
+      return;
+    }
+    setLoadingFaturas(true);
+    try {
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+      const response = await axios.get(`/api/sgp/faturas/?contrato_id=${contratoId}&cpfcnpj=${doc}&provedor_id=${provedorId}`, {
+        headers: { Authorization: `Token ${token}` }
+      });
+      const list = response.data?.links || response.data?.faturas || [];
+      setFaturas(list);
+      setSelectedFaturaId(list[0]?.fatura || list[0]?.id || null);
+    } catch (error) {
+    } finally {
+      setLoadingFaturas(false);
+    }
+  };
+
+  const selecionarContrato = useCallback(async (contrato, doc, prefetchedFaturas = null) => {
     if (!contrato) return;
     const cId = getContratoId(contrato);
     setSelectedContrato({
       ...contrato,
       plano_nome: getPlanoNome(contrato) || contrato.plano_nome,
     });
-    carregarFaturas(cId, doc);
+    await carregarFaturas(cId, doc, prefetchedFaturas);
+    if (isAsaas) return;
     const conexao = await verificarConexao(cId);
     if (conexao) {
       setSelectedContrato((prev) =>
@@ -166,29 +214,16 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
         };
       });
     }
-  }, [verificarConexao]);
+  }, [verificarConexao, isAsaas, provedorId]);
 
-  const carregarFaturas = async (contratoId, doc) => {
-    setLoadingFaturas(true);
-    try {
-      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
-      const response = await axios.get(`/api/sgp/faturas/?contrato_id=${contratoId}&cpfcnpj=${doc}&provedor_id=${provedorId}`, {
-        headers: { Authorization: `Token ${token}` }
-      });
-      setFaturas(response.data?.links || response.data?.faturas || []);
-    } catch (error) {
-    } finally {
-      setLoadingFaturas(false);
-    }
-  };
-
-  const buscarCliente = useCallback(async (doc) => {
+  const buscarCliente = useCallback(async (doc, customerId = null) => {
     if (!doc || !provedorId) return;
     
     const docLimpo = doc.replace(/\D/g, '');
     if (docLimpo.length < 11) return;
 
     setLoading(true);
+    setAsaasClientes(null);
     try {
       const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const params = new URLSearchParams({
@@ -196,28 +231,41 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
         provedor_id: String(provedorId),
       });
       if (conversation?.id) params.set('conversation_id', String(conversation.id));
-      const response = await axios.get(`/api/sgp/consultar-cliente/?${params}`, {
+      if (customerId) params.set('customer_id', String(customerId));
+      const response = await axios.get(`${apiBase}/consultar-cliente/?${params}`, {
         headers: { Authorization: `Token ${token}` }
       });
 
+      if (response.data?.precisa_escolher_cliente && Array.isArray(response.data.clientes)) {
+        setAsaasClientes(response.data.clientes);
+        setClienteData(null);
+        toast.info('Há mais de um cliente Asaas com este documento. Escolha um.');
+        return;
+      }
+
       if (response.data && response.data.contratos && response.data.contratos.length > 0) {
         setClienteData(response.data);
+        setAsaasClientes(null);
         const primeiroContrato = response.data.contratos[0];
         await selecionarContrato(
           { ...primeiroContrato, plano_nome: getPlanoNome(primeiroContrato) || primeiroContrato.plano_nome },
           docLimpo,
+          isAsaas ? (response.data.faturas || []) : null,
         );
-        toast.success('Cliente encontrado no SGP!');
+        toast.success(`Cliente encontrado no ${sourceName}!`);
       } else {
-        toast.error('Cliente não localizado no SGP.');
+        toast.error(`Cliente não localizado no ${sourceName}.`);
         setClienteData(null);
       }
     } catch (error) {
-      toast.error('Ocorreu um erro ao consultar o SGP.');
+      const msg =
+        error?.response?.data?.error ||
+        `Ocorreu um erro ao consultar o ${sourceName}.`;
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }, [provedorId, selecionarContrato]);
+  }, [provedorId, selecionarContrato, apiBase, isAsaas, sourceName, conversation?.id]);
 
   useEffect(() => {
     setManuallyReset(false);
@@ -232,7 +280,9 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
     toast.success(`${label} copiado!`);
   };
 
-  const currentFatura = faturas.length > 0 ? faturas[0] : null;
+  const currentFatura =
+    faturas.find((f) => String(f.fatura || f.id) === String(selectedFaturaId)) ||
+    (faturas.length > 0 ? faturas[0] : null);
 
   const enviarParaChat = async (mensagem) => {
     if (!conversation?.id) {
@@ -304,7 +354,7 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
     }
 
     const contratoId = getContratoId(selectedContrato);
-    if (!contratoId) {
+    if (!isAsaas && !contratoId) {
       toast.error('Selecione o contrato antes de enviar a fatura.');
       return;
     }
@@ -313,14 +363,17 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
     const toastId = toast.loading(`Enviando ${tipo.toUpperCase()}...`);
     try {
       const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
-      const response = await axios.post('/api/sgp/enviar-fatura-interativa/', {
+      const payload = {
         fatura_id: faturaId,
+        payment_id: faturaId,
         provedor_id: provedorId,
         conversation_id: conversation.id,
         tipo_pagamento: tipo,
         cpf_cnpj: documento || clienteData?.cpfCnpj,
-        contrato_id: contratoId,
-      }, {
+      };
+      if (contratoId) payload.contrato_id = contratoId;
+
+      const response = await axios.post(`${apiBase}/enviar-fatura-interativa/`, payload, {
         headers: { Authorization: `Token ${token}` }
       });
 
@@ -423,8 +476,27 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
-           <User className="w-12 h-12 mb-3 opacity-60" />
-           <p className="text-sm text-foreground/70">Nenhum cliente selecionado</p>
+           {asaasClientes?.length ? (
+             <div className="w-full space-y-2 text-left">
+               <p className="text-xs font-semibold text-foreground mb-2">Escolha o cliente Asaas</p>
+               {asaasClientes.map((c) => (
+                 <button
+                   key={c.id}
+                   type="button"
+                   onClick={() => buscarCliente(documento, c.id)}
+                   className="w-full text-left rounded-lg border border-border bg-card p-3 hover:bg-muted/60 transition-colors"
+                 >
+                   <div className="text-sm font-medium text-foreground truncate">{c.nome || c.id}</div>
+                   <div className="text-[11px] text-muted-foreground truncate">{c.email || c.cpf_cnpj || c.id}</div>
+                 </button>
+               ))}
+             </div>
+           ) : (
+             <>
+               <User className="w-12 h-12 mb-3 opacity-60" />
+               <p className="text-sm text-foreground/70">Nenhum cliente selecionado</p>
+             </>
+           )}
         </div>
       </div>
     );
@@ -452,10 +524,12 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
              <span className="text-[10px] font-medium">Financeiro</span>
            </button>
 
-           <button onClick={() => setActiveTab('suporte')} className={sgpTabClass(activeTab === 'suporte')}>
-             <HeadphonesIcon className={`w-5 h-5 ${activeTab === 'suporte' ? 'text-emerald-600 dark:text-[#10b981]' : ''}`} />
-             <span className="text-[10px] font-medium">Suporte</span>
-           </button>
+           {!isAsaas && (
+             <button onClick={() => setActiveTab('suporte')} className={sgpTabClass(activeTab === 'suporte')}>
+               <HeadphonesIcon className={`w-5 h-5 ${activeTab === 'suporte' ? 'text-emerald-600 dark:text-[#10b981]' : ''}`} />
+               <span className="text-[10px] font-medium">Suporte</span>
+             </button>
+           )}
          </div>
 
          <div className="flex-1 w-[310px] h-full overflow-y-auto bg-muted/30 p-4 flex flex-col dark:bg-[#1a1c23]">
@@ -469,14 +543,16 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                      <button onClick={handleReset} className={`${SGP_MUTED} hover:text-foreground mr-8 transition-colors`}>Alterar</button>
                   </div>
 
-                  <div className={`${SGP_MUTED} font-medium mb-3 ml-1`}>sgp</div>
-
                   <select
                     className={`${SGP_SELECT} mb-4`}
                     value={getContratoId(selectedContrato)}
                     onChange={(e) => {
                       const c = clienteData.contratos.find((cnt) => getContratoId(cnt) == e.target.value);
-                      selecionarContrato(c, documento || clienteData.cpfCnpj);
+                      selecionarContrato(
+                        c,
+                        documento || clienteData.cpfCnpj,
+                        isAsaas ? (clienteData.faturas || faturas) : null,
+                      );
                     }}
                   >
                     {clienteData.contratos.map((c) => {
@@ -484,7 +560,9 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                       const planoLabel = getPlanoNome(c);
                       return (
                         <option key={cId || Math.random()} value={cId}>
-                          {planoLabel ? `${planoLabel} — Contrato ${cId}` : `Contrato ${cId}`}
+                          {isAsaas
+                            ? (planoLabel || `Cliente ${cId}`)
+                            : (planoLabel ? `${planoLabel} — Contrato ${cId}` : `Contrato ${cId}`)}
                         </option>
                       );
                     })}
@@ -497,7 +575,7 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                     </div>
 
                     <div className={SGP_ROW}>
-                       <span className={SGP_MUTED}>Plano</span>
+                       <span className={SGP_MUTED}>{isAsaas ? 'Produto' : 'Plano'}</span>
                        <span className={`${SGP_VALUE} text-right max-w-[150px] truncate`}>{getPlanoNome(selectedContrato) || 'Não identificado'}</span>
                     </div>
 
@@ -507,7 +585,7 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                     </div>
 
                     <div className={SGP_ROW}>
-                       <span className={SGP_MUTED}>Status do contrato</span>
+                       <span className={SGP_MUTED}>{isAsaas ? 'Status' : 'Status do contrato'}</span>
                        {selectedContrato?.contratoStatus === 1 || String(selectedContrato?.contratoStatusDisplay || '').toLowerCase() === 'ativo' || String(selectedContrato?.status).toLowerCase() === 'ativo' ? (
                           <div className="bg-[#20362c] text-[#4ade80] px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 border border-[#4ade80]/20">
                             <div className="w-1.5 h-1.5 rounded-full bg-[#4ade80]"></div>
@@ -521,13 +599,15 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                        )}
                     </div>
 
-                    <div className="flex justify-between items-center pt-1">
-                       <span className={SGP_MUTED}>Status da conexão</span>
-                       <ConnectionBadge
-                         status={selectedContrato?.status_conexao_realtime}
-                         loading={loadingConexao}
-                       />
-                    </div>
+                    {!isAsaas && (
+                      <div className="flex justify-between items-center pt-1">
+                         <span className={SGP_MUTED}>Status da conexão</span>
+                         <ConnectionBadge
+                           status={selectedContrato?.status_conexao_realtime}
+                           loading={loadingConexao}
+                         />
+                      </div>
+                    )}
                   </div>
                 </div>
                </div>
@@ -542,13 +622,16 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                      <span className={SGP_TITLE}>Cliente identificado</span>
                      <button onClick={handleReset} className={`${SGP_MUTED} hover:text-foreground mr-8 transition-colors`}>Alterar</button>
                   </div>
-                  <div className={`${SGP_MUTED} font-medium mb-3 ml-1`}>sgp</div>
                   <select
-                    className={SGP_SELECT}
+                    className={`${SGP_SELECT} mb-3`}
                     value={getContratoId(selectedContrato)}
                     onChange={(e) => {
                       const c = clienteData.contratos.find((cnt) => getContratoId(cnt) == e.target.value);
-                      selecionarContrato(c, documento || clienteData.cpfCnpj);
+                      selecionarContrato(
+                        c,
+                        documento || clienteData.cpfCnpj,
+                        isAsaas ? (clienteData.faturas || faturas) : null,
+                      );
                     }}
                   >
                     {clienteData.contratos.map((c) => {
@@ -556,7 +639,9 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                       const planoLabel = getPlanoNome(c);
                       return (
                         <option key={cId || Math.random()} value={cId}>
-                          {planoLabel ? `${planoLabel} — Contrato ${cId}` : `Contrato ${cId}`}
+                          {isAsaas
+                            ? (planoLabel || `Cliente ${cId}`)
+                            : (planoLabel ? `${planoLabel} — Contrato ${cId}` : `Contrato ${cId}`)}
                         </option>
                       );
                     })}
@@ -566,7 +651,26 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                 <div className={`${SGP_CARD} overflow-hidden p-0`}>
                   <div className="p-4 border-b border-border dark:border-white/10">
                      <h3 className={`${SGP_TITLE} mb-1`}>Financeiro</h3>
-                     <p className={SGP_MUTED}>Última fatura em aberto</p>
+                     <p className={SGP_MUTED}>
+                       {faturas.length > 1 ? 'Faturas em aberto' : 'Última fatura em aberto'}
+                     </p>
+                     {faturas.length > 1 && (
+                       <select
+                         className={`${SGP_SELECT} mt-3`}
+                         value={selectedFaturaId || ''}
+                         onChange={(e) => setSelectedFaturaId(e.target.value)}
+                       >
+                         {faturas.map((f) => {
+                           const fid = f.fatura || f.id;
+                           const venc = f.vencimento_br || f.vencimento || '';
+                           return (
+                             <option key={fid} value={fid}>
+                               {venc ? `${venc} — ` : ''}R$ {f.valor} ({fid})
+                             </option>
+                           );
+                         })}
+                       </select>
+                     )}
                   </div>
 
                   {loadingFaturas ? (
@@ -594,7 +698,7 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                           <div className="p-3 flex flex-col items-center justify-center">
                             <span className={`text-[10px] ${SGP_MUTED} block mb-1`}>Status</span>
                             <span className="bg-amber-100 text-amber-900 text-[10px] px-2 py-0.5 rounded-full font-semibold border border-amber-200 dark:bg-[#fff3cd] dark:text-[#856404] dark:border-[#ffeeba]">
-                               Em aberto
+                               {currentFatura.status_label || 'Em aberto'}
                             </span>
                           </div>
                        </div>
@@ -632,7 +736,7 @@ const SgpSidebar = ({ conversation, user, messages = [], onClose, onConversation
                )}
 
                {/* === ABA SUPORTE === */}
-               {activeTab === 'suporte' && (
+               {!isAsaas && activeTab === 'suporte' && (
                <div className="m-0 space-y-4 focus:outline-none flex-1 mt-0 animate-in fade-in duration-300">
                   <div className={SGP_CARD}>
                    <div className={SGP_CARD_HEADER}>

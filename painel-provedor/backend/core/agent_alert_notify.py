@@ -19,17 +19,9 @@ def digits_phone(phone: str) -> str:
 
 
 def normalize_agent_phone(phone: str) -> str:
-    """Normaliza telefone BR para dígitos com DDI 55 quando possível."""
-    digits = digits_phone(phone)
-    if not digits:
-        return ""
-    if digits.startswith("55") and len(digits) >= 12:
-        return digits
-    # Celular/fixo BR sem DDI (10 ou 11 dígitos)
-    if len(digits) in (10, 11):
-        return f"55{digits}"
-    return digits
-
+    """Normaliza telefone do agente preservando DDI internacional."""
+    from core.phone_utils import normalize_whatsapp_phone
+    return normalize_whatsapp_phone(phone)
 
 def _send_via_cloud(provedor, to_phone: str, message: str) -> bool:
     from core.models import Canal

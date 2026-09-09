@@ -472,13 +472,9 @@ def normalize_inbound_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_phone_digits(phone: str) -> str:
-    """E.164 só dígitos (ex.: 5563992484773) para banco e API Meta."""
-    digits = re.sub(r'\D', '', phone or '')
-    if not digits:
-        return ''
-    if not digits.startswith('55') and len(digits) <= 11:
-        digits = '55' + digits
-    return digits
+    """E.164 só dígitos (ex.: 5563992484773 ou 12125551234) para banco e API Meta."""
+    from core.phone_utils import normalize_whatsapp_phone
+    return normalize_whatsapp_phone(phone)
 
 
 def extract_recipient_phone(payload: Dict[str, Any]) -> Optional[str]:
@@ -490,7 +486,8 @@ def extract_recipient_phone(payload: Dict[str, Any]) -> Optional[str]:
         if not text or '{' in text:
             continue
         digits = normalize_phone_digits(text)
-        if len(digits) >= 12:
+        # Aceita DDI internacional (ex.: EUA 11 dígitos) e BR 12/13
+        if len(digits) >= 10:
             return digits
     return None
 

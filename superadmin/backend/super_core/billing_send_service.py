@@ -324,10 +324,24 @@ def _fmt_due_br(due: str) -> str:
 
 
 def _normalize_phone(phone: str) -> str:
-    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    """
+    Mantém DDI internacional (+1, +351, etc.).
+    Só prefixa 55 quando parece telefone BR local (10/11 dígitos).
+    """
+    import re
+
+    raw = str(phone or "").strip()
+    digits = re.sub(r"\D", "", raw)
     if not digits:
         return ""
-    if not digits.startswith("55") and len(digits) <= 11:
+    if raw.startswith("+"):
+        return digits
+    # BR local: DDD+fixo (10) ou DDD+9+móvel (11)
+    is_br_local = bool(
+        (len(digits) == 10 and re.fullmatch(r"[1-9][1-9]\d{8}", digits))
+        or (len(digits) == 11 and re.fullmatch(r"[1-9][1-9]9\d{8}", digits))
+    )
+    if not digits.startswith("55") and is_br_local:
         digits = f"55{digits}"
     return digits  # sem '+' — API da Meta aceita só dígitos
 

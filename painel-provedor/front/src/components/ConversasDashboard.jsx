@@ -1933,7 +1933,7 @@ export default function ConversasDashboard() {
 
                 {/* Área de mensagens com scroll */}
                 <div
-                  className="messages-container flex-1 overflow-y-auto flex flex-col gap-3 p-4 dark:bg-background bg-[#efeae2] rounded-b-lg"
+                  className="messages-container flex-1 overflow-y-auto flex flex-col gap-3 p-4 dark:bg-background bg-white rounded-b-lg"
                   style={{
                     backgroundImage: `url(${isDarkTheme ? chatBgPattern : chatBgPatternLight})`,
                     backgroundRepeat: 'repeat',

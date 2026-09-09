@@ -295,6 +295,8 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
     // Se não houver nada salvo, o padrão agora é FALSE (fechado)
     return saved === 'true';
   });
+  const [agentMode, setAgentMode] = useState('isp');
+  const billingSource = agentMode === 'support' ? 'asaas' : 'sgp';
   const emojiPickerRef = useRef(null);
   const emojiGalleryRef = useRef(null);
 
@@ -438,6 +440,28 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
   useEffect(() => {
     localStorage.setItem('niochat_showSgpSidebar', showSgpSidebar);
   }, [showSgpSidebar]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAgentMode = async () => {
+      try {
+        const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+        if (!token) return;
+        const response = await axios.get('/api/provider/config/', {
+          headers: { Authorization: `Token ${token}` },
+        });
+        if (!cancelled) {
+          setAgentMode(String(response.data?.agent_mode || 'isp').toLowerCase());
+        }
+      } catch (_) {
+        /* mantém isp */
+      }
+    };
+    loadAgentMode();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Estados para mídias pendentes (prévia antes de enviar)
   const [pendingFile, setPendingFile] = useState(null);
@@ -3523,13 +3547,17 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
 
           <div className="flex items-center space-x-1.5 shrink-0">
 
-            {/* Toggle SGP Sidebar */}
+            {/* Toggle Acesso Rápido (SGP / Asaas) */}
             <button
               type="button"
               onClick={() => setShowSgpSidebar(!showSgpSidebar)}
               className={`${CONVERSATION_ACTION_BTN_BASE} h-7 px-2`}
               style={conversationActionStyle(showSgpSidebar ? 'sgpAtivo' : 'sgp')}
-              title={showSgpSidebar ? 'Fechar painel SGP' : 'Abrir painel SGP'}
+              title={
+                showSgpSidebar
+                  ? `Fechar painel ${billingSource === 'asaas' ? 'Asaas' : 'SGP'}`
+                  : `Abrir painel ${billingSource === 'asaas' ? 'Asaas' : 'SGP'}`
+              }
             >
               <Database className="h-3.5 w-3.5 shrink-0" />
             </button>
@@ -3611,7 +3639,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
         className="relative z-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4"
         style={{
           // Fundo do chat (modo escuro / modo claro)
-          backgroundColor: isDarkTheme ? '#0b141a' : '#efeae2',
+          backgroundColor: isDarkTheme ? '#0b141a' : '#ffffff',
           backgroundImage: `url(${isDarkTheme ? chatBgPattern : chatBgPatternLight})`,
           backgroundRepeat: 'no-repeat',
           backgroundSize: 'cover',
@@ -5194,7 +5222,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       )}
       </div>
 
-      {/* Sidebar SGP (Lado Direito) - Render Condicional */}
+      {/* Sidebar Acesso Rápido (SGP ou Asaas) */}
       {showSgpSidebar && (
         <div className="animate-in slide-in-from-right duration-300">
           <SgpSidebar 
@@ -5203,6 +5231,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
             messages={filteredMessages} 
             onClose={() => setShowSgpSidebar(false)}
             onConversationUpdate={onConversationUpdate}
+            billingSource={billingSource}
           />
         </div>
       )}

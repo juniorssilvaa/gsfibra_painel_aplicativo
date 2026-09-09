@@ -603,13 +603,8 @@ def disable_voice_calls(canal) -> None:
 
 
 def normalize_voice_phone(raw: Any) -> str:
-    digits = re.sub(r'\D', '', str(raw or ''))
-    if not digits:
-        return ''
-    if not digits.startswith('55') and len(digits) <= 11:
-        digits = '55' + digits
-    return digits
-
+    from core.phone_utils import normalize_whatsapp_phone
+    return normalize_whatsapp_phone(raw)
 
 def linked_device_voice_phone(raw: Any) -> str:
     """

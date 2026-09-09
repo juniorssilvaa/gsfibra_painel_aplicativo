@@ -9,6 +9,7 @@ from conversations import app_mobile
 from integrations.instagram_oauth import instagram_oauth_finish_internal
 from .views_provider_config import ProviderConfigView
 from .sgp_views import SGPIntegrationViewSet
+from .asaas_support_views import AsaasSupportViewSet
 from .acs_views import ACSIntegrationViewSet
 
 # Router apenas com viewsets existentes em core.views
@@ -30,6 +31,7 @@ router.register(r'provider-gallery', views.ProviderGalleryImageViewSet, basename
 router.register(r'reminders', views.UserReminderViewSet, basename='reminders')
 router.register(r'suggestions', views.ProviderSuggestionViewSet, basename='suggestions')
 router.register(r'sgp', SGPIntegrationViewSet, basename='sgp')
+router.register(r'asaas-support', AsaasSupportViewSet, basename='asaas-support')
 router.register(r'acs', ACSIntegrationViewSet, basename='acs')
 
 urlpatterns = [

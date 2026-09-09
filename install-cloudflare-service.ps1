@@ -18,7 +18,11 @@ $token = "eyJhIjoiMzdmZWJkOWY5NDcxOWNkYTMxMWMyODU2MDIyZDc3OTkiLCJ0IjoiOTBhYjRjOT
 
 # Verificar onde está o cloudflared
 $cloudflaredPath = "cloudflared.exe"
-if (Test-Path "E:\niochat\cloudflared.exe") {
+if (Test-Path "E:\niohub\cloudflared.exe") {
+    $cloudflaredPath = "E:\niohub\cloudflared.exe"
+} elseif (Test-Path "C:\Program Files (x86)\cloudflared\cloudflared.exe") {
+    $cloudflaredPath = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
+} elseif (Test-Path "E:\niochat\cloudflared.exe") {
     $cloudflaredPath = "E:\niochat\cloudflared.exe"
 } elseif (Get-Command cloudflared -ErrorAction SilentlyContinue) {
     $cloudflaredPath = (Get-Command cloudflared).Source
