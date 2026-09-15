@@ -904,6 +904,14 @@ def notify_provider_panel(provedor_id, is_active, status_text, block_reason=None
             return
 
         local_base = (os.environ.get('TENANT_WEBHOOK_BASE_URL') or '').strip().rstrip('/')
+        # Em produção, nunca encaminhar status para localhost (URL de dev).
+        if local_base and any(
+            h in local_base.lower()
+            for h in ('://127.0.0.1', '://localhost', '://0.0.0.0')
+        ):
+            from django.conf import settings as dj_settings
+            if not getattr(dj_settings, 'DEBUG', False):
+                local_base = ''
         if local_base:
             url = f"{local_base}/api/webhooks/admin/provider-status/"
         else:

@@ -157,7 +157,7 @@ INSTAGRAM_APP_SECRET = _env('INSTAGRAM_APP_SECRET')
 ADMIN_WEBHOOK_SECRET = _env('ADMIN_WEBHOOK_SECRET')
 SUPERADMIN_CI_TOKEN = _env('SUPERADMIN_CI_TOKEN') or ADMIN_WEBHOOK_SECRET
 BACKEND_URL = _env('BACKEND_URL', 'https://api-local.niohub.com.br')
-TENANT_WEBHOOK_BASE_URL = _env('TENANT_WEBHOOK_BASE_URL', 'http://127.0.0.1:8011')
+TENANT_WEBHOOK_BASE_URL = _env('TENANT_WEBHOOK_BASE_URL', '')
 # Deve coincidir com o token configurado na Meta App e nos tenants (Portainer injeta o mesmo valor).
 # Se a env vier vazia (ficheiros .env com WHATSAPP_WEBHOOK_VERIFY_TOKEN=), usar o default do painel-provedor.
 WHATSAPP_WEBHOOK_VERIFY_TOKEN = (

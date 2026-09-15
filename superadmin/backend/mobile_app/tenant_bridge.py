@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 from django.conf import settings
@@ -10,31 +11,95 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
+def _is_loopback_or_local_url(url: str) -> bool:
+    """URLs de desenvolvimento local — inválidas em produção."""
+    raw = (url or '').strip().lower()
+    if not raw:
+        return False
+    try:
+        host = (urlparse(raw).hostname or '').strip().lower()
+    except Exception:
+        host = ''
+    if not host:
+        # fallback textual
+        return any(
+            token in raw
+            for token in (
+                '://127.0.0.1',
+                '://localhost',
+                '://0.0.0.0',
+                '://[::1]',
+            )
+        )
+    return host in ('127.0.0.1', 'localhost', '0.0.0.0', '::1') or host.endswith('.local')
+
+
+def _subdomain_base_url(provedor) -> Optional[str]:
+    subdomain = (getattr(provedor, 'subdomain', None) or '').strip().rstrip('/')
+    if not subdomain:
+        return None
+    if subdomain.startswith('http://') or subdomain.startswith('https://'):
+        return subdomain.rstrip('/')
+    if '.' not in subdomain:
+        subdomain = f'{subdomain}.niohub.com.br'
+    return f'https://{subdomain}'
+
+
 def tenant_base_url(provedor) -> Optional[str]:
+    """
+    Resolve a URL do painel do provedor para webhooks do app.
+
+    Em produção NUNCA usa 127.0.0.1/localhost quando o provedor tem subdomínio —
+    isso quebrava o chat do app (TENANT_WEBHOOK_BASE_URL / painel_url de dev).
+    """
+    debug = bool(getattr(settings, 'DEBUG', False))
+    subdomain_url = _subdomain_base_url(provedor)
+
     extras = provedor.integracoes_externas if isinstance(getattr(provedor, 'integracoes_externas', None), dict) else {}
     explicit = (
         (extras or {}).get('painel_url')
         or (extras or {}).get('tenant_url')
         or ''
     ).strip().rstrip('/')
+
     if explicit:
-        return explicit
+        if _is_loopback_or_local_url(explicit):
+            if subdomain_url:
+                logger.warning(
+                    '[app-mobile] Ignorando painel_url/tenant_url local (%s) do provedor %s — usando %s.',
+                    explicit,
+                    getattr(provedor, 'id', None),
+                    subdomain_url,
+                )
+                return subdomain_url
+            if debug:
+                return explicit
+            logger.warning(
+                '[app-mobile] painel_url local (%s) sem subdomínio no provedor %s.',
+                explicit,
+                getattr(provedor, 'id', None),
+            )
+        else:
+            return explicit
 
-    # Em dev local, TENANT_WEBHOOK_BASE_URL (ex. http://127.0.0.1:8011) tem prioridade
-    # sobre o subdomínio de produção — evita 502 quando o DNS do tenant não resolve.
     fallback = (getattr(settings, 'TENANT_WEBHOOK_BASE_URL', '') or '').strip().rstrip('/')
-    if fallback and getattr(settings, 'DEBUG', False):
-        return fallback
+    if fallback:
+        if _is_loopback_or_local_url(fallback):
+            if subdomain_url:
+                if debug:
+                    logger.info(
+                        '[app-mobile] Preferindo subdomínio %s em vez de TENANT_WEBHOOK_BASE_URL local (%s) (provedor %s).',
+                        subdomain_url,
+                        fallback,
+                        getattr(provedor, 'id', None),
+                    )
+                return subdomain_url
+            if debug:
+                return fallback
+        elif debug:
+            return fallback
 
-    subdomain = (getattr(provedor, 'subdomain', None) or '').strip().rstrip('/')
-    if subdomain:
-        if subdomain.startswith('http://') or subdomain.startswith('https://'):
-            return subdomain
-        if '.' not in subdomain:
-            subdomain = f'{subdomain}.niohub.com.br'
-        return f'https://{subdomain}'
-
-    return None
+    return subdomain_url
 
 
 def tenant_auth_headers(provedor) -> dict:
