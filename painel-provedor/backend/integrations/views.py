@@ -1412,6 +1412,21 @@ def webhook_evolution_uazapi(request):
                 }
             }
         )
+
+        from conversations.inbound_routing import (
+            ensure_conversation_silently_closed,
+            should_silently_ignore_disparo_inbound,
+        )
+        if should_silently_ignore_disparo_inbound(inbox=inbox):
+            existing_drop = ConversationModel.objects.filter(contact=contact, inbox=inbox).first()
+            if existing_drop:
+                ensure_conversation_silently_closed(existing_drop)
+            logger.info(
+                "[UAZAPI] Inbound ignorado (somente_disparo/encerrar) contact=%s inbox=%s",
+                getattr(contact, 'phone', None),
+                getattr(inbox, 'id', None),
+            )
+            return JsonResponse({'status': 'ignored_dispatch_channel'}, status=200)
         
         # Buscar conversa ativa primeiro, depois qualquer conversa
         # Primeiro, buscar conversa ativa (não fechada, incluindo 'closing' para verificar tolerância)

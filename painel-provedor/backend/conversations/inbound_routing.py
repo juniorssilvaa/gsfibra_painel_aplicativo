@@ -9,6 +9,80 @@ logger = logging.getLogger(__name__)
 CLOSED_STATUSES = frozenset(['closed', 'resolved', 'finalizada', 'encerrada'])
 
 
+def resolve_canal_for_inbound(*, canal=None, inbox=None, conversation=None):
+    """Resolve Canal a partir dos objetos já disponíveis no inbound."""
+    if canal is not None:
+        return canal
+    try:
+        if inbox is None and conversation is not None:
+            inbox = getattr(conversation, 'inbox', None)
+        if inbox is not None and hasattr(inbox, 'get_canal_instance'):
+            return inbox.get_canal_instance()
+    except Exception:
+        return None
+    return None
+
+
+def get_disparo_inbound_policy(*, canal=None, inbox=None, conversation=None) -> str:
+    """
+    Política do canal só de disparo para mensagem do cliente:
+      - normal: fluxo padrão
+      - fila: reabre na fila humana (sem protocolo/timeout de bot)
+      - drop: ignora por completo (não grava, não reabre, sem CSAT)
+    """
+    canal_obj = resolve_canal_for_inbound(canal=canal, inbox=inbox, conversation=conversation)
+    if not canal_obj or not getattr(canal_obj, 'somente_disparo', False):
+        return 'normal'
+    acao = (getattr(canal_obj, 'disparo_resposta_acao', None) or 'fila').strip().lower()
+    if acao == 'encerrar':
+        return 'drop'
+    return 'fila'
+
+
+def should_silently_ignore_disparo_inbound(*, canal=None, inbox=None, conversation=None) -> bool:
+    return get_disparo_inbound_policy(
+        canal=canal, inbox=inbox, conversation=conversation
+    ) == 'drop'
+
+
+def ensure_conversation_silently_closed(conversation) -> bool:
+    """
+    Encerra conversa sem CSAT, sem mensagem ao cliente e sem fluxo de closing.
+    Retorna True se alterou algo.
+    """
+    if not conversation:
+        return False
+    status = (getattr(conversation, 'status', None) or '').strip().lower()
+    if status in CLOSED_STATUSES and not getattr(conversation, 'waiting_for_agent', False):
+        # Já encerrada — só garantir flags limpas se necessário
+        if conversation.assignee_id or conversation.team_id or conversation.closing_requested_at:
+            conversation.assignee = None
+            conversation.team = None
+            conversation.waiting_for_agent = False
+            conversation.closing_requested_at = None
+            conversation.updated_at = timezone.now()
+            conversation.save(update_fields=[
+                'assignee', 'team', 'waiting_for_agent', 'closing_requested_at', 'updated_at',
+            ])
+            return True
+        return False
+
+    conversation.status = 'closed'
+    conversation.assignee = None
+    conversation.team = None
+    conversation.waiting_for_agent = False
+    conversation.closing_requested_at = None
+    conversation.updated_at = timezone.now()
+    conversation.save(update_fields=[
+        'status', 'assignee', 'team', 'waiting_for_agent', 'closing_requested_at', 'updated_at',
+    ])
+    logger.info(
+        '[InboundRouting] Conversa %s encerrada silenciosamente (canal somente_disparo/encerrar)',
+        conversation.id,
+    )
+    return True
+
+
 def sync_csat_request_if_feedback_exists(conversation) -> bool:
     """
     Corrige CSATRequest preso em sent/pending quando já existe CSATFeedback.
@@ -238,6 +312,44 @@ def reopen_conversation_for_bot(
             conversation.id,
         )
         return False
+
+    # Canal só de disparo — decidir antes de marcar sessão de bot
+    canal = None
+    try:
+        inbox = getattr(conversation, 'inbox', None)
+        canal = inbox.get_canal_instance() if inbox and hasattr(inbox, 'get_canal_instance') else None
+    except Exception:
+        canal = None
+    if canal and getattr(canal, 'somente_disparo', False):
+        acao = (getattr(canal, 'disparo_resposta_acao', None) or 'fila').strip().lower()
+        now = timezone.now()
+        if acao == 'encerrar':
+            # Não reabre e não dispara CSAT — só mantém/força encerrado
+            ensure_conversation_silently_closed(conversation)
+            logger.info(
+                '[InboundRouting] Conversa %s em canal somente_disparo → drop (sem gravar inbound)',
+                conversation.id,
+            )
+            return False
+
+        from conversations.message_visibility import mark_conversation_new_bot_session
+
+        mark_conversation_new_bot_session(conversation)
+        conversation.status = 'pending'
+        conversation.assignee = None
+        conversation.waiting_for_agent = True
+        conversation.team = None
+        conversation.closing_requested_at = None
+        conversation.updated_at = now
+        conversation.save(update_fields=[
+            'status', 'team', 'assignee', 'waiting_for_agent',
+            'additional_attributes', 'closing_requested_at', 'updated_at',
+        ])
+        logger.info(
+            '[InboundRouting] Conversa %s reaberta em canal somente_disparo → fila humana',
+            conversation.id,
+        )
+        return True
 
     from conversations.message_visibility import mark_conversation_new_bot_session
 

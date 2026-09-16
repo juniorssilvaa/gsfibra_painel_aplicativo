@@ -203,14 +203,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.70.0"
+                "current_version": "2.71.0"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.70.0"
+            "current_version": "2.71.0"
         }, safe=False)
 
 
@@ -8642,10 +8642,16 @@ class AdminSystemMessageWebhookView(APIView):
 
         assunto = (request.data.get('assunto') or '').strip()
         mensagem_texto = (request.data.get('mensagem') or '').strip()
+        imagem_url = (request.data.get('imagem_url') or '').strip()
+        hotspots = request.data.get('hotspots') if isinstance(request.data.get('hotspots'), list) else []
+        cta_links = request.data.get('cta_links') if isinstance(request.data.get('cta_links'), list) else []
         if not assunto:
             return Response({'error': 'assunto é obrigatório'}, status=status.HTTP_400_BAD_REQUEST)
-        if not mensagem_texto:
-            return Response({'error': 'mensagem é obrigatória'}, status=status.HTTP_400_BAD_REQUEST)
+        if not mensagem_texto and not imagem_url:
+            return Response(
+                {'error': 'Informe mensagem e/ou imagem_url.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         provedores_raw = request.data.get('provedores') or [provedor_id]
         clean_provedores = []
@@ -8678,6 +8684,9 @@ class AdminSystemMessageWebhookView(APIView):
             mensagem=mensagem_texto,
             titulo=assunto,
             conteudo=mensagem_texto,
+            imagem_url=imagem_url,
+            hotspots=hotspots,
+            cta_links=cta_links,
             tipo=tipo,
             provedores=clean_provedores,
             provedores_count=len(clean_provedores),

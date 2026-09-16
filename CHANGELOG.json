@@ -1,6 +1,20 @@
 {
-  "current_version": "2.70.0",
+  "current_version": "2.71.0",
   "versions": [
+    {
+      "version": "2.71.0",
+      "version_type": "minor",
+      "date": "2026-09-16",
+      "title": "Correção no módulo do CSAT",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "CSAT",
+          "title": "Corrigido módulo do CSAT",
+          "description": "Correção no módulo do CSAT."
+        }
+      ]
+    },
     {
       "version": "2.70.0",
       "version_type": "minor",

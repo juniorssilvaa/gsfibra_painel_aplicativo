@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from '../lib/notify';
 import axios from 'axios';
-import { MessageCircle, Send, XCircle, Edit2, Plus, Save, Globe, MoreVertical, Trash2, Bot, Copy, Check, Phone, Smartphone } from 'lucide-react';
+import { MessageCircle, Send, XCircle, Edit2, Plus, Save, Globe, MoreVertical, Trash2, Copy, Check, Phone, Smartphone } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import niohubLogo from '../assets/logo.png';
 import { buildAuthenticatedWebSocketUrl, buildPainelWebSocketEndpoint } from '../utils/websocketUrl';
@@ -542,7 +542,6 @@ function ChannelCard({ channel, onConnect, onDelete, onDisconnect, onCheckStatus
       <div className="absolute top-2 right-2 flex items-center gap-2">
         {isConnected && (
           <div className="flex items-center gap-1.5">
-            <Bot className="w-4 h-4 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">{providerConfig?.chatbot_mode ? 'Automação' : 'IA'}:</span>
             <Switch
               checked={channel.ia_ativa !== false}

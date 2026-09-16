@@ -100,6 +100,18 @@ def run_chatbot_inactivity_scan() -> None:
         try:
             provedor_id = conv.inbox.provedor_id
 
+            # Canal só de disparo ou sem IA: não herda timeout do fluxo global
+            canal = None
+            try:
+                canal = conv.inbox.get_canal_instance() if conv.inbox else None
+            except Exception:
+                canal = None
+            if canal and (
+                getattr(canal, "somente_disparo", False)
+                or getattr(canal, "ia_ativa", True) is False
+            ):
+                continue
+
             state = redis_memory_service.get_ai_state_sync(
                 provedor_id,
                 conv.id,
@@ -116,12 +128,7 @@ def run_chatbot_inactivity_scan() -> None:
                     provedor_id=provedor_id,
                     canal_id=canal_pk,
                 ).order_by("-updated_at").first()
-            if not flow:
-                flow = ChatbotFlow.objects.filter(
-                    provedor_id=provedor_id,
-                    canal__isnull=True,
-                ).order_by("-updated_at").first()
-
+            # Sem fluxo vinculado a ESTE canal: não usar fallback global (quebrava canais de disparo)
             if not flow:
                 continue
 

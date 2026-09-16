@@ -3,7 +3,7 @@ import { Sparkles, Network, Router, KeyRound } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 
-function MetaIcon({ className, strokeWidth = 1.75 }) {
+function MetaIcon({ className, strokeWidth = 2.5 }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -46,131 +46,91 @@ export default function IntegrationsPage() {
 
   const isSupportMode = agentMode === 'support';
 
+  const cards = [
+    {
+      key: 'agente-ia',
+      icon: Sparkles,
+      iconClass: 'bg-fuchsia-500 text-white',
+      title: 'Configurar Agente de IA',
+      description: 'Escolha OpenAI, Gemini ou DeepSeek e use a sua própria chave de API.',
+      path: 'agente-ia',
+    },
+    ...(isSupportMode
+      ? [
+          {
+            key: 'asaas',
+            icon: KeyRound,
+            iconClass: 'bg-teal-500 text-white',
+            title: 'Asaas',
+            description:
+              'Token da API Asaas para o agente de suporte buscar e enviar faturas dos provedores.',
+            path: 'asaas',
+          },
+        ]
+      : []),
+    {
+      key: 'erp',
+      icon: Network,
+      iconClass: 'bg-blue-600 text-white',
+      title: 'Seu ERP',
+      description: 'Conecte seu sistema de gestão e gerencie o token de webhook de disparos.',
+      path: 'erp',
+    },
+    {
+      key: 'acs',
+      icon: Router,
+      iconClass: 'bg-lime-500 text-white',
+      title: 'NIO HUB - ACS',
+      description: 'Conecte a API TR-069 para gerenciar ONTs/CPEs (Wi-Fi e firmware).',
+      path: 'acs',
+    },
+    {
+      key: 'meta',
+      icon: MetaIcon,
+      iconClass: 'bg-rose-500 text-white',
+      title: 'Meta',
+      description: 'Analytics da API oficial: mensagens grátis, templates pagos e gasto aproximado.',
+      path: 'meta',
+    },
+  ];
+
   return (
-    <div className="p-8 min-h-screen bg-background text-white overflow-y-auto">
+    <div className="p-8 min-h-screen bg-background text-foreground overflow-y-auto">
       <div className="flex items-center gap-4 mb-2 ml-4">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-100">Integrações</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Integrações</h1>
       </div>
 
-      <p className="text-slate-400 mb-12 ml-12">
+      <p className="text-muted-foreground mb-12 ml-12">
         {isSupportMode
           ? 'Configure o agente de IA, o Asaas (faturas da plataforma), o ERP/ACS se necessário e acompanhe o uso da API oficial da Meta.'
           : 'Configure o agente de IA, o ERP, o ACS e acompanhe o uso da API oficial da Meta.'}
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
-        <div
-          onClick={() => navigate('agente-ia')}
-          className="group relative bg-card p-8 rounded-2xl border border-white/5 hover:border-primary/50 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col items-center text-center gap-4"
-        >
-          <div className="absolute -inset-1 bg-gradient-to-r from-primary to-orange-600 rounded-2xl blur opacity-0 group-hover:opacity-10 transition duration-300" />
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.key}
+              onClick={() => navigate(card.path)}
+              className="group relative bg-card p-8 rounded-2xl border border-border hover:shadow transition-shadow cursor-pointer overflow-hidden flex flex-col items-center text-center gap-4"
+            >
+              <div
+                className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform duration-300 ${card.iconClass}`}
+              >
+                <Icon className="w-7 h-7" strokeWidth={2.5} />
+              </div>
 
-          <div className="relative w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
-            <Sparkles className="w-8 h-8 text-primary" strokeWidth={1.75} />
-          </div>
-
-          <div className="relative">
-            <h3 className="text-xl font-bold text-white mb-2 group-hover:text-primary transition-colors">
-              Configurar Agente de IA
-            </h3>
-            <p className="text-gray-400 text-sm leading-relaxed max-w-[200px]">
-              Escolha OpenAI, Gemini ou DeepSeek e use a sua própria chave de API.
-            </p>
-          </div>
-        </div>
-
-        {isSupportMode && (
-          <div
-            onClick={() => navigate('asaas')}
-            className="group relative bg-card p-8 rounded-2xl border border-white/5 hover:border-primary/50 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col items-center text-center gap-4"
-          >
-            <div className="absolute -inset-1 bg-gradient-to-r from-primary to-orange-600 rounded-2xl blur opacity-0 group-hover:opacity-10 transition duration-300" />
-
-            <div className="relative w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
-              <KeyRound className="w-8 h-8 text-primary" strokeWidth={1.75} />
+              <div>
+                <h3 className="text-xl font-bold text-foreground mb-2">{card.title}</h3>
+                <p className="text-muted-foreground text-sm leading-relaxed max-w-[200px]">
+                  {card.description}
+                </p>
+              </div>
             </div>
-
-            <div className="relative">
-              <h3 className="text-xl font-bold text-white mb-2 group-hover:text-primary transition-colors">
-                Asaas
-              </h3>
-              <p className="text-gray-400 text-sm leading-relaxed max-w-[200px]">
-                Token da API Asaas para o agente de suporte buscar e enviar faturas dos provedores.
-              </p>
-            </div>
-          </div>
-        )}
-
-        <div
-          onClick={() => navigate('erp')}
-          className="group relative bg-card p-8 rounded-2xl border border-white/5 hover:border-primary/50 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col items-center text-center gap-4"
-        >
-          <div className="absolute -inset-1 bg-gradient-to-r from-primary to-orange-600 rounded-2xl blur opacity-0 group-hover:opacity-10 transition duration-300" />
-
-          <div className="relative w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
-            <Network className="w-8 h-8 text-primary" strokeWidth={1.75} />
-          </div>
-
-          <div className="relative">
-            <h3 className="text-xl font-bold text-white mb-2 group-hover:text-primary transition-colors">
-              Seu ERP
-            </h3>
-            <p className="text-gray-400 text-sm leading-relaxed max-w-[200px]">
-              Conecte seu sistema de gestão e gerencie o token de webhook de disparos.
-            </p>
-          </div>
-        </div>
-
-        <div
-          onClick={() => navigate('acs')}
-          className="group relative bg-card p-8 rounded-2xl border border-white/5 hover:border-primary/50 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col items-center text-center gap-4"
-        >
-          <div className="absolute -inset-1 bg-gradient-to-r from-primary to-orange-600 rounded-2xl blur opacity-0 group-hover:opacity-10 transition duration-300" />
-
-          <div className="relative w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
-            <Router className="w-8 h-8 text-primary" strokeWidth={1.75} />
-          </div>
-
-          <div className="relative">
-            <h3 className="text-xl font-bold text-white mb-2 group-hover:text-primary transition-colors">
-              NIO HUB - ACS
-            </h3>
-            <p className="text-gray-400 text-sm leading-relaxed max-w-[200px]">
-              Conecte a API TR-069 para gerenciar ONTs/CPEs (Wi-Fi e equipamentos).
-            </p>
-          </div>
-        </div>
-
-        <div
-          onClick={() => navigate('meta')}
-          className="group relative bg-card p-8 rounded-2xl border border-white/5 hover:border-primary/50 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col items-center text-center gap-4"
-        >
-          <div className="absolute -inset-1 bg-gradient-to-r from-primary to-orange-600 rounded-2xl blur opacity-0 group-hover:opacity-10 transition duration-300" />
-
-          <div className="relative w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
-            <MetaIcon className="w-8 h-8 text-primary" strokeWidth={1.75} />
-          </div>
-
-          <div className="relative">
-            <h3 className="text-xl font-bold text-white mb-2 group-hover:text-primary transition-colors">
-              Meta
-            </h3>
-            <p className="text-gray-400 text-sm leading-relaxed max-w-[200px]">
-              Analytics da API oficial: mensagens grátis, templates pagos e gasto aproximado.
-            </p>
-          </div>
-        </div>
+          );
+        })}
       </div>
-
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        .group:hover {
-          box-shadow: 0 20px 40px -15px rgba(0,0,0,0.5);
-        }
-      `,
-        }}
-      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { SlidersHorizontal, ArrowLeft, ShieldAlert, Receipt, Filter, FileText, Clock } from 'lucide-react';
+import { SlidersHorizontal, ArrowLeft, ShieldAlert, Receipt, Filter, FileText, Clock, Megaphone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import InvoiceCardMessagePreview, {
   INVOICE_PREVIEW_SAMPLES,
@@ -42,6 +42,7 @@ export default function AttendanceRulesSettings({ provedorId }) {
   const [invoiceIntroTemplate, setInvoiceIntroTemplate] = useState('');
   const [provedorNome, setProvedorNome] = useState('');
   const [informHoursAfterComprovante, setInformHoursAfterComprovante] = useState(false);
+  const [canais, setCanais] = useState([]);
 
   const authHeaders = () => ({
     Authorization: `Token ${localStorage.getItem('auth_token') || localStorage.getItem('token') || ''}`,
@@ -73,8 +74,11 @@ export default function AttendanceRulesSettings({ provedorId }) {
       setLoading(true);
       setError('');
       try {
-        const res = await axios.get(`/api/provedores/${provedorId}/`, { headers: authHeaders() });
-        const prov = res.data;
+        const [provRes, canaisRes] = await Promise.all([
+          axios.get(`/api/provedores/${provedorId}/`, { headers: authHeaders() }),
+          axios.get(`/api/canais/?provedor_id=${provedorId}`, { headers: authHeaders() }),
+        ]);
+        const prov = provRes.data;
         setAllowWhenSuspended(Boolean(prov.allow_ticket_when_contract_suspended));
         setBlockMessage(prov.suspended_contract_ticket_message || '');
         setSendFinancialMenu(Boolean(prov.send_financial_menu_after_suspended_block));
@@ -84,6 +88,23 @@ export default function AttendanceRulesSettings({ provedorId }) {
         setInvoiceIntroTemplate(prov.invoice_intro_message_template || '');
         setProvedorNome(prov.nome || '');
         setInformHoursAfterComprovante(Boolean(prov.ai_inform_hours_after_comprovante_transfer));
+
+        const list = Array.isArray(canaisRes.data)
+          ? canaisRes.data
+          : (canaisRes.data?.results || []);
+        setCanais(
+          list
+            .filter((c) => c && c.ativo !== false)
+            .map((c) => ({
+              id: c.id,
+              nome: c.nome || c.phone_number || `Canal ${c.id}`,
+              tipo: c.tipo || '',
+              somente_disparo: Boolean(c.somente_disparo),
+              disparo_resposta_acao:
+                c.disparo_resposta_acao === 'encerrar' ? 'encerrar' : 'fila',
+            }))
+            .sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'))
+        );
       } catch {
         setError('Erro ao carregar regras de atendimento.');
       } finally {
@@ -124,6 +145,32 @@ export default function AttendanceRulesSettings({ provedorId }) {
     });
   };
 
+  const setCanalSomenteDisparo = (canalId, checked) => {
+    setCanais((prev) =>
+      prev.map((c) =>
+        c.id === canalId
+          ? {
+              ...c,
+              somente_disparo: checked,
+              disparo_resposta_acao: checked
+                ? (c.disparo_resposta_acao || 'fila')
+                : 'fila',
+            }
+          : c
+      )
+    );
+  };
+
+  const setCanalDisparoResposta = (canalId, acao) => {
+    setCanais((prev) =>
+      prev.map((c) =>
+        c.id === canalId
+          ? { ...c, disparo_resposta_acao: acao === 'encerrar' ? 'encerrar' : 'fila' }
+          : c
+      )
+    );
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -143,6 +190,15 @@ export default function AttendanceRulesSettings({ provedorId }) {
           ai_inform_hours_after_comprovante_transfer: informHoursAfterComprovante,
         },
         { headers: authHeaders() }
+      );
+      await Promise.all(
+        canais.map((c) =>
+          axios.patch(
+            `/api/canais/${c.id}/`,
+            { somente_disparo: Boolean(c.somente_disparo), disparo_resposta_acao: c.disparo_resposta_acao === 'encerrar' ? 'encerrar' : 'fila' },
+            { headers: authHeaders() }
+          )
+        )
       );
       setSuccess('Regras salvas com sucesso.');
     } catch {
@@ -384,6 +440,74 @@ export default function AttendanceRulesSettings({ provedorId }) {
               label="Informar horário após comprovante"
             />
           </div>
+        </section>
+
+        <section className="bg-card border border-border rounded-xl p-6 space-y-6 w-full">
+          <div className="flex items-center justify-between gap-2 border-b border-border pb-4">
+            <div className="flex items-center gap-2">
+              <Megaphone className="w-5 h-5 text-amber-500" strokeWidth={2.5} />
+              <h2 className="text-lg font-semibold text-foreground">Canais só de disparo</h2>
+            </div>
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              opcional
+            </span>
+          </div>
+
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Marque canais usados apenas para cobrança/templates. Nesses canais o sistema
+            não gera protocolo e não envia transferência por inatividade do chatbot.
+            Ao ligar, escolha o que fazer se o cliente responder.
+          </p>
+
+          {canais.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum canal ativo encontrado.</p>
+          ) : (
+            <div className="space-y-3">
+              {canais.map((canal) => (
+                <div
+                  key={canal.id}
+                  className="rounded-lg border border-border bg-background/60 px-4 py-3 space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-medium text-foreground truncate">{canal.nome}</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {canal.tipo || 'canal'} · id {canal.id}
+                      </p>
+                    </div>
+                    <ToggleSwitch
+                      checked={Boolean(canal.somente_disparo)}
+                      onChange={(checked) => setCanalSomenteDisparo(canal.id, checked)}
+                      label={`Somente disparo — ${canal.nome}`}
+                    />
+                  </div>
+                  {canal.somente_disparo && (
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                        Se o cliente responder neste canal
+                      </label>
+                      <select
+                        value={canal.disparo_resposta_acao || 'fila'}
+                        onChange={(e) => setCanalDisparoResposta(canal.id, e.target.value)}
+                        className="w-full max-w-md rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      >
+                        <option value="fila">Enviar para a fila humana</option>
+                        <option value="encerrar">
+                          Ignorar e manter encerrado (sem gravar, sem CSAT)
+                        </option>
+                      </select>
+                      {canal.disparo_resposta_acao === 'encerrar' && (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          A mensagem do cliente não é salva, o atendimento não reabre e
+                          nada é enviado (CSAT ou outro aviso).
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="bg-card border border-border rounded-xl p-6 space-y-6 w-full">

@@ -205,6 +205,18 @@ class AuditLog(models.Model):
 class MensagemSistema(models.Model):
     assunto = models.CharField(max_length=200, default='', blank=True)
     mensagem = models.TextField(default='', blank=True)
+    # Banner/imagem do aviso (URL pública) + áreas clicáveis em % da imagem
+    imagem_url = models.URLField(max_length=1000, blank=True, default='')
+    hotspots = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Áreas clicáveis na imagem: [{x,y,w,h,url,label}] em % (0-100).',
+    )
+    cta_links = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Botões abaixo da imagem: [{label,url}].',
+    )
     provedores = models.JSONField(default=list, blank=True)
     tipo = models.CharField(max_length=30, default='notificacao')
     visivel_para_agentes = models.BooleanField(default=True)

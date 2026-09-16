@@ -563,6 +563,33 @@ class Canal(models.Model):
     # Campo para controlar se a IA está ativa neste canal
     ia_ativa = models.BooleanField(default=True, verbose_name='IA Ativa', help_text='Se desativado, a IA não responderá automaticamente neste canal, mas o provedor ainda poderá enviar e receber mensagens normalmente.')
 
+    # Canal usado só para disparos (cobrança/templates): sem chatbot/timeout automático e sem protocolo ao cliente
+    somente_disparo = models.BooleanField(
+        default=False,
+        verbose_name='Somente disparo',
+        help_text=(
+            'Se ativo, este canal é tratado como canal de disparo: não gera protocolo e '
+            'não aplica timeout/transferência automática do chatbot.'
+        ),
+    )
+    DISPARO_RESPOSTA_FILA = 'fila'
+    DISPARO_RESPOSTA_ENCERRAR = 'encerrar'
+    DISPARO_RESPOSTA_CHOICES = [
+        (DISPARO_RESPOSTA_FILA, 'Enviar para fila humana'),
+        (DISPARO_RESPOSTA_ENCERRAR, 'Ignorar e manter encerrado'),
+    ]
+    disparo_resposta_acao = models.CharField(
+        max_length=20,
+        choices=DISPARO_RESPOSTA_CHOICES,
+        default=DISPARO_RESPOSTA_FILA,
+        verbose_name='Ao responder no canal de disparo',
+        help_text=(
+            'Só vale com “Somente disparo” ativo. '
+            '“fila”: envia para fila humana. '
+            '“encerrar”: ignora a mensagem do cliente (não grava, sem CSAT, sem reabrir).'
+        ),
+    )
+
     class Meta:
         verbose_name = 'Canal'
         verbose_name_plural = 'Canais'
@@ -613,6 +640,19 @@ class MensagemSistema(models.Model):
     # Campos antigos (usados pelo serializer e frontend)
     assunto = models.CharField(max_length=200, verbose_name='Assunto', default='', blank=True)
     mensagem = models.TextField(verbose_name='Mensagem', default='', blank=True)
+    imagem_url = models.URLField(max_length=1000, blank=True, default='', verbose_name='URL da imagem')
+    hotspots = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Áreas clicáveis na imagem',
+        help_text='[{x,y,w,h,url,label}] em % (0-100).',
+    )
+    cta_links = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Botões / links',
+        help_text='[{label,url}].',
+    )
     provedores = models.JSONField(default=list, verbose_name='Provedores (IDs)')
     provedores_count = models.IntegerField(default=0, verbose_name='Quantidade de Provedores')
     visualizacoes = models.JSONField(default=dict, verbose_name='Visualizações')

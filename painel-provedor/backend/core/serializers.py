@@ -992,7 +992,7 @@ class CanalSerializer(serializers.ModelSerializer):
     class Meta:
         model = Canal
         fields = [
-            'id', 'tipo', 'nome', 'ativo', 'provedor', 'ia_ativa',
+            'id', 'tipo', 'nome', 'ativo', 'provedor', 'ia_ativa', 'somente_disparo', 'disparo_resposta_acao',
             'api_id', 'api_hash', 'app_title', 'short_name',  # Telegram
             'verification_code', 'phone_number',  # Telegram/WhatsApp
             'waba_id', 'phone_number_id', 'token', 'status',  # WhatsApp Oficial
@@ -1558,9 +1558,11 @@ class MensagemSistemaSerializer(serializers.ModelSerializer):
     class Meta:
         model = MensagemSistema
         fields = [
-            'id', 'assunto', 'mensagem', 'tipo', 'provedores', 
+            'id', 'assunto', 'mensagem', 'imagem_url', 'hotspots', 'cta_links',
+            'tipo', 'provedores',
             'provedores_count', 'visualizacoes', 'visualizacoes_count',
             'provedores_detalhados', 'visualizacoes_detalhadas',
+            'visivel_para_agentes',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'provedores_count', 'visualizacoes', 'visualizacoes_count', 'created_at', 'updated_at']

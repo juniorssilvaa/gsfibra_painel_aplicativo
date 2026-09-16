@@ -1240,6 +1240,22 @@ def process_incoming_messages(waba_id: str, value: dict):
                         is_active=True
                     )
             
+            # Canal só de disparo + “encerrar”: ignorar inbound (não grava, sem CSAT, sem reabrir)
+            from conversations.inbound_routing import (
+                ensure_conversation_silently_closed,
+                should_silently_ignore_disparo_inbound,
+            )
+            if should_silently_ignore_disparo_inbound(canal=canal, inbox=inbox):
+                existing = Conversation.objects.filter(contact=contact, inbox=inbox).first()
+                if existing:
+                    ensure_conversation_silently_closed(existing)
+                logger.info(
+                    "[WhatsAppWebhook] Inbound ignorado (somente_disparo/encerrar) contact=%s canal=%s",
+                    normalized_from,
+                    getattr(canal, 'id', None),
+                )
+                continue
+
             # Verificar modo de atendimento
             bot_mode = getattr(provedor, 'bot_mode', 'ia')
             ia_team = None

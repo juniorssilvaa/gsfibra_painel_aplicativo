@@ -442,7 +442,8 @@ class MensagemSistemaSerializer(serializers.ModelSerializer):
     class Meta:
         model = MensagemSistema
         fields = [
-            'id', 'assunto', 'mensagem', 'provedores', 'tipo',
+            'id', 'assunto', 'mensagem', 'imagem_url', 'hotspots', 'cta_links',
+            'provedores', 'tipo',
             'visivel_para_agentes', 'visualizacoes', 'visualizacoes_count',
             'provedores_count', 'provedores_detalhados', 'visualizacoes_detalhadas',
             'created_at', 'updated_at',

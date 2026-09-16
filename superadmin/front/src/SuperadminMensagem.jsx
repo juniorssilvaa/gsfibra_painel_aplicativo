@@ -7,6 +7,9 @@ export default function SuperadminMensagem() {
   const [selectedProvedores, setSelectedProvedores] = useState([]);
   const [mensagem, setMensagem] = useState('');
   const [assunto, setAssunto] = useState('');
+  const [imagemUrl, setImagemUrl] = useState('');
+  const [hotspots, setHotspots] = useState([]);
+  const [ctaLinks, setCtaLinks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [mensagensEnviadas, setMensagensEnviadas] = useState([]);
   const [loadingMensagens, setLoadingMensagens] = useState(false);
@@ -85,7 +88,6 @@ export default function SuperadminMensagem() {
     setSelectedProvedores([]);
   };
 
-  // Enviar mensagem
   const handleEnviarMensagem = async (e) => {
     e.preventDefault();
     
@@ -93,9 +95,10 @@ export default function SuperadminMensagem() {
       setError('O assunto é obrigatório');
       return;
     }
-    
-    if (!mensagem.trim()) {
-      setError('A mensagem é obrigatória');
+
+    const imagem = imagemUrl.trim();
+    if (!mensagem.trim() && !imagem) {
+      setError('Informe a mensagem e/ou a URL da imagem');
       return;
     }
     
@@ -103,6 +106,24 @@ export default function SuperadminMensagem() {
       setError('Selecione pelo menos um provedor');
       return;
     }
+
+    const cleanHotspots = hotspots
+      .map((h) => ({
+        x: Number(h.x) || 0,
+        y: Number(h.y) || 0,
+        w: Number(h.w) || 10,
+        h: Number(h.h) || 10,
+        url: String(h.url || '').trim(),
+        label: String(h.label || '').trim() || 'Abrir link',
+      }))
+      .filter((h) => h.url);
+
+    const cleanCtas = ctaLinks
+      .map((c) => ({
+        label: String(c.label || '').trim() || 'Abrir link',
+        url: String(c.url || '').trim(),
+      }))
+      .filter((c) => c.url);
 
     try {
       setLoading(true);
@@ -112,6 +133,9 @@ export default function SuperadminMensagem() {
       const response = await axios.post('/api/mensagens-sistema/', {
         assunto: assunto.trim(),
         mensagem: mensagem.trim(),
+        imagem_url: imagem,
+        hotspots: cleanHotspots,
+        cta_links: cleanCtas,
         provedores: selectedProvedores,
         tipo: 'notificacao',
         visivel_para_agentes: visivelParaAgentes
@@ -132,14 +156,15 @@ export default function SuperadminMensagem() {
         setError('');
         setAssunto('');
         setMensagem('');
+        setImagemUrl('');
+        setHotspots([]);
+        setCtaLinks([]);
         setSelectedProvedores([]);
         setVisivelParaAgentes(true);
       }
       
-      // Atualizar lista de mensagens
       fetchMensagensEnviadas();
       
-      // Limpar mensagem de sucesso após 3 segundos
       setTimeout(() => setSuccess(''), 3000);
       
     } catch (err) {
@@ -255,16 +280,174 @@ export default function SuperadminMensagem() {
             {/* Mensagem */}
             <div>
               <label className="block font-medium mb-2 text-foreground">
-                Mensagem *
+                Mensagem {imagemUrl.trim() ? '(opcional se houver imagem)' : '*'}
               </label>
               <textarea
                 value={mensagem}
                 onChange={(e) => setMensagem(e.target.value)}
                 placeholder="Digite sua mensagem aqui..."
-                rows={6}
+                rows={5}
                 className="w-full px-4 py-3 rounded-lg bg-background border border-border text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none"
-                required
+                required={!imagemUrl.trim()}
               />
+            </div>
+
+            {/* Imagem do aviso */}
+            <div className="space-y-3 rounded-xl border border-border bg-muted/10 p-4">
+              <div>
+                <label className="block font-medium mb-2 text-foreground">
+                  URL da imagem (banner)
+                </label>
+                <input
+                  type="url"
+                  value={imagemUrl}
+                  onChange={(e) => setImagemUrl(e.target.value)}
+                  placeholder="https://cdn.exemplo.com/aviso.png"
+                  className="w-full px-4 py-3 rounded-lg bg-background border border-border text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Use uma URL pública da imagem. Depois marque áreas clicáveis (ex.: botão Play Store).
+                </p>
+              </div>
+
+              {imagemUrl.trim() && (
+                <div className="rounded-lg border border-border overflow-hidden bg-background">
+                  <img src={imagemUrl.trim()} alt="Prévia" className="w-full h-auto max-h-64 object-contain" />
+                </div>
+              )}
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="font-medium text-foreground text-sm">
+                    Áreas clicáveis na imagem (% da largura/altura)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setHotspots((prev) => [
+                        ...prev,
+                        { x: 10, y: 70, w: 35, h: 12, url: '', label: 'Play Store' },
+                      ])
+                    }
+                    className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground"
+                  >
+                    + Área
+                  </button>
+                </div>
+                {hotspots.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Ex.: Play Store em x=10 y=75 w=38 h=14 — App Store ao lado.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {hotspots.map((h, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-1.5 items-center">
+                        {['x', 'y', 'w', 'h'].map((key) => (
+                          <input
+                            key={key}
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={h[key]}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setHotspots((prev) =>
+                                prev.map((item, i) => (i === idx ? { ...item, [key]: v } : item))
+                              );
+                            }}
+                            className="col-span-1 px-1 py-1.5 text-xs rounded border border-border bg-background"
+                            title={key.toUpperCase()}
+                            placeholder={key}
+                          />
+                        ))}
+                        <input
+                          type="text"
+                          value={h.label}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setHotspots((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, label: v } : item))
+                            );
+                          }}
+                          placeholder="Label"
+                          className="col-span-3 px-2 py-1.5 text-xs rounded border border-border bg-background"
+                        />
+                        <input
+                          type="url"
+                          value={h.url}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setHotspots((prev) =>
+                              prev.map((item, i) => (i === idx ? { ...item, url: v } : item))
+                            );
+                          }}
+                          placeholder="https://play.google.com/..."
+                          className="col-span-4 px-2 py-1.5 text-xs rounded border border-border bg-background"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setHotspots((prev) => prev.filter((_, i) => i !== idx))}
+                          className="col-span-1 text-xs text-red-400 hover:text-red-300"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="font-medium text-foreground text-sm">
+                    Botões abaixo da imagem (opcional)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCtaLinks((prev) => [...prev, { label: 'Baixar app', url: '' }])
+                    }
+                    className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground"
+                  >
+                    + Botão
+                  </button>
+                </div>
+                {ctaLinks.map((c, idx) => (
+                  <div key={idx} className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={c.label}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCtaLinks((prev) =>
+                          prev.map((item, i) => (i === idx ? { ...item, label: v } : item))
+                        );
+                      }}
+                      placeholder="Label"
+                      className="w-1/3 px-2 py-1.5 text-xs rounded border border-border bg-background"
+                    />
+                    <input
+                      type="url"
+                      value={c.url}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCtaLinks((prev) =>
+                          prev.map((item, i) => (i === idx ? { ...item, url: v } : item))
+                        );
+                      }}
+                      placeholder="https://..."
+                      className="flex-1 px-2 py-1.5 text-xs rounded border border-border bg-background"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCtaLinks((prev) => prev.filter((_, i) => i !== idx))}
+                      className="text-xs text-red-400"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Opções de Visibilidade */}

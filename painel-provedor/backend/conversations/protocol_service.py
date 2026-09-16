@@ -179,6 +179,15 @@ def ensure_niohub_protocol(
     if not conversation or not getattr(conversation, "id", None):
         return None
 
+    # Canal só de disparo: não gera/renova protocolo para o cliente
+    try:
+        inbox = getattr(conversation, "inbox", None)
+        canal = inbox.get_canal_instance() if inbox and hasattr(inbox, "get_canal_instance") else None
+        if canal and getattr(canal, "somente_disparo", False):
+            return None
+    except Exception:
+        pass
+
     attrs = dict(getattr(conversation, "additional_attributes", None) or {})
     current = str(attrs.get(ATTR_PROTOCOLO) or "").strip()
     source = str(attrs.get(ATTR_SOURCE) or "niohub").strip().lower()

@@ -93,6 +93,9 @@ def dispatch_system_message_to_tenants(mensagem, provedor_ids: list[int]) -> lis
         'superadmin_message_id': mensagem.id,
         'assunto': mensagem.assunto or '',
         'mensagem': mensagem.mensagem or '',
+        'imagem_url': (getattr(mensagem, 'imagem_url', None) or '').strip(),
+        'hotspots': getattr(mensagem, 'hotspots', None) or [],
+        'cta_links': getattr(mensagem, 'cta_links', None) or [],
         'tipo': mensagem.tipo or 'notificacao',
         'visivel_para_agentes': bool(mensagem.visivel_para_agentes),
     }
