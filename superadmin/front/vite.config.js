@@ -36,8 +36,9 @@ export default defineConfig(({ mode }) => {
         'react-dom/client': path.resolve(__dirname, './node_modules/react-dom/client'),
         'react/jsx-runtime': path.resolve(__dirname, './node_modules/react/jsx-runtime'),
         'react/jsx-dev-runtime': path.resolve(__dirname, './node_modules/react/jsx-dev-runtime'),
+        'chart.js': path.resolve(__dirname, './node_modules/chart.js'),
       },
-      dedupe: ['react', 'react-dom', 'react-dom/client'],
+      dedupe: ['react', 'react-dom', 'react-dom/client', 'chart.js', 'react-chartjs-2'],
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
     },
     build: {

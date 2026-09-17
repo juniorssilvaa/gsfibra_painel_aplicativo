@@ -72,6 +72,14 @@ def _periodic_loop() -> None:
 
                 blk = run_billing_auto_block_cycle()
                 logger.info("[Superadmin ASGI periodic] auto_block: %s", blk)
+
+                try:
+                    from super_core.inter_billing_service import run_inter_charge_renewal_cycle
+
+                    renew = run_inter_charge_renewal_cycle(days_ahead=5)
+                    logger.info("[Superadmin ASGI periodic] inter_renew: %s", renew)
+                except Exception:
+                    logger.exception("[Superadmin ASGI periodic] erro em inter_renew")
         except Exception:
             logger.exception("[Superadmin ASGI periodic] erro em auto_block")
 

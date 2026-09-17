@@ -30,8 +30,10 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, './src'),
         '@superadmin': path.resolve(__dirname, './src'),
+        // Força uma única cópia do Chart.js (pnpm + react-chartjs-2)
+        'chart.js': path.resolve(__dirname, 'node_modules/chart.js'),
       },
-      dedupe: ['react', 'react-dom', 'react-dom/client'],
+      dedupe: ['react', 'react-dom', 'react-dom/client', 'chart.js', 'react-chartjs-2'],
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
     },
     build: {
@@ -56,6 +58,8 @@ export default defineConfig(({ mode }) => {
         'react/jsx-runtime',
         'react/jsx-dev-runtime',
         'react-router-dom',
+        'chart.js',
+        'react-chartjs-2',
       ],
       esbuildOptions: { define: { global: 'globalThis' } },
     },

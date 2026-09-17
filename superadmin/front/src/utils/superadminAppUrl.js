@@ -38,6 +38,11 @@ export function getAsaasWebhookUrl() {
   return `${getSuperadminPublicOrigin()}/api/webhooks/asaas/`;
 }
 
+/** Webhook Inter sempre na URL pública de produção (o banco não alcança localhost). */
+export function getInterWebhookUrl() {
+  return `${SUPERADMIN_PRODUCTION_ORIGIN}/api/webhooks/inter/`;
+}
+
 export function isSuperadminLocalDev() {
   if (typeof window === 'undefined') return false;
   return isLocalDevHost(window.location.hostname || '');

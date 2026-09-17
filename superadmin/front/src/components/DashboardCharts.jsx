@@ -1,15 +1,10 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Doughnut, Pie } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  ArcElement,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+import { ensureChartJsRegistered } from '../lib/chartSetup';
 import axios from 'axios';
 import { STATUS_PILL } from './DashboardOverviewPanels';
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+ensureChartJsRegistered();
 
 const PIE_COLORS = [
   STATUS_PILL.ochre,

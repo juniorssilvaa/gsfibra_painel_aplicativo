@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Doughnut } from 'react-chartjs-2';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
+import { ensureChartJsRegistered } from '../lib/chartSetup';
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+ensureChartJsRegistered();
 
 /** Paleta sólida dos pills "Contratos ativos" (Status Geral). */
 export const STATUS_PILL = {

@@ -77,11 +77,48 @@ function getSnapshot() {
 
 export function friendlyApiError(error, fallback = 'Erro') {
   const data = error?.response?.data
-  if (typeof data === 'string' && data.trim()) return data.trim()
-  if (data?.error) return String(data.error)
-  if (data?.detail) return String(data.detail)
-  if (data?.message) return String(data.message)
-  if (error?.message) return String(error.message)
+
+  const fromInterPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return ''
+    const violacoes = payload.violacoes || payload.violations
+    if (Array.isArray(violacoes) && violacoes.length) {
+      const razoes = violacoes
+        .map((v) => (v && typeof v === 'object' ? String(v.razao || v.message || '').trim() : ''))
+        .filter(Boolean)
+      if (razoes.length) return razoes.join(' | ')
+    }
+    return String(payload.detail || payload.title || payload.message || payload.error || '').trim()
+  }
+
+  const parseMaybeJson = (raw) => {
+    const text = String(raw || '').trim()
+    if (!text) return ''
+    const human = fromInterPayload(text.startsWith('{') ? (() => {
+      try { return JSON.parse(text) } catch { return null }
+    })() : null)
+    if (human) return human
+    const start = text.indexOf('{')
+    if (start >= 0) {
+      try {
+        const parsed = JSON.parse(text.slice(start))
+        const nested = fromInterPayload(parsed)
+        if (nested) return nested
+      } catch {
+        /* ignore */
+      }
+    }
+    return text
+  }
+
+  if (typeof data === 'string' && data.trim()) return parseMaybeJson(data)
+  if (data && typeof data === 'object') {
+    const interMsg = fromInterPayload(data)
+    if (interMsg) return interMsg
+    if (data.error) return parseMaybeJson(data.error)
+    if (data.detail) return parseMaybeJson(data.detail)
+    if (data.message) return parseMaybeJson(data.message)
+  }
+  if (error?.message) return parseMaybeJson(error.message)
   return fallback
 }
 

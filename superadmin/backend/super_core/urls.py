@@ -4,6 +4,7 @@ from . import views
 from .webhook_dispatcher import whatsapp_dispatcher, provider_channel_register, dispatcher_status
 from .instagram_oauth import instagram_oauth_callback
 from .asaas_webhook import asaas_webhook
+from .inter_webhook import inter_webhook
 from . import suggestions
 
 router = DefaultRouter()
@@ -85,6 +86,7 @@ urlpatterns = [
         name='provider_suggestions_comments',
     ),
     path('webhooks/asaas/', asaas_webhook, name='asaas_webhook'),
+    path('webhooks/inter/', inter_webhook, name='inter_webhook'),
     # Aplicativo mobile do cliente (legado app_provedor → mesmo Postgres)
     path('mobile-app/', include('mobile_app.urls')),
     path('acs/', include('acs.urls')),

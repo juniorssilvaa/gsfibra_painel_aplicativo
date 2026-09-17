@@ -11,6 +11,9 @@
   window.history.replaceState(null, '', window.location.pathname + window.location.search)
 })()
 
+// Chart.js: registrar Arc/Pie/Doughnut antes de qualquer gráfico do dashboard
+import './lib/chartSetup.js'
+
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'

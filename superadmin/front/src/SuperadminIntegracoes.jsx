@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link2, Save, Eye, EyeOff, Server, KeyRound } from 'lucide-react';
 import axios from 'axios';
-import { getAsaasWebhookUrl, isSuperadminLocalDev, SUPERADMIN_PRODUCTION_ORIGIN, SUPERADMIN_LOCAL_ORIGIN } from './utils/superadminAppUrl';
+import { getAsaasWebhookUrl, getInterWebhookUrl, isSuperadminLocalDev, SUPERADMIN_PRODUCTION_ORIGIN, SUPERADMIN_LOCAL_ORIGIN } from './utils/superadminAppUrl';
 
 export default function SuperadminIntegracoes() {
   const [config, setConfig] = useState(null);
@@ -14,6 +14,11 @@ export default function SuperadminIntegracoes() {
   const [showOpenAITranscriptionKey, setShowOpenAITranscriptionKey] = useState(false);
   const [showAsaasToken, setShowAsaasToken] = useState(false);
   const [showAsaasWebhookToken, setShowAsaasWebhookToken] = useState(false);
+  const [showInterSecret, setShowInterSecret] = useState(false);
+  const [showInterClientId, setShowInterClientId] = useState(false);
+  const [showInterCert, setShowInterCert] = useState(false);
+  const [showInterKey, setShowInterKey] = useState(false);
+  const [showInterWebhookToken, setShowInterWebhookToken] = useState(false);
   const [showAwesomeApiToken, setShowAwesomeApiToken] = useState(false);
 
   useEffect(() => {
@@ -265,6 +270,184 @@ export default function SuperadminIntegracoes() {
                   Modo Sandbox (Habilitar para usar chaves de teste do Asaas)
                 </label>
               </div>
+            </section>
+
+            <section className="bg-card border border-border rounded-xl shadow-lg p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-primary" />
+                Configurações do Banco Inter
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Use junto com o Asaas. Ao criar a assinatura do provedor, escolha o portador.
+                Credenciais vêm da integração PJ no Internet Banking (client_id, secret, .crt e .key).
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-2">
+                    Client ID
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showInterClientId ? 'text' : 'password'}
+                      autoComplete="off"
+                      className="w-full px-4 py-2 pr-12 rounded bg-[#181b20] text-white border border-border"
+                      value={config?.inter_client_id || ''}
+                      onChange={(e) => updateField('inter_client_id', e.target.value)}
+                      placeholder="Client ID da integração Inter"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowInterClientId((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                      aria-label={showInterClientId ? 'Ocultar Client ID' : 'Mostrar Client ID'}
+                    >
+                      {showInterClientId ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-2">
+                    Client Secret
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showInterSecret ? 'text' : 'password'}
+                      autoComplete="off"
+                      className="w-full px-4 py-2 pr-12 rounded bg-[#181b20] text-white border border-border"
+                      value={config?.inter_client_secret || ''}
+                      onChange={(e) => updateField('inter_client_secret', e.target.value)}
+                      placeholder="Client Secret"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowInterSecret((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                      aria-label={showInterSecret ? 'Ocultar Client Secret' : 'Mostrar Client Secret'}
+                    >
+                      {showInterSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-2">
+                    Conta corrente (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border"
+                    value={config?.inter_conta_corrente || ''}
+                    onChange={(e) => updateField('inter_conta_corrente', e.target.value)}
+                    placeholder="Número da conta corrente"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-2">
+                    URL do Webhook (cadastrar no Inter)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    className="w-full px-4 py-2 rounded bg-[#181b20] text-emerald-300 border border-border font-mono text-sm"
+                    value={getInterWebhookUrl()}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Produção: {SUPERADMIN_PRODUCTION_ORIGIN} — cadastre esta URL no Internet Banking Inter.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-2">
+                    Token opcional do webhook Inter
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showInterWebhookToken ? 'text' : 'password'}
+                      autoComplete="off"
+                      className="w-full px-4 py-2 pr-12 rounded bg-[#181b20] text-white border border-border"
+                      value={config?.inter_webhook_auth_token || ''}
+                      onChange={(e) => updateField('inter_webhook_auth_token', e.target.value)}
+                      placeholder="Se preenchido, exige ?token= ou header Authorization"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowInterWebhookToken((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                      aria-label={showInterWebhookToken ? 'Ocultar token' : 'Mostrar token'}
+                    >
+                      {showInterWebhookToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase">
+                    Certificado (.crt) — cole o conteúdo PEM
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowInterCert((v) => !v)}
+                    className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-white"
+                    aria-label={showInterCert ? 'Ocultar certificado' : 'Mostrar certificado'}
+                  >
+                    {showInterCert ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showInterCert ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+                <textarea
+                  rows={4}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border font-mono text-xs"
+                  style={showInterCert ? undefined : { WebkitTextSecurity: 'disc' }}
+                  value={config?.inter_cert_pem || ''}
+                  onChange={(e) => updateField('inter_cert_pem', e.target.value)}
+                  placeholder="-----BEGIN CERTIFICATE-----"
+                />
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase">
+                    Chave privada (.key) — cole o conteúdo PEM
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowInterKey((v) => !v)}
+                    className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-white"
+                    aria-label={showInterKey ? 'Ocultar chave' : 'Mostrar chave'}
+                  >
+                    {showInterKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showInterKey ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+                <textarea
+                  rows={4}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border font-mono text-xs"
+                  style={showInterKey ? undefined : { WebkitTextSecurity: 'disc' }}
+                  value={config?.inter_key_pem || ''}
+                  onChange={(e) => updateField('inter_key_pem', e.target.value)}
+                  placeholder="-----BEGIN PRIVATE KEY-----"
+                />
+              </div>
+              <div className="flex items-center space-x-3 pt-2">
+                <input
+                  type="checkbox"
+                  id="inter_sandbox"
+                  checked={config?.inter_sandbox !== false}
+                  onChange={(e) => updateField('inter_sandbox', e.target.checked)}
+                  className="w-4 h-4 text-primary bg-background border-border rounded focus:ring-primary focus:ring-2"
+                />
+                <label htmlFor="inter_sandbox" className="text-sm font-medium text-foreground">
+                  Modo Sandbox Inter (desmarque em produção)
+                </label>
+              </div>
+              {config?.inter_sandbox !== false && (
+                <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  Sandbox ativo — cobranças vão para o ambiente de homologação do Inter. Para produção, desmarque e use
+                  certificado/client_id de produção.
+                </p>
+              )}
             </section>
 
             <section className="bg-card border border-border rounded-xl shadow-lg p-6 space-y-4">

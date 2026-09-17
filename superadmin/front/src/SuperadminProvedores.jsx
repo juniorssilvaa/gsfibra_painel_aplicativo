@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Wifi, Search, Edit, Trash2, MoreVertical, Plus, Eye, Users, MessageCircle, TrendingUp, Database, Trash, FileText, CheckCircle2, RefreshCw, Zap, KeyRound, Copy, X, Calendar, Bell, Globe2, CreditCard, ExternalLink, Smartphone, MessageSquare, ChevronsUpDown, Router } from 'lucide-react';
 import axios from 'axios';
 import ReactDOM from 'react-dom';
+import { toast } from './lib/notify';
 
 const FALLBACK_VPS_POOL = [];
 
@@ -37,6 +38,13 @@ const getProviderVpsKey = (provedor) => {
     ext?.deployment?.vps_key ||
     ''
   );
+};
+
+/** Portador Inter: campo explícito ou ID local INTER-SUB-* */
+const isInterBilling = (formOrProv) => {
+  if (!formOrProv) return false;
+  if ((formOrProv.billing_provider || '') === 'inter') return true;
+  return String(formOrProv.asaas_subscription_id || '').startsWith('INTER-SUB-');
 };
 
 const inputClass =
@@ -125,6 +133,7 @@ export default function SuperadminProvedores() {
     notification_disabled: false,
     foreign_customer: false,
     // Campos Assinatura Asaas (Setup Automático)
+    billing_provider: 'asaas',
     subscription_value: 0,
     subscription_cycle: 'MONTHLY',
     subscription_billing_type: 'BOLETO',
@@ -175,6 +184,7 @@ export default function SuperadminProvedores() {
     foreign_customer: false,
     // Campos Assinatura Asaas
     asaas_subscription_id: '',
+    billing_provider: 'asaas',
     subscription_value: 0,
     subscription_cycle: 'MONTHLY',
     subscription_billing_type: 'BOLETO',
@@ -677,6 +687,9 @@ export default function SuperadminProvedores() {
       ...prev,
       asaas_customer_id: data.asaas_customer_id || '',
       asaas_subscription_id: data.asaas_subscription_id || '',
+      billing_provider:
+        data.billing_provider
+        || (String(data.asaas_subscription_id || '').startsWith('INTER-SUB-') ? 'inter' : prev.billing_provider),
       subscription_status: data.subscription_status || '',
       subscription_value: data.subscription_value ?? prev.subscription_value,
       subscription_cycle: data.subscription_cycle || prev.subscription_cycle,
@@ -737,6 +750,7 @@ export default function SuperadminProvedores() {
       foreign_customer: provedor.foreign_customer || false,
       // Subscription Data
       asaas_subscription_id: provedor.asaas_subscription_id || '',
+      billing_provider: isInterBilling(provedor) ? 'inter' : (provedor.billing_provider || 'asaas'),
       subscription_value: provedor.subscription_value || 0,
       subscription_cycle: provedor.subscription_cycle || 'MONTHLY',
       subscription_billing_type: provedor.subscription_billing_type || 'BOLETO',
@@ -808,6 +822,13 @@ export default function SuperadminProvedores() {
       // Limpar campos de data vazios — DateField do DRF rejeita string vazia
       if (payload.subscription_next_due_date === '' || payload.subscription_next_due_date == null) {
         delete payload.subscription_next_due_date;
+      }
+      // Não apagar vínculo de assinatura com string vazia no save geral
+      if (!payload.asaas_subscription_id) {
+        delete payload.asaas_subscription_id;
+      }
+      if (payload.subscription_status === '' || payload.subscription_status == null) {
+        delete payload.subscription_status;
       }
       // Garantir que desired_id nunca vai no payload de edição
       delete payload.desired_id;
@@ -892,7 +913,7 @@ export default function SuperadminProvedores() {
       });
 
       if (response.data.success) {
-        alert('Provedor sincronizado com sucesso no Asaas!');
+        toast.success('Provedor sincronizado com sucesso no Asaas.');
         
         // Atualizar lista
         const res = await axios.get('/api/provedores/', {
@@ -905,10 +926,12 @@ export default function SuperadminProvedores() {
           ...prev,
           asaas_customer_id: response.data.customer_id
         }));
+      } else {
+        toast.apiError({ response: { data: response.data } }, 'Erro ao sincronizar cliente.');
       }
     } catch (err) {
       console.error('Erro ao sincronizar com Asaas:', err);
-      setErrorMsg(err.response?.data?.error || 'Erro ao sincronizar cliente. Verifique o CPF/CNPJ e outros dados.');
+      toast.apiError(err, 'Erro ao sincronizar cliente. Verifique o CPF/CNPJ e outros dados.');
     } finally {
       setLoadingEdit(false);
     }
@@ -927,31 +950,60 @@ export default function SuperadminProvedores() {
         billingType: editProvedorForm.subscription_billing_type,
         nextDueDate: editProvedorForm.subscription_next_due_date,
         notification_disabled: editProvedorForm.notification_disabled,
+        billing_provider: editProvedorForm.billing_provider || 'asaas',
+        cpf_cnpj: editProvedorForm.cpf_cnpj,
+        company: editProvedorForm.company,
+        nome: editProvedorForm.nome,
+        email_contato: editProvedorForm.email_contato,
+        phone: editProvedorForm.phone,
+        mobile_phone: editProvedorForm.mobile_phone,
+        endereco: editProvedorForm.endereco,
+        address_number: editProvedorForm.address_number,
+        complement: editProvedorForm.complement,
+        province: editProvedorForm.province,
+        postal_code: editProvedorForm.postal_code,
       }, {
         headers: { Authorization: `Token ${token}` }
       });
 
       if (response.data.success) {
-        alert('Assinatura criada com sucesso!');
+        const gateway = response.data.billing_provider === 'inter' ? 'Banco Inter' : 'Asaas';
+        toast.success(`Assinatura criada com sucesso no ${gateway}.`);
         // Atualizar lista
         const res = await axios.get('/api/provedores/', {
           headers: { Authorization: `Token ${token}` }
         });
         setProvedoresState(res.data.results || res.data);
         
-        // Atualizar form de edição com o novo status
+        // Preferir dados da resposta da criação (evita PATCH posterior apagar o vínculo)
         const updatedProvedor = (res.data.results || res.data).find(p => p.id === editProvedorForm.id);
-        if (updatedProvedor) {
-          setEditProvedorForm(prev => ({
-            ...prev,
-            asaas_subscription_id: updatedProvedor.asaas_subscription_id,
-            subscription_status: updatedProvedor.subscription_status
-          }));
-        }
+        setEditProvedorForm(prev => ({
+          ...prev,
+          asaas_subscription_id:
+            response.data.subscription_id
+            || updatedProvedor?.asaas_subscription_id
+            || prev.asaas_subscription_id,
+          billing_provider:
+            response.data.billing_provider
+            || updatedProvedor?.billing_provider
+            || prev.billing_provider,
+          subscription_status:
+            updatedProvedor?.subscription_status || prev.subscription_status || 'PENDING',
+          subscription_value:
+            updatedProvedor?.subscription_value ?? prev.subscription_value,
+          subscription_next_due_date:
+            updatedProvedor?.subscription_next_due_date || prev.subscription_next_due_date,
+        }));
+        fetchSubscriptionPayments(editProvedorForm.id);
+      } else {
+        toast.apiError(
+          { response: { data: response.data } },
+          'Erro ao criar assinatura. Verifique os dados.',
+        );
       }
     } catch (err) {
       console.error('Erro ao criar assinatura:', err);
-      setErrorMsg(err.response?.data?.error || 'Erro ao criar assinatura. Verifique os dados.');
+      toast.apiError(err, 'Erro ao criar assinatura. Verifique os dados.');
     } finally {
       setLoadingEdit(false);
     }
@@ -968,14 +1020,18 @@ export default function SuperadminProvedores() {
       const envLabel = (data.asaas_environment || (asaasSandbox ? 'sandbox' : 'production')) === 'sandbox'
         ? 'SANDBOX (homologação)'
         : 'PRODUÇÃO';
-      alert(
-        data.cleared
-          ? 'Cliente/assinatura não encontrados no Asaas. Vínculos locais removidos.'
-          : `Dados atualizados do Asaas — ${envLabel}.\nCliente: ${status_info?.customer || '-'}\nAssinatura: ${status_info?.subscription || '-'}\n\nExcluir cobranças no painel Asaas de produção não altera o sandbox local.`
-      );
+      if (data.cleared) {
+        toast.info('Cliente/assinatura não encontrados no Asaas. Vínculos locais removidos.');
+      } else if (data.billing_provider === 'inter' || String(data.asaas_subscription_id || '').startsWith('INTER-SUB-')) {
+        toast.success(`Assinatura Inter atualizada — status: ${status_info?.subscription || '-'}.`);
+      } else {
+        toast.success(
+          `Dados atualizados do Asaas (${envLabel}). Cliente: ${status_info?.customer || '-'} · Assinatura: ${status_info?.subscription || '-'}`,
+        );
+      }
     } catch (err) {
       console.error('Erro ao verificar status Asaas:', err);
-      setErrorMsg(err.response?.data?.error || err.message || 'Erro ao verificar status no Asaas.');
+      toast.apiError(err, 'Erro ao verificar status no Asaas.');
     } finally {
       setLoadingEdit(false);
     }
@@ -985,6 +1041,7 @@ export default function SuperadminProvedores() {
     setEditProvedorForm((prev) => ({
       ...prev,
       asaas_subscription_id: '',
+      billing_provider: 'asaas',
       subscription_status: '',
       subscription_value: 0,
       subscription_next_due_date: '',
@@ -1006,11 +1063,16 @@ export default function SuperadminProvedores() {
   };
 
   const handleClearAsaasSubscription = async (cancelOnAsaas = false) => {
+    const isInter = isInterBilling(editProvedorForm);
     const envLabel = asaasSandbox ? 'SANDBOX (homologação)' : 'PRODUÇÃO';
     const subId = editProvedorForm.asaas_subscription_id || '';
     const confirmMessage = cancelOnAsaas
-      ? `Cancelar a assinatura ${subId} no Asaas (${envLabel}) e remover o vínculo no NioHub?\n\nEsta ação não pode ser desfeita. O cliente Asaas permanece cadastrado.`
-      : 'Remover apenas o vínculo da assinatura no NioHub?\n\nA assinatura continuará existindo no Asaas. Use isto se já cancelou manualmente lá ou o ID local está desatualizado.';
+      ? (isInter
+          ? `Cancelar cobranças abertas no Inter e remover a assinatura ${subId} no NioHub?\n\nEsta ação não pode ser desfeita.`
+          : `Cancelar a assinatura ${subId} no Asaas (${envLabel}) e remover o vínculo no NioHub?\n\nEsta ação não pode ser desfeita. O cliente Asaas permanece cadastrado.`)
+      : (isInter
+          ? 'Remover apenas o vínculo da assinatura no NioHub?\n\nCobranças já emitidas no Inter continuam existindo.'
+          : 'Remover apenas o vínculo da assinatura no NioHub?\n\nA assinatura continuará existindo no Asaas. Use isto se já cancelou manualmente lá ou o ID local está desatualizado.');
 
     if (!window.confirm(confirmMessage)) return;
 
@@ -1027,9 +1089,14 @@ export default function SuperadminProvedores() {
         throw new Error(res.data?.error || 'Falha ao desvincular assinatura');
       }
       applyLocalSubscriptionClear();
+      toast.success(
+        cancelOnAsaas
+          ? 'Assinatura cancelada no gateway e vínculo removido.'
+          : 'Vínculo da assinatura removido no NioHub.',
+      );
     } catch (err) {
       console.error('Erro ao desvincular assinatura:', err);
-      setErrorMsg(err.response?.data?.error || err.message || 'Erro ao desvincular assinatura.');
+      toast.apiError(err, 'Erro ao desvincular assinatura.');
     } finally {
       setLoadingEdit(false);
     }
@@ -1674,14 +1741,20 @@ export default function SuperadminProvedores() {
                   <h2 className="mt-1 text-xl font-bold text-white sm:text-2xl">
                     {editProvedorForm.nome || 'Editar provedor'}
                   </h2>
-                  <p className="mt-1 text-sm text-gray-500">Atualize dados, assinatura Asaas e preferências de cobrança.</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Atualize dados, assinatura {isInterBilling(editProvedorForm) ? 'Inter' : 'Asaas'} e preferências de cobrança.
+                  </p>
                 </div>
                 <div className="hidden shrink-0 items-center gap-2 sm:flex">
-                  {editProvedorForm.asaas_customer_id && (
+                  {isInterBilling(editProvedorForm) ? (
+                    <span className="rounded-full border border-orange-500/25 bg-orange-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-orange-300">
+                      Portador Inter
+                    </span>
+                  ) : editProvedorForm.asaas_customer_id ? (
                     <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
                       Cliente Asaas
                     </span>
-                  )}
+                  ) : null}
                   {editProvedorForm.id && (
                     <button
                       type="button"
@@ -1844,14 +1917,16 @@ export default function SuperadminProvedores() {
                 </div>
               </div>
 
-              {/* Seção 3: Faturamento / Asaas */}
+              {/* Seção 3: Faturamento */}
               <div>
                 <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5" /> Detalhes Financeiros (Asaas)
+                  <FileText className="w-5 h-5" /> Detalhes Financeiros ({isInterBilling(editProvedorForm) ? 'Inter' : 'Asaas'})
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Nome da Empresa (Asaas)</label>
+                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">
+                      Nome da Empresa {isInterBilling(editProvedorForm) ? '(pagador)' : '(Asaas)'}
+                    </label>
                     <input type="text" name="company" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.company} onChange={handleEditProvedorChange} />
                   </div>
                   <div>
@@ -1894,8 +1969,14 @@ export default function SuperadminProvedores() {
                         <div>
                           <h4 className="font-semibold text-white">Assinatura recorrente</h4>
                           <p className="text-xs text-gray-500">
-                            Sincronizado com o Asaas em tempo real
-                            {asaasSandbox ? (
+                            {isInterBilling(editProvedorForm)
+                              ? 'Portador Banco Inter — cobranças emitidas pelo Superadmin'
+                              : 'Sincronizado com o Asaas em tempo real'}
+                            {isInterBilling(editProvedorForm) ? (
+                              <span className="ml-1.5 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-orange-300">
+                                INTER
+                              </span>
+                            ) : asaasSandbox ? (
                               <span className="ml-1.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">
                                 SANDBOX
                               </span>
@@ -1916,14 +1997,20 @@ export default function SuperadminProvedores() {
                               disabled={loadingEdit}
                               className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 transition hover:border-red-500/50 hover:bg-red-500/20 disabled:opacity-50"
                             >
-                              Cancelar no Asaas
+                              {(isInterBilling(editProvedorForm)
+                                ? 'Cancelar no Inter'
+                                : 'Cancelar no Asaas')}
                             </button>
                             <button
                               type="button"
                               onClick={() => handleClearAsaasSubscription(false)}
                               disabled={loadingEdit}
                               className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-gray-400 transition hover:border-white/20 hover:bg-white/10 hover:text-gray-200 disabled:opacity-50"
-                              title="Remove só o vínculo no NioHub; a assinatura permanece no Asaas"
+                              title={
+                                isInterBilling(editProvedorForm)
+                                  ? 'Remove só o vínculo no NioHub; cobranças abertas podem permanecer no Inter'
+                                  : 'Remove só o vínculo no NioHub; a assinatura permanece no Asaas'
+                              }
                             >
                               Desvincular local
                             </button>
@@ -1957,11 +2044,18 @@ export default function SuperadminProvedores() {
                                     {ui.live && (
                                       <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400/90">
                                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                                        Em dia no Asaas
+                                        Em dia no {isInterBilling(editProvedorForm) ? 'Inter' : 'Asaas'}
                                       </span>
                                     )}
+                                    <span className="inline-flex items-center rounded-full border border-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-300">
+                                      {isInterBilling(editProvedorForm) ? 'Inter' : 'Asaas'}
+                                    </span>
                                   </div>
-                                  <p className="text-[10px] text-gray-500">ID da assinatura no Asaas (cobrança recorrente)</p>
+                                  <p className="text-[10px] text-gray-500">
+                                    {isInterBilling(editProvedorForm)
+                                      ? 'Assinatura local (cobranças emitidas no Banco Inter)'
+                                      : 'ID da assinatura no Asaas (cobrança recorrente)'}
+                                  </p>
                                   <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2">
                                     <code className="truncate text-xs text-gray-300">{editProvedorForm.asaas_subscription_id}</code>
                                     <button
@@ -1997,7 +2091,9 @@ export default function SuperadminProvedores() {
                                   </div>
                                   {!ui.live && (
                                     <p className="text-xs leading-relaxed text-amber-200/80">
-                                      Assinatura inativa no Asaas. Atualize o status ou crie uma nova recorrência abaixo.
+                                      {isInterBilling(editProvedorForm)
+                                        ? 'Assinatura Inter pendente/vencida. Atualize o status ou aguarde o pagamento.'
+                                        : 'Assinatura inativa no Asaas. Atualize o status ou crie uma nova recorrência abaixo.'}
                                     </p>
                                   )}
                                 </div>
@@ -2022,7 +2118,11 @@ export default function SuperadminProvedores() {
                           {loadingPayments ? (
                             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 py-10 text-gray-500">
                               <RefreshCw className="h-6 w-6 animate-spin text-primary/70" />
-                              <span className="text-xs">Consultando Asaas...</span>
+                              <span className="text-xs">
+                                {isInterBilling(editProvedorForm)
+                                  ? 'Consultando cobranças Inter...'
+                                  : 'Consultando Asaas...'}
+                              </span>
                             </div>
                           ) : subscriptionPayments.length > 0 ? (
                             <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
@@ -2077,8 +2177,27 @@ export default function SuperadminProvedores() {
                     ) : (
                       <div className="space-y-5">
                         <p className="text-sm text-gray-500">
-                          Nenhuma assinatura vinculada. Configure os dados abaixo e sincronize com o Asaas.
+                          Nenhuma assinatura vinculada. Escolha o portador (Asaas ou Banco Inter) e configure a mensalidade.
                         </p>
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                            Portador da cobrança
+                          </label>
+                          <select
+                            name="billing_provider"
+                            className={inputClass}
+                            value={editProvedorForm.billing_provider || 'asaas'}
+                            onChange={handleEditProvedorChange}
+                          >
+                            <option value="asaas">Asaas</option>
+                            <option value="inter">Banco Inter</option>
+                          </select>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {isInterBilling(editProvedorForm)
+                              ? 'O Superadmin emite a cobrança no Inter a cada ciclo (boleto + Pix).'
+                              : 'O Asaas gerencia a assinatura recorrente automaticamente.'}
+                          </p>
+                        </div>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                           <div>
                             <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Valor mensalidade</label>
@@ -2102,11 +2221,13 @@ export default function SuperadminProvedores() {
                             <select name="subscription_billing_type" className={inputClass} value={editProvedorForm.subscription_billing_type} onChange={handleEditProvedorChange}>
                               <option value="BOLETO">Boleto</option>
                               <option value="PIX">PIX</option>
-                              <option value="CREDIT_CARD">Cartão de Crédito</option>
+                              {!isInterBilling(editProvedorForm) && (
+                                <option value="CREDIT_CARD">Cartão de Crédito</option>
+                              )}
                             </select>
                           </div>
                         </div>
-                        {editProvedorForm.asaas_customer_id ? (
+                        {isInterBilling(editProvedorForm) || editProvedorForm.asaas_customer_id ? (
                           <button
                             type="button"
                             onClick={handleCreateSubscription}
@@ -2114,7 +2235,11 @@ export default function SuperadminProvedores() {
                             className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-50"
                           >
                             <TrendingUp className="h-4 w-4" />
-                            {loadingEdit ? 'Processando...' : 'Criar assinatura recorrente'}
+                            {loadingEdit
+                              ? 'Processando...'
+                              : isInterBilling(editProvedorForm)
+                                ? 'Criar assinatura no Banco Inter'
+                                : 'Criar assinatura recorrente'}
                           </button>
                         ) : (
                           <button
@@ -2138,7 +2263,9 @@ export default function SuperadminProvedores() {
                       <span className="flex-1">
                         <span className="flex items-center gap-2 text-sm font-medium text-white">
                           <Bell className="h-4 w-4 text-primary" />
-                          Desativar notificações Asaas
+                          {isInterBilling(editProvedorForm)
+                            ? 'Desativar notificações de cobrança'
+                            : 'Desativar notificações Asaas'}
                         </span>
                         <span className="mt-1 block text-xs text-gray-500">Não envia e-mail/SMS de cobrança ao cliente.</span>
                       </span>
@@ -2150,7 +2277,11 @@ export default function SuperadminProvedores() {
                           <Globe2 className="h-4 w-4 text-primary" />
                           Cliente estrangeiro
                         </span>
-                        <span className="mt-1 block text-xs text-gray-500">Cadastro sem CPF/CNPJ brasileiro no Asaas.</span>
+                        <span className="mt-1 block text-xs text-gray-500">
+                          {isInterBilling(editProvedorForm)
+                            ? 'Cadastro sem CPF/CNPJ brasileiro (Inter exige documento nacional).'
+                            : 'Cadastro sem CPF/CNPJ brasileiro no Asaas.'}
+                        </span>
                       </span>
                     </label>
                   </div>

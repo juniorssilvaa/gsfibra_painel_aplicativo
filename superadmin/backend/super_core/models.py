@@ -89,6 +89,19 @@ class Provedor(models.Model):
     foreign_customer = models.BooleanField(default=False)
     asaas_customer_id = models.CharField(max_length=60, null=True, blank=True)
     asaas_subscription_id = models.CharField(max_length=60, null=True, blank=True)
+    # Portador da assinatura: asaas | inter (escolhido ao criar o cliente/assinatura)
+    BILLING_PROVIDER_ASAAS = 'asaas'
+    BILLING_PROVIDER_INTER = 'inter'
+    BILLING_PROVIDER_CHOICES = [
+        (BILLING_PROVIDER_ASAAS, 'Asaas'),
+        (BILLING_PROVIDER_INTER, 'Banco Inter'),
+    ]
+    billing_provider = models.CharField(
+        max_length=20,
+        choices=BILLING_PROVIDER_CHOICES,
+        default=BILLING_PROVIDER_ASAAS,
+        help_text='Gateway usado para assinatura/cobrança deste provedor',
+    )
     subscription_value = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     subscription_cycle = models.CharField(max_length=20, default='MONTHLY', null=True, blank=True)
     subscription_billing_type = models.CharField(max_length=30, default='BOLETO', null=True, blank=True)
@@ -350,4 +363,46 @@ class BillingSendLog(models.Model):
     def __str__(self):
         status = 'ok' if self.success else 'err'
         return f"BillingSend {self.asaas_payment_id} ({status})"
+
+
+class InterBillingCharge(models.Model):
+    """Cobrança emitida no Banco Inter (boleto + Pix) vinculada a um provedor."""
+
+    STATUS_PENDING = 'PENDING'
+    STATUS_RECEIVED = 'RECEIVED'
+    STATUS_OVERDUE = 'OVERDUE'
+    STATUS_CANCELLED = 'CANCELLED'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pendente'),
+        (STATUS_RECEIVED, 'Recebido'),
+        (STATUS_OVERDUE, 'Vencido'),
+        (STATUS_CANCELLED, 'Cancelado'),
+    ]
+
+    provedor = models.ForeignKey(
+        Provedor,
+        on_delete=models.CASCADE,
+        related_name='inter_charges',
+    )
+    codigo_solicitacao = models.CharField(max_length=80, unique=True, db_index=True)
+    seu_numero = models.CharField(max_length=15, blank=True, default='', db_index=True)
+    valor = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    data_vencimento = models.DateField(null=True, blank=True)
+    situacao = models.CharField(max_length=40, blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    linha_digitavel = models.CharField(max_length=120, blank=True, default='')
+    pix_copia_cola = models.TextField(blank=True, default='')
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-data_vencimento', '-id']
+        indexes = [
+            models.Index(fields=['provedor', 'status']),
+            models.Index(fields=['data_vencimento', 'status']),
+        ]
+
+    def __str__(self):
+        return f"InterCharge {self.codigo_solicitacao} ({self.status})"
 

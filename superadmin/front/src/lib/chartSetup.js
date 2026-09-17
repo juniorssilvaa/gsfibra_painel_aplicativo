@@ -1,44 +1,9 @@
 /**
- * Registro único dos componentes Chart.js (tree-shaking).
- * Evita "arc is not a registered element" ao renderizar Pie/Doughnut.
+ * Registro completo do Chart.js antes de qualquer gráfico.
+ * `chart.js/auto` registra ArcElement, controllers, scales, etc.
  */
-import {
-  Chart as ChartJS,
-  ArcElement,
-  Tooltip,
-  Legend,
-  PieController,
-  DoughnutController,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  BarController,
-  LineElement,
-  LineController,
-  PointElement,
-  Title,
-} from 'chart.js';
-
-let registered = false;
+import 'chart.js/auto';
 
 export function ensureChartJsRegistered() {
-  if (registered) return;
-  ChartJS.register(
-    ArcElement,
-    Tooltip,
-    Legend,
-    PieController,
-    DoughnutController,
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    BarController,
-    LineElement,
-    LineController,
-    PointElement,
-    Title,
-  );
-  registered = true;
+  // no-op: side-effect do import acima
 }
-
-ensureChartJsRegistered();

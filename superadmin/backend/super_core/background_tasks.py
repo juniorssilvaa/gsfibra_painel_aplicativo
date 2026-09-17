@@ -23,6 +23,13 @@ def background_worker():
                 last_auto_block = now
                 logger.info("[BackgroundWorker] Ciclo de auto-bloqueio Asaas...")
                 run_billing_auto_block_cycle()
+                try:
+                    from .inter_billing_service import run_inter_charge_renewal_cycle
+
+                    renew = run_inter_charge_renewal_cycle(days_ahead=5)
+                    logger.info("[BackgroundWorker] inter_renew: %s", renew)
+                except Exception:
+                    logger.exception("[BackgroundWorker] erro em inter_renew")
             elif was_time and isinstance(was_time, dict) and was_time.get("executed"):
                 logger.info("[BackgroundWorker] Pós-cobrança: auto-bloqueio extra...")
                 run_billing_auto_block_cycle()

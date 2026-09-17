@@ -47,7 +47,26 @@ def _block_reason_text(days_late: int, min_days: int) -> str:
 
 
 def _provider_has_blocking_overdue(prov: Provedor, asaas: AsaasService, min_days: int) -> bool:
-    """True se existe cobrança OVERDUE ativa (não excluída) além do prazo."""
+    """True se existe cobrança OVERDUE ativa além do prazo (Asaas ou Inter)."""
+    is_inter = (
+        (prov.billing_provider or '') == Provedor.BILLING_PROVIDER_INTER
+        or (prov.asaas_subscription_id or '').startswith('INTER-SUB-')
+    )
+    if is_inter:
+        from .models import InterBillingCharge
+
+        for ch in InterBillingCharge.objects.filter(
+            provedor=prov,
+            status__in=[InterBillingCharge.STATUS_OVERDUE, InterBillingCharge.STATUS_PENDING],
+        ).order_by('data_vencimento')[:10]:
+            due = ch.data_vencimento.isoformat() if ch.data_vencimento else ''
+            # PENDING só bloqueia se já passou do vencimento
+            if ch.status == InterBillingCharge.STATUS_PENDING and _compute_days_late(due) <= 0:
+                continue
+            if _compute_days_late(due) >= min_days:
+                return True
+        return (prov.subscription_status or '').upper() == 'OVERDUE'
+
     sub_id = (prov.asaas_subscription_id or '').strip()
     if not sub_id:
         return (prov.subscription_status or '').upper() == 'OVERDUE'
@@ -62,8 +81,7 @@ def _provider_has_blocking_overdue(prov: Provedor, asaas: AsaasService, min_days
 
 def sync_provedor_billing_block(prov: Provedor, *, asaas: AsaasService | None = None) -> dict[str, Any]:
     """
-    Sincroniza bloqueio/desbloqueio de um provedor com o Asaas (superadmin).
-    Usado pelo ciclo periódico e pelo webhook PAYMENT_* do Asaas.
+    Sincroniza bloqueio/desbloqueio de um provedor (Asaas ou Inter).
     """
     from django.core.cache import cache
     from .views import notify_provider_panel
@@ -72,8 +90,12 @@ def sync_provedor_billing_block(prov: Provedor, *, asaas: AsaasService | None = 
     if not enabled:
         return {'changed': False, 'action': 'auto_block_disabled'}
 
+    is_inter = (
+        (prov.billing_provider or '') == Provedor.BILLING_PROVIDER_INTER
+        or (prov.asaas_subscription_id or '').startswith('INTER-SUB-')
+    )
     asaas = asaas or AsaasService()
-    if not asaas.access_token:
+    if not is_inter and not asaas.access_token:
         return {'changed': False, 'action': 'no_asaas_token'}
 
     has_blocking = _provider_has_blocking_overdue(prov, asaas, min_days)
@@ -81,12 +103,22 @@ def sync_provedor_billing_block(prov: Provedor, *, asaas: AsaasService | None = 
     if has_blocking:
         if not ((not prov.is_active) and prov.status == 'suspenso'):
             days_late = 0
-            sub_id = (prov.asaas_subscription_id or '').strip()
-            if sub_id:
-                res = asaas.list_payments(subscription_id=sub_id, status='OVERDUE', limit=10)
-                if res.get('success'):
-                    for payment in asaas.confirm_payments(res.get('data') or [], max_items=10):
-                        days_late = max(days_late, _compute_days_late(payment.get('dueDate')))
+            if is_inter:
+                from .models import InterBillingCharge
+
+                for ch in InterBillingCharge.objects.filter(
+                    provedor=prov,
+                    status__in=[InterBillingCharge.STATUS_OVERDUE, InterBillingCharge.STATUS_PENDING],
+                )[:10]:
+                    due = ch.data_vencimento.isoformat() if ch.data_vencimento else ''
+                    days_late = max(days_late, _compute_days_late(due))
+            else:
+                sub_id = (prov.asaas_subscription_id or '').strip()
+                if sub_id:
+                    res = asaas.list_payments(subscription_id=sub_id, status='OVERDUE', limit=10)
+                    if res.get('success'):
+                        for payment in asaas.confirm_payments(res.get('data') or [], max_items=10):
+                            days_late = max(days_late, _compute_days_late(payment.get('dueDate')))
             reason = _block_reason_text(days_late or min_days, min_days)
             prov.is_active = False
             prov.status = 'suspenso'
@@ -157,109 +189,46 @@ def _release_provedores_without_active_overdue(asaas: AsaasService, min_days: in
 
 def run_billing_auto_block_cycle() -> dict[str, Any]:
     """
-    Consulta Asaas e suspende provedores com OVERDUE além do prazo configurado.
-    Propaga bloqueio ao tenant via notify_provider_panel.
+    Suspende/reativa provedores com fatura vencida (Asaas ou Inter).
     """
-    from .views import notify_provider_panel
-
     enabled, min_days = get_auto_block_settings()
     if not enabled:
         return {'skipped': True, 'reason': 'auto_block_disabled'}
 
     asaas = AsaasService()
-    if not asaas.access_token:
-        logger.warning('[AutoBlock] Token Asaas não configurado.')
-        return {'skipped': True, 'reason': 'no_asaas_token'}
-
     blocked = 0
+    released = 0
     checked = 0
     errors = 0
 
     qs = (
-        Provedor.objects.filter(is_active=True)
-        .exclude(asaas_subscription_id__isnull=True)
+        Provedor.objects.exclude(asaas_subscription_id__isnull=True)
         .exclude(asaas_subscription_id='')
         .only(
-            'id', 'nome', 'asaas_subscription_id', 'is_active', 'status',
-            'subscription_status', 'subdomain', 'integration_token',
+            'id', 'nome', 'asaas_subscription_id', 'billing_provider',
+            'is_active', 'status', 'subscription_status',
+            'subdomain', 'integration_token',
         )
     )
 
     for prov in qs.iterator():
         checked += 1
-        sub_id = (prov.asaas_subscription_id or '').strip()
-        if not sub_id:
-            continue
-
-        res = asaas.list_payments(subscription_id=sub_id, status='OVERDUE', limit=10)
-        if not res.get('success'):
+        try:
+            result = sync_provedor_billing_block(prov, asaas=asaas)
+            if result.get('action') == 'blocked':
+                blocked += 1
+            elif result.get('action') == 'released':
+                released += 1
+        except Exception:
             errors += 1
-            logger.warning(
-                '[AutoBlock] provedor=%s erro Asaas: %s',
-                prov.id,
-                res.get('error'),
-            )
-            continue
-
-        items = asaas.confirm_payments(res.get('data') or [], max_items=10)
-        if not items:
-            continue
-
-        payment = items[0] or {}
-        days_late = _compute_days_late(payment.get('dueDate'))
-        if days_late < min_days:
-            continue
-
-        reason = _block_reason_text(days_late, min_days)
-        prov.is_active = False
-        prov.status = 'suspenso'
-        prov.subscription_status = 'OVERDUE'
-        prov.save(update_fields=['is_active', 'status', 'subscription_status'])
-
-        try:
-            from mobile_app.models import MobileAppProfile
-            MobileAppProfile.objects.filter(provedor_id=prov.id).update(is_active=False)
-        except Exception:
-            pass
-        try:
-            from acs.services import sync_acs_access
-            sync_acs_access(prov, False, source='billing')
-        except Exception:
-            pass
-
-        try:
-            notify_provider_panel(prov.id, False, 'suspenso', block_reason=reason)
-            from django.core.cache import cache
-            cache.delete(f'auto_block_tenant_sync:{prov.id}')
-        except Exception as exc:
-            logger.error('[AutoBlock] notify tenant provedor=%s: %s', prov.id, exc)
-
-        blocked += 1
-        logger.info(
-            '[AutoBlock] Bloqueado provedor %s (%s) — %s dias de atraso',
-            prov.id,
-            prov.nome,
-            days_late,
-        )
-
-    if blocked or errors:
-        logger.info(
-            '[AutoBlock] Ciclo: verificados=%s bloqueados=%s erros=%s',
-            checked,
-            blocked,
-            errors,
-        )
-
-    synced = _sync_existing_blocks_to_tenants(asaas, min_days)
-    released = _release_provedores_without_active_overdue(asaas, min_days)
+            logger.exception('[AutoBlock] provedor=%s falhou', prov.id)
 
     return {
         'checked': checked,
         'blocked': blocked,
+        'released': released,
         'errors': errors,
         'min_days': min_days,
-        'tenants_synced': synced,
-        'released': released,
     }
 
 

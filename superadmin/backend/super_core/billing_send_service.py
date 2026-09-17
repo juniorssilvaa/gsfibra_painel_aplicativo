@@ -396,21 +396,9 @@ def _extract_pix_info(pix_code: str) -> Tuple[str, str]:
 # ──────────────────────────────────────────────────────────────────────────────
 # Passo 1+2: Baixar PDF e fazer upload para a Meta
 # ──────────────────────────────────────────────────────────────────────────────
-def _upload_pdf_to_meta(phone_number_id: str, token: str, pdf_url: str) -> Optional[str]:
-    """
-    Baixa o PDF da URL informada e faz upload para a Meta API.
-    Retorna o media_id ou None em caso de erro.
-    """
-    # 1. Baixar PDF
-    try:
-        resp = requests.get(pdf_url, timeout=30, allow_redirects=True)
-        resp.raise_for_status()
-        pdf_bytes = resp.content
-    except Exception as exc:
-        logger.warning("[BillingSend] Falha ao baixar PDF %s: %s", pdf_url, exc)
+def _upload_pdf_bytes_to_meta(phone_number_id: str, token: str, pdf_bytes: bytes) -> Optional[str]:
+    if not pdf_bytes:
         return None
-
-    # 2. Upload para a Meta
     upload_url = f"{GRAPH_BASE}/{phone_number_id}/media"
     try:
         upload_resp = requests.post(
@@ -431,6 +419,69 @@ def _upload_pdf_to_meta(phone_number_id: str, token: str, pdf_url: str) -> Optio
     except Exception as exc:
         logger.warning("[BillingSend] Exceção no upload do PDF: %s", exc)
     return None
+
+
+def _upload_pdf_to_meta(phone_number_id: str, token: str, pdf_url: str) -> Optional[str]:
+    """
+    Baixa o PDF da URL informada e faz upload para a Meta API.
+    Retorna o media_id ou None em caso de erro.
+    """
+    try:
+        resp = requests.get(pdf_url, timeout=30, allow_redirects=True)
+        resp.raise_for_status()
+        pdf_bytes = resp.content
+    except Exception as exc:
+        logger.warning("[BillingSend] Falha ao baixar PDF %s: %s", pdf_url, exc)
+        return None
+    return _upload_pdf_bytes_to_meta(phone_number_id, token, pdf_bytes)
+
+
+def _inter_payments_for_offsets(today_d: date, offsets: List[int]) -> List[Dict[str, Any]]:
+    """Monta lista de cobranças Inter no formato compatível com o ciclo WhatsApp."""
+    from .models import InterBillingCharge, Provedor
+
+    targets_pending = {today_d - timedelta(days=u) for u in offsets if u <= 0}
+    positive = sorted({u for u in offsets if u > 0})
+    qs = InterBillingCharge.objects.filter(
+        status__in=[InterBillingCharge.STATUS_PENDING, InterBillingCharge.STATUS_OVERDUE],
+        provedor__billing_provider=Provedor.BILLING_PROVIDER_INTER,
+    ).select_related("provedor")
+
+    out: List[Dict[str, Any]] = []
+    for ch in qs:
+        if not ch.data_vencimento:
+            continue
+        dd = ch.data_vencimento
+        include = False
+        if dd in targets_pending:
+            include = True
+        elif positive:
+            delta = (today_d - dd).days
+            if delta >= 0 and delta in positive:
+                include = True
+        if not include:
+            continue
+        # Atualiza linha/pix se vazios
+        if not (ch.linha_digitavel or ch.pix_copia_cola):
+            try:
+                from .inter_billing_service import refresh_charge_from_inter
+                ch = refresh_charge_from_inter(ch)
+            except Exception:
+                pass
+        out.append({
+            "id": ch.codigo_solicitacao,
+            "provider": "inter",
+            "provedor_id": ch.provedor_id,
+            "customer": f"inter-prov-{ch.provedor_id}",
+            "value": float(ch.valor),
+            "dueDate": dd.isoformat(),
+            "status": ch.status,
+            "description": f"Cobrança Inter {ch.seu_numero}",
+            "pixCopiaECola": ch.pix_copia_cola or "",
+            "linhaDigitavel": ch.linha_digitavel or "",
+            "subscription": ch.provedor.asaas_subscription_id or "",
+        })
+    return out
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -787,11 +838,11 @@ def run_billing_send_cycle(force: bool = False) -> Dict:
         if not cache.add(dedupe_key, "1", timeout=26 * 3600):
             return {"success": True, "executed": False, "reason": "already_executed_today"}
 
-    # ── Asaas: Buscar faturas ───────────────────────────────────────────────
+    # ── Buscar faturas Asaas + Inter ────────────────────────────────────────
     asaas = AsaasService()
-    if not asaas.access_token:
-        logger.warning("[BillingSend] Token do Asaas não configurado no service.")
-        return {"success": False, "reason": "asaas_access_token_missing"}
+    asaas_ready = bool(asaas.access_token)
+    if not asaas_ready:
+        logger.warning("[BillingSend] Token do Asaas não configurado — só enviará cobranças Inter, se houver.")
 
     # Determinar offsets (ex: -1 = um dia antes, 0 = dia do vencimento, 2 = dois dias atrasado)
     offsets_raw = str(payload.get("billing_reminder_due_offsets") or "").strip()
@@ -802,23 +853,27 @@ def run_billing_send_cycle(force: bool = False) -> Dict:
         offsets = [-legacy_days]
 
     today_d = now.date()
-    
-    # 1. Buscar vencidas
-    overdue_res = asaas.list_payments(status="OVERDUE")
-    overdue_items = asaas.confirm_payments(
-        overdue_res.get("data", []) if overdue_res.get("success") else [],
-        max_items=100,
-    )
-    overdue_items = _filter_overdue(overdue_items, today_d, offsets)
 
-    due_soon_items = _pending_for_offsets(asaas, today_d, offsets)
+    overdue_items: List[Dict] = []
+    due_soon_items: List[Dict] = []
+    if asaas_ready:
+        overdue_res = asaas.list_payments(status="OVERDUE")
+        overdue_items = asaas.confirm_payments(
+            overdue_res.get("data", []) if overdue_res.get("success") else [],
+            max_items=100,
+        )
+        overdue_items = _filter_overdue(overdue_items, today_d, offsets)
+        due_soon_items = _pending_for_offsets(asaas, today_d, offsets)
 
-    all_items = [(p, _calc_offset(p, today_d)) for p in (overdue_items + due_soon_items)]
+    inter_items = _inter_payments_for_offsets(today_d, offsets)
+
+    all_items = [(p, _calc_offset(p, today_d)) for p in (overdue_items + due_soon_items + inter_items)]
     logger.info(
-        "[BillingSend] offsets=%s overdue=%s due_soon=%s total=%s",
+        "[BillingSend] offsets=%s asaas_overdue=%s asaas_due_soon=%s inter=%s total=%s",
         offsets,
         len(overdue_items),
         len(due_soon_items),
+        len(inter_items),
         len(all_items),
     )
 
@@ -864,47 +919,59 @@ def run_billing_send_cycle(force: bool = False) -> Dict:
             continue
 
         customer_id = payment.get("customer")
-        if not customer_id:
-            continue
+        is_inter = (payment.get("provider") or "") == "inter"
 
-        cust_res = asaas.get_customer(customer_id)
-        if not cust_res.get("success"):
-            continue
-        customer = cust_res.get("data") or {}
-
-        customer_name  = (customer.get("name") or "Cliente").strip()
-        # Prioriza mobilePhone, depois phone
-        raw_phone = customer.get("mobilePhone") or customer.get("phone")
-        customer_phone = _normalize_phone(raw_phone)
-        if not customer_phone:
-            continue
+        if is_inter:
+            provedor = Provedor.objects.filter(id=payment.get("provedor_id")).first()
+            if not provedor:
+                continue
+            customer_name = (provedor.company or provedor.nome or "Cliente").strip()
+            raw_phone = provedor.mobile_phone or provedor.phone
+            customer_phone = _normalize_phone(raw_phone)
+            if not customer_phone:
+                continue
+            pix_code = (payment.get("pixCopiaECola") or "").strip()
+            linha_digitavel = (payment.get("linhaDigitavel") or "").strip()
+            media_id = None
+            try:
+                from integrations.inter_service import InterService
+                pdf_res = InterService().baixar_pdf(str(payment.get("id") or ""))
+                if pdf_res.get("success") and pdf_res.get("content"):
+                    media_id = _upload_pdf_bytes_to_meta(phone_num_id, token, pdf_res["content"])
+            except Exception as exc:
+                logger.warning("[BillingSend] PDF Inter falhou fatura=%s: %s", payment.get("id"), exc)
+        else:
+            if not customer_id:
+                continue
+            cust_res = asaas.get_customer(customer_id)
+            if not cust_res.get("success"):
+                continue
+            customer = cust_res.get("data") or {}
+            customer_name = (customer.get("name") or "Cliente").strip()
+            raw_phone = customer.get("mobilePhone") or customer.get("phone")
+            customer_phone = _normalize_phone(raw_phone)
+            if not customer_phone:
+                continue
+            pix_code = ""
+            linha_digitavel = ""
+            info_res = asaas.get_payment_billing_info(str(payment.get("id") or ""))
+            if info_res.get("success"):
+                info_data = info_res.get("data") or {}
+                pix_code = (info_data.get("pix", {}) or {}).get("payload") or ""
+                linha_digitavel = (info_data.get("bankSlip", {}) or {}).get("identificationField") or ""
+            pdf_url = _resolve_pdf_url(payment)
+            media_id = _upload_pdf_to_meta(phone_num_id, token, pdf_url) if pdf_url else None
 
         payment_id = str(payment.get("id") or "")
         invoice_number = _invoice_number_from_payment(payment)
-        due_raw    = payment.get("dueDate") or ""
-        valor_br   = _fmt_valor_br(payment.get("value"))
-        venc_br    = _fmt_due_br(due_raw)
-        val_cents  = _valor_centavos(payment.get("value"))
-
-        # Obter dados de pagamento (PIX e Boleto) via billingInfo
-        pix_code = ""
-        linha_digitavel = ""
-        
-        info_res = asaas.get_payment_billing_info(payment_id)
-        if info_res.get("success"):
-            info_data = info_res.get("data") or {}
-            pix_code = (info_data.get("pix", {}) or {}).get("payload") or ""
-            linha_digitavel = (info_data.get("bankSlip", {}) or {}).get("identificationField") or ""
+        due_raw = payment.get("dueDate") or ""
+        valor_br = _fmt_valor_br(payment.get("value"))
+        venc_br = _fmt_due_br(due_raw)
+        val_cents = _valor_centavos(payment.get("value"))
 
         if not pix_code and not linha_digitavel:
             logger.warning("[BillingSend] Sem dados de pagamento (PIX/Boleto) para fatura %s", payment_id)
             continue
-
-        # PDF → Upload para Meta
-        pdf_url  = _resolve_pdf_url(payment)
-        media_id = None
-        if pdf_url:
-            media_id = _upload_pdf_to_meta(phone_num_id, token, pdf_url)
 
         # Payload do template (estrutura dinâmica conforme Meta)
         msg_payload = _build_template_payload(

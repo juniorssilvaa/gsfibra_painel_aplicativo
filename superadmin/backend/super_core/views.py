@@ -987,39 +987,70 @@ class TenantBillingStatusView(APIView):
             'Efetue o pagamento para reativar o acesso ao painel.'
         )
         overdue_payment = None
-        sub_id = (provedor.asaas_subscription_id or '').strip()
-        if sub_id:
-            try:
-                data = _asaas_request(
-                    'GET',
-                    '/payments',
-                    params={'subscription': sub_id, 'status': 'OVERDUE', 'limit': 1},
-                )
-                items = _asaas_confirm_payments(data.get('data') or [], max_items=5)
-                overdue_payment = items[0] if items else None
-            except Exception as exc:
-                logger.warning(
-                    '[tenant-billing-status] provedor=%s Asaas overdue fetch failed: %s',
-                    provedor.id,
-                    exc,
-                )
-
-        payment_id = (overdue_payment or {}).get('id')
         pix_data = None
-        if payment_id:
-            try:
-                pix_data = _asaas_request('GET', f'/payments/{payment_id}/pixQrCode')
-            except Exception as exc:
-                logger.warning(
-                    '[tenant-billing-status] provedor=%s PIX fetch failed: %s',
-                    provedor.id,
-                    exc,
+        is_inter = (
+            (provedor.billing_provider or '') == Provedor.BILLING_PROVIDER_INTER
+            or (provedor.asaas_subscription_id or '').startswith('INTER-SUB-')
+        )
+
+        if is_inter:
+            from .models import InterBillingCharge
+
+            charge = (
+                InterBillingCharge.objects.filter(
+                    provedor=provedor,
+                    status__in=[InterBillingCharge.STATUS_OVERDUE, InterBillingCharge.STATUS_PENDING],
                 )
+                .order_by('data_vencimento')
+                .first()
+            )
+            if charge:
+                overdue_payment = {
+                    'id': charge.codigo_solicitacao,
+                    'value': float(charge.valor),
+                    'dueDate': charge.data_vencimento.isoformat() if charge.data_vencimento else None,
+                    'invoiceUrl': '',
+                    'description': f'Cobrança Inter {charge.seu_numero}',
+                }
+                if charge.pix_copia_cola:
+                    pix_data = {
+                        'encodedImage': '',
+                        'payload': charge.pix_copia_cola,
+                        'expirationDate': overdue_payment.get('dueDate'),
+                    }
+        else:
+            sub_id = (provedor.asaas_subscription_id or '').strip()
+            if sub_id:
+                try:
+                    data = _asaas_request(
+                        'GET',
+                        '/payments',
+                        params={'subscription': sub_id, 'status': 'OVERDUE', 'limit': 1},
+                    )
+                    items = _asaas_confirm_payments(data.get('data') or [], max_items=5)
+                    overdue_payment = items[0] if items else None
+                except Exception as exc:
+                    logger.warning(
+                        '[tenant-billing-status] provedor=%s Asaas overdue fetch failed: %s',
+                        provedor.id,
+                        exc,
+                    )
+
+            payment_id = (overdue_payment or {}).get('id')
+            if payment_id:
+                try:
+                    pix_data = _asaas_request('GET', f'/payments/{payment_id}/pixQrCode')
+                except Exception as exc:
+                    logger.warning(
+                        '[tenant-billing-status] provedor=%s PIX fetch failed: %s',
+                        provedor.id,
+                        exc,
+                    )
 
         payment_payload = None
         if overdue_payment:
             payment_payload = {
-                'id': payment_id,
+                'id': overdue_payment.get('id'),
                 'value': overdue_payment.get('value'),
                 'dueDate': overdue_payment.get('dueDate'),
                 'invoiceUrl': overdue_payment.get('invoiceUrl'),
@@ -1602,7 +1633,7 @@ class ProvedorViewSet(viewsets.ModelViewSet):
     def create_subscription(self, request, pk=None):
         """
         POST /api/provedores/<id>/create_subscription/
-        Body: { value, cycle, billingType, nextDueDate }
+        Body: { value, cycle, billingType, nextDueDate, billing_provider?: 'asaas'|'inter' }
         """
         try:
             self._require_superadmin(request)
@@ -1614,6 +1645,27 @@ class ProvedorViewSet(viewsets.ModelViewSet):
 
         try:
             self._persist_notification_disabled_from_incoming(provedor, payload)
+
+            provider = (
+                str(
+                    payload.get('billing_provider')
+                    or payload.get('billingProvider')
+                    or provedor.billing_provider
+                    or 'asaas'
+                )
+                .strip()
+                .lower()
+            )
+            if provider not in (Provedor.BILLING_PROVIDER_ASAAS, Provedor.BILLING_PROVIDER_INTER):
+                return Response(
+                    {'success': False, 'error': 'billing_provider inválido (asaas|inter)'},
+                    status=400,
+                )
+
+            if provider == Provedor.BILLING_PROVIDER_INTER:
+                from .inter_billing_service import create_inter_subscription
+
+                return Response(create_inter_subscription(provedor, payload))
 
             customer_id = (provedor.asaas_customer_id or '').strip()
             if not customer_id:
@@ -1628,7 +1680,9 @@ class ProvedorViewSet(viewsets.ModelViewSet):
             value = payload.get('value') or provedor.subscription_value
             cycle = (payload.get('cycle') or provedor.subscription_cycle or 'MONTHLY').upper()
             billing_type = (payload.get('billingType') or provedor.subscription_billing_type or 'BOLETO').upper()
-            next_due_date = payload.get('nextDueDate') or (provedor.subscription_next_due_date.isoformat() if provedor.subscription_next_due_date else None)
+            next_due_date = payload.get('nextDueDate') or (
+                provedor.subscription_next_due_date.isoformat() if provedor.subscription_next_due_date else None
+            )
             if not next_due_date:
                 return Response({'success': False, 'error': 'nextDueDate é obrigatório'}, status=400)
 
@@ -1649,26 +1703,31 @@ class ProvedorViewSet(viewsets.ModelViewSet):
             if notify_off:
                 self._asaas_apply_notifications(provedor, payload, customer_id)
 
+            provedor.billing_provider = Provedor.BILLING_PROVIDER_ASAAS
             provedor.asaas_subscription_id = sub_id
             provedor.subscription_value = sub_payload['value']
             provedor.subscription_cycle = cycle
             provedor.subscription_billing_type = billing_type
             try:
                 from datetime import date
+
                 y, m, d = [int(x) for x in str(next_due_date).split('-')[:3]]
                 provedor.subscription_next_due_date = date(y, m, d)
             except Exception:
                 pass
-            provedor.subscription_status = (created.get('status') or provedor.subscription_status or 'PENDING')
-            provedor.save(update_fields=[
-                'asaas_subscription_id',
-                'subscription_value',
-                'subscription_cycle',
-                'subscription_billing_type',
-                'subscription_next_due_date',
-                'subscription_status',
-            ])
-            return Response({'success': True, 'subscription_id': sub_id})
+            provedor.subscription_status = created.get('status') or provedor.subscription_status or 'PENDING'
+            provedor.save(
+                update_fields=[
+                    'billing_provider',
+                    'asaas_subscription_id',
+                    'subscription_value',
+                    'subscription_cycle',
+                    'subscription_billing_type',
+                    'subscription_next_due_date',
+                    'subscription_status',
+                ]
+            )
+            return Response({'success': True, 'subscription_id': sub_id, 'billing_provider': 'asaas'})
         except Exception as exc:
             return Response({'success': False, 'error': str(exc)}, status=400)
 
@@ -1685,6 +1744,35 @@ class ProvedorViewSet(viewsets.ModelViewSet):
 
         provedor = self.get_object()
         try:
+            # Portador Inter: não consultar/limpar via Asaas
+            if (
+                (provedor.billing_provider or '') == Provedor.BILLING_PROVIDER_INTER
+                or (provedor.asaas_subscription_id or '').startswith('INTER-SUB-')
+            ):
+                from .inter_billing_service import list_inter_payments_for_provedor
+
+                return Response({
+                    'success': True,
+                    'billing_provider': 'inter',
+                    'cleared': False,
+                    'asaas_customer_id': provedor.asaas_customer_id,
+                    'asaas_subscription_id': provedor.asaas_subscription_id,
+                    'subscription_status': provedor.subscription_status,
+                    'subscription_value': provedor.subscription_value,
+                    'subscription_cycle': provedor.subscription_cycle,
+                    'subscription_billing_type': provedor.subscription_billing_type,
+                    'subscription_next_due_date': (
+                        provedor.subscription_next_due_date.isoformat()
+                        if provedor.subscription_next_due_date
+                        else None
+                    ),
+                    'status_info': {
+                        'customer': 'inter_local',
+                        'subscription': (provedor.subscription_status or 'PENDING').lower(),
+                    },
+                    'payments': list_inter_payments_for_provedor(provedor),
+                })
+
             changes = False
             cleared = False
             status_info = {'customer': 'not_checked', 'subscription': 'not_checked'}
@@ -1811,8 +1899,8 @@ class ProvedorViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='clear_asaas_subscription')
     def clear_asaas_subscription(self, request, pk=None):
         """
-        Remove vínculo local da assinatura.
-        Body opcional: { "cancel_on_asaas": true } — exclui também no Asaas antes de limpar.
+        Remove vínculo local da assinatura (Asaas ou Inter).
+        Body opcional: { "cancel_on_asaas": true } — cancela no gateway antes de limpar.
         """
         try:
             self._require_superadmin(request)
@@ -1825,6 +1913,24 @@ class ProvedorViewSet(viewsets.ModelViewSet):
         subscription_id = (provedor.asaas_subscription_id or '').strip()
         had_subscription = bool(subscription_id)
         cancelled_on_asaas = False
+        is_inter = (
+            (provedor.billing_provider or '') == Provedor.BILLING_PROVIDER_INTER
+            or subscription_id.startswith('INTER-SUB-')
+        )
+
+        if is_inter:
+            from .inter_billing_service import clear_inter_subscription
+
+            try:
+                clear_inter_subscription(provedor, cancel_open_charges=cancel_on_asaas)
+            except Exception as exc:
+                return Response({'success': False, 'error': str(exc)}, status=400)
+            return Response({
+                'success': True,
+                'cleared': had_subscription,
+                'cancelled_on_asaas': cancel_on_asaas,
+                'billing_provider': 'inter',
+            })
 
         if cancel_on_asaas and subscription_id:
             try:
@@ -1845,17 +1951,30 @@ class ProvedorViewSet(viewsets.ModelViewSet):
             'cancelled_on_asaas': cancelled_on_asaas,
             'asaas_environment': 'sandbox' if is_asaas_sandbox() else 'production',
             'asaas_customer_id': provedor.asaas_customer_id,
+            'billing_provider': 'asaas',
         })
 
     @action(detail=True, methods=['get'], url_path='subscription_payments')
     def subscription_payments(self, request, pk=None):
-        """Lista cobranças da assinatura direto do Asaas."""
+        """Lista cobranças da assinatura (Asaas ou Inter conforme portador)."""
         try:
             self._require_superadmin(request)
         except PermissionError:
             return Response({'error': 'Forbidden'}, status=403)
 
         provedor = self.get_object()
+        if (
+            (provedor.billing_provider or '') == Provedor.BILLING_PROVIDER_INTER
+            or (provedor.asaas_subscription_id or '').startswith('INTER-SUB-')
+        ):
+            from .inter_billing_service import list_inter_payments_for_provedor
+
+            return Response({
+                'success': True,
+                'data': list_inter_payments_for_provedor(provedor),
+                'provider': 'inter',
+            })
+
         subscription_id = (provedor.asaas_subscription_id or '').strip()
         customer_id = (provedor.asaas_customer_id or '').strip()
         if not subscription_id and not customer_id:
@@ -1888,8 +2007,9 @@ class ProvedorViewSet(viewsets.ModelViewSet):
                 'paymentDate': p.get('paymentDate'),
                 'invoiceUrl': p.get('invoiceUrl'),
                 'bankSlipUrl': p.get('bankSlipUrl'),
+                'provider': 'asaas',
             })
-        return Response({'success': True, 'data': payments})
+        return Response({'success': True, 'data': payments, 'provider': 'asaas'})
 
     @action(detail=True, methods=['get'], url_path='integration-token')
     def integration_token_status(self, request, pk=None):

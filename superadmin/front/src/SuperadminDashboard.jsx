@@ -10,6 +10,7 @@ import DashboardCharts from './components/DashboardCharts';
 import DashboardAsaasOverdue from './components/DashboardAsaasOverdue';
 import DashboardBillingOverview from './components/DashboardBillingOverview';
 import DashboardOverviewPanels from './components/DashboardOverviewPanels';
+import ChartErrorBoundary from './components/ChartErrorBoundary';
 import SuperadminMensagem from './SuperadminMensagem';
 import SuperadminSugestoes from './SuperadminSugestoes';
 import SuperadminIntegracoes from './SuperadminIntegracoes';
@@ -273,19 +274,25 @@ export default function SuperadminDashboard({ onLogout }) {
       <Routes>
         <Route path="dashboard" element={
           <div className="flex-1 p-6 bg-background overflow-y-auto">
-            <DashboardBillingOverview />
+            <ChartErrorBoundary>
+              <DashboardBillingOverview />
+            </ChartErrorBoundary>
 
-            <DashboardOverviewPanels
-              statsData={statsData}
-              provedores={provedoresState}
-              appStats={appStats}
-              acsStats={acsStats}
-            />
+            <ChartErrorBoundary>
+              <DashboardOverviewPanels
+                statsData={statsData}
+                provedores={provedoresState}
+                appStats={appStats}
+                acsStats={acsStats}
+              />
+            </ChartErrorBoundary>
 
             <DashboardAsaasOverdue />
 
             <div className="mb-8">
-              <DashboardCharts />
+              <ChartErrorBoundary>
+                <DashboardCharts />
+              </ChartErrorBoundary>
             </div>
 
             {/* Seção de Provedores */}

@@ -1,35 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  BarController,
-  LineElement,
-  LineController,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+import { ensureChartJsRegistered } from '../lib/chartSetup';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { STATUS_PILL, StatusPill } from './DashboardOverviewPanels';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  BarController,
-  LineElement,
-  LineController,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ensureChartJsRegistered();
+
 
 function formatMoney(value) {
   if (value == null || Number.isNaN(Number(value))) return '—';
