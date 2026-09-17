@@ -47,27 +47,22 @@ _MIME_BY_EXT = {
 
 # Sinais fortes de comprovante / pagamento (PT-BR + bancos comuns)
 _PAYMENT_HINTS = (
+    'comprovante de pagamento',
     'comprovante',
-    'pagamento',
     'pagseguro',
     'mercado pago',
     'mercadopago',
-    'pix',
+    'chave pix',
     'transferência',
     'transferencia',
     'ted',
-    'doc ',
     'recibo',
-    'pago',
-    'boleto',
+    'boleto pago',
     'depósito',
     'deposito',
-    'chave pix',
-    'valor:',
     'valor r$',
-    'r$ ',
+    'valor:',
     'nubank',
-    'inter ',
     'itau',
     'itaú',
     'bradesco',
@@ -81,7 +76,35 @@ _PAYMENT_HINTS = (
     'picpay',
     'stone',
     'asaas',
-    'baixa',
+    'id da transação',
+    'id da transacao',
+    'autenticação',
+    'autenticacao',
+    'e2e',
+    'end to end',
+)
+
+_PAYMENT_POSITIVE_PHRASE = 'é um comprovante de pagamento'
+_PAYMENT_NEGATIVE_PHRASE = 'não é um comprovante de pagamento'
+_PAYMENT_NEGATIVE_PHRASE_ASCII = 'nao e um comprovante de pagamento'
+
+# Print de UI / chat / menu — NÃO é comprovante (evitar termos genéricos como "screenshot")
+_NOT_RECEIPT_HINTS = (
+    'não é um comprovante',
+    'nao e um comprovante',
+    'nao é um comprovante',
+    'menu do whatsapp',
+    'menu do aplicativo',
+    'adicionar contato',
+    'enviar documento',
+    'perguntar à meta ai',
+    'perguntar a meta ai',
+    'tela de opções',
+    'tela de opcoes',
+    'print de conversa',
+    'captura de tela do whatsapp',
+    'opções do whatsapp',
+    'opcoes do whatsapp',
 )
 
 COMPROVANTE_DIRECTIVE = (
@@ -110,6 +133,12 @@ COMPROVANTE_DIRECTIVE_NO_HOURS = (
     'Após "Obrigada!" (ou a frase do provedor na base de conhecimento), ENCERRAR a resposta. '
     'NÃO envie segunda mensagem com horário. NÃO use despedida/emoji extras além do que '
     'as regras do provedor pedirem para comprovante.'
+)
+
+NOT_COMPROVANTE_IMAGE_NOTE = (
+    '[IMAGEM ANALISADA — NÃO É COMPROVANTE DE PAGAMENTO] '
+    'Responda só com base na descrição da imagem. '
+    'Não trate como comprovante nem encaminhe baixa de pagamento.'
 )
 
 
@@ -161,16 +190,52 @@ def provider_kb_requires_comprovante_transfer(provedor) -> bool:
 
 
 def looks_like_payment_receipt(text: str) -> bool:
-    """Heurística leve: texto de visão/PDF/legenda parece comprovante de pagamento."""
+    """Heurística: texto de visão/PDF/legenda parece comprovante de pagamento real."""
     raw = (text or '').strip().lower()
     if not raw:
         return False
+
+    if vision_says_not_payment_receipt(raw):
+        return False
+
+    if vision_says_payment_receipt(raw):
+        return True
+
     hits = sum(1 for h in _PAYMENT_HINTS if h in raw)
-    if 'comprovante' in raw and hits >= 1:
+    has_pix = 'pix' in raw
+    has_transfer = 'transfer' in raw
+    has_valor = 'r$' in raw or 'valor' in raw
+    has_comprovante = 'comprovante' in raw
+
+    # Exige combinação forte — evita falso positivo em menus/prints
+    if has_comprovante and (has_pix or has_transfer or has_valor) and hits >= 2:
         return True
-    if ('pix' in raw or 'transfer' in raw) and hits >= 2:
+    if has_pix and has_valor and hits >= 3:
         return True
-    return hits >= 3
+    if has_transfer and has_valor and hits >= 3:
+        return True
+    return False
+
+
+def vision_says_payment_receipt(description: str) -> bool:
+    """True só se a visão afirmou explicitamente que é comprovante."""
+    raw = (description or '').strip().lower()
+    if not raw:
+        return False
+    if vision_says_not_payment_receipt(raw):
+        return False
+    return _PAYMENT_POSITIVE_PHRASE in raw
+
+
+def vision_says_not_payment_receipt(description: str) -> bool:
+    raw = (description or '').strip().lower()
+    if not raw:
+        return False
+    return (
+        _PAYMENT_NEGATIVE_PHRASE in raw
+        or _PAYMENT_NEGATIVE_PHRASE_ASCII in raw
+        or any(n in raw for n in _NOT_RECEIPT_HINTS)
+    )
 
 
 def resolve_media_file_path(file_url: Optional[str], conversation_id: Optional[int] = None) -> Optional[str]:
@@ -367,14 +432,38 @@ def enrich_inbound_media_for_ai(
                 getattr(provedor, 'id', None),
                 len(description),
             )
-            if looks_like_payment_receipt(description) or looks_like_payment_receipt(caption_clean):
-                _mark_receipt('image_description')
+            # Imagem: só força comprovante se a visão confirmar OU (legenda explícita + visão não negar)
+            if vision_says_payment_receipt(description):
+                _mark_receipt('image_vision_positive')
+            elif vision_says_not_payment_receipt(description):
+                parts.append(NOT_COMPROVANTE_IMAGE_NOTE)
+                extra['payment_receipt_detected'] = False
+                extra['not_payment_receipt'] = True
+                logger.info(
+                    '[media_inbound] Imagem NÃO é comprovante (visão) provedor=%s',
+                    getattr(provedor, 'id', None),
+                )
+            elif looks_like_payment_receipt(caption_clean) and looks_like_payment_receipt(description):
+                _mark_receipt('image_caption_and_description')
+            else:
+                # Sem confirmação — não injeta diretiva de comprovante
+                parts.append(NOT_COMPROVANTE_IMAGE_NOTE)
+                extra['payment_receipt_detected'] = False
+                extra['not_payment_receipt'] = True
         else:
             extra['image_description_error'] = True
             parts.append('Cliente enviou uma imagem, mas não foi possível interpretá-la.')
             blob = f'{caption_clean} {name_hint}'.strip()
-            if looks_like_payment_receipt(blob):
+            # Sem visão: só marca se a legenda/nome deixar explícito (ex.: "comprovante pix")
+            if looks_like_payment_receipt(blob) and (
+                'comprovante' in blob.lower() or 'pix' in blob.lower()
+            ):
                 _mark_receipt('image_unreadable_hint')
+            else:
+                parts.append(
+                    '[IMAGEM SEM ANÁLISE] Não assuma que é comprovante de pagamento. '
+                    'Peça esclarecimento ou trate pelo contexto da conversa.'
+                )
     elif mt in DOCUMENT_TYPES:
         ext = os.path.splitext(file_path or '')[1].lower()
         is_pdf = ext == '.pdf' or (name_hint or '').lower().endswith('.pdf')
