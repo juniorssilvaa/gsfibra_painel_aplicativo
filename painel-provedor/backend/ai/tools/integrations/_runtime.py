@@ -621,10 +621,9 @@ def _resposta_precisa_confirmar_dados(contratos: list, nome: str = "") -> dict:
         "nome": nome or None,
         "contratos": resumo,
         "nota": (
-            "Mostre os contratos no formato estruturado "
-            "('Encontrei seu(s) contrato(s), {nome}!' + 'Aqui estão os detalhes:' + "
-            "'N - Contrato (ID): ENDERECO'). "
-            "Redija com naturalidade — nao copie texto engessado. "
+            "Use APENAS mensagem_cliente_sugerida / contratos deste retorno "
+            "(dados reais do ERP). Nunca invente ID ou endereco. "
+            "Redija com naturalidade. "
             + (
                 "Peca UMA vez se os dados estao corretos. Ainda NAO pergunte qual contrato. "
                 if multiplos
@@ -1353,9 +1352,9 @@ class AIActionsHandler:
                             "contratos": contratos_resumo,
                             "mensagem_cliente_sugerida": msg,
                             "nota": (
-                                "Mostre a estrutura de mensagem_cliente_sugerida "
-                                "(titulo + 'Aqui estão os detalhes:' + linhas 'N - Contrato (ID): ENDERECO'). "
-                                "Redija com naturalidade; nao use texto fixo engessado. "
+                                "Use APENAS mensagem_cliente_sugerida deste retorno "
+                                "(dados reais). Nunca invente ID/endereco. "
+                                "Redija com naturalidade. "
                                 "ETAPA 1: peca UMA vez se os dados estao corretos. Ainda NAO pergunte qual contrato. "
                                 "NAO chame gerar_fatura / verificar_acesso / abrir_chamado ainda. "
                                 "Quando o cliente confirmar, chame selecionar_contrato com escolha='sim'."
@@ -1381,8 +1380,8 @@ class AIActionsHandler:
                             "contratos": contratos_resumo,
                             "mensagem_cliente_sugerida": msg,
                             "nota": (
-                                "Mostre a estrutura de mensagem_cliente_sugerida "
-                                "(titulo + detalhes '1 - Contrato (ID): ENDERECO'). "
+                                "Use APENAS mensagem_cliente_sugerida deste retorno "
+                                "(dados reais). Nunca invente ID/endereco. "
                                 "Redija com naturalidade; peca confirmacao UMA vez. "
                                 "NAO chame gerar_fatura / verificar_acesso / abrir_chamado / liberar_confianca ainda. "
                                 "Quando o cliente confirmar, chame selecionar_contrato com escolha='sim' "

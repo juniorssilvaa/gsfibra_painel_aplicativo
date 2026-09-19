@@ -433,28 +433,65 @@ class AIResponseFormatter:
         
         return resposta
 
+    def _scrub_contract_hallucinations(self, resposta: str) -> str:
+        """
+        Bloqueia respostas em que a IA copiou placeholders do prompt
+        (ex.: «1 - Contrato (ID): ENDEREÇO») sem dados reais do ERP.
+        """
+        if not resposta:
+            return resposta
+        text = resposta.strip()
+        # Placeholder literal do prompt / formatter antigo
+        if re.search(
+            r'Contrato\s*\([^)]*\)\s*:\s*ENDERE[CÇ]O(?:\s+N[AÃ]O\s+INFORMADO)?\s*\.?\s*$',
+            text,
+            re.I | re.M,
+        ) or re.search(
+            r'Contrato\s*\(\s*(?:ID)?\s*\)\s*:\s*ENDERE[CÇ]O\b',
+            text,
+            re.I,
+        ):
+            logger.warning(
+                '[formatter] Alucinacao de contrato/endereco detectada — substituindo por pedido de CPF'
+            )
+            return (
+                "Para localizar seu cadastro, preciso do seu CPF ou CNPJ "
+                "com 11 ou 14 dígitos. Pode me enviar, por favor?"
+            )
+        if re.search(
+            r'\[(?:N[UÚ]MERO DO CONTRATO|ENDERE[CÇ]O COMPLETO)\]',
+            text,
+            re.I,
+        ):
+            logger.warning(
+                '[formatter] Placeholder de contrato detectado — substituindo por pedido de CPF'
+            )
+            return (
+                "Para localizar seu cadastro, preciso do seu CPF ou CNPJ "
+                "com 11 ou 14 dígitos. Pode me enviar, por favor?"
+            )
+        return resposta
+
     def corrigir_formato_resposta(self, resposta: str, conversation_id: int = None, provedor_id: int = None, channel: str = "wa", phone: str = "unknown") -> str:
         """
         Força o formato correto da resposta final, integrando todas as limpezas.
         """
         resposta = self.normalizar_resposta(resposta)
-        
+        resposta = self._scrub_contract_hallucinations(resposta)
+
         if 'CONFIRMAÇÃO DE DADOS DO CONTRATO' in resposta:
             resposta = self._forcar_formato_confirmacao_dados(resposta, conversation_id, provedor_id, channel, phone)
-        
-        # Corrigir formatos antigos
+            resposta = self._scrub_contract_hallucinations(resposta)
+
+        # Formatos antigos com rótulos engessados: não inventar placeholders
         if any(termo in resposta for termo in ['*Dados do Cliente:*', '*Nome:*', '*Status do Contrato:*']):
-            nome_match = re.search(r'([A-Z\s]+(?:DA|DE|DO|DOS|DAS|E)\s+[A-Z\s]+)', resposta)
-            if nome_match:
-                nome_cliente = nome_match.group(1).strip()
-                if 'Suspenso' in resposta or 'Ativo' in resposta or any(char.isdigit() for char in resposta):
-                    resposta = f"CONFIRMAÇÃO DE DADOS DO CONTRATO\n\nCliente: {nome_cliente}\nContrato: [NÚMERO DO CONTRATO]\nEndereço: [ENDEREÇO COMPLETO]"
-        
-        # Adicionar delay se for confirmação de dados (lógica do sistema)
+            if re.search(r'\[(?:N[UÚ]MERO DO CONTRATO|ENDERE[CÇ]O COMPLETO)\]', resposta, re.I):
+                resposta = self._scrub_contract_hallucinations(resposta)
+
         if 'CONFIRMAÇÃO DE DADOS DO CONTRATO' in resposta and 'Essas informações estão corretas?' in resposta:
             import time
-            time.sleep(2) # Delay reduzido para 2s na formatação, o envio original tinha 5s
-            
+            time.sleep(2)
+
         return self.adicionar_quebras_linha_automaticas(resposta)
 
     def variar_primeira_resposta(self, resposta: str, provedor) -> str:

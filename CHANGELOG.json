@@ -1,6 +1,20 @@
 {
-  "current_version": "2.71.0",
+  "current_version": "2.72.0",
   "versions": [
+    {
+      "version": "2.72.0",
+      "version_type": "minor",
+      "date": "2026-09-19",
+      "title": "Melhorias no módulo do agente de IA",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "IA",
+          "title": "Agente de IA mais preciso",
+          "description": "Ajustes no agente para interpretar melhor imagens e áudios e evitar respostas inventadas (como dados de contrato sem consulta ao cadastro)."
+        }
+      ]
+    },
     {
       "version": "2.71.0",
       "version_type": "minor",

@@ -4,6 +4,11 @@ Todas as mudanças notáveis do projeto NioChat serão documentadas neste arquiv
 
 **Fonte oficial do histórico no produto:** `CHANGELOG.json` na raiz do repositório (servido por `/api/changelog/` e exibido no modal de versões). Atualize apenas esse JSON para novas versões.
 
+## [2.72.0] - 2026-09-19
+
+### 🔧 Melhoria
+- **IA**: agente mais preciso na interpretação de imagens e áudios, com menos respostas inventadas (ex.: dados de contrato sem consulta ao cadastro).
+
 ## [2.71.0] - 2026-09-16
 
 ### 🐛 Corrigido

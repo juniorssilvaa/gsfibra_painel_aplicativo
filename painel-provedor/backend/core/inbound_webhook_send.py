@@ -744,6 +744,7 @@ def _payload_direct(payload: Dict[str, Any], *keys: str) -> Any:
 def _sanitize_cliente_name(name: str) -> str:
     """Remove repetição acidental (ex.: «VANDA DO VANDA DO») comum em disparos SGP."""
     s = re.sub(r'\s+', ' ', (name or '').strip()).strip(',').strip()
+    s = s.strip('*').strip()
     if not s:
         return s
     dup = re.match(r'^(.+?)\s+\1$', s, re.I)
@@ -755,6 +756,34 @@ def _sanitize_cliente_name(name: str) -> str:
         if [w.lower() for w in words[:half]] == [w.lower() for w in words[half:]]:
             return ' '.join(words[:half])
     return s
+
+
+def _extract_cliente_name_from_mensagem(mensagem: str) -> str:
+    """
+    Extrai o nome do cliente da mensagem já preenchida pelo SGP.
+    Cobre «Olá, NOME.» e «Prezado (a) *NOME*.» (comum quando o BODY Meta é
+    diferente do texto livre que o SGP monta).
+    """
+    msg = (mensagem or '').strip()
+    if not msg:
+        return ''
+    for pat in (
+        # Prezado (a) *NOME*. / Prezado(a) NOME.
+        r'prezado\s*\(?\s*a?\s*\)?\s*[,:]?\s*\*?([^*\n]+?)\*?\s*[\.\n]',
+        r'prezado\s*\(?\s*a?\s*\)?\s*[,:]?\s*\*?([^*\n,]+)',
+        # Olá, NOME.
+        r'ol[aá],\s*(.+?)(?:\s*,\s*n[aã]o|\s*\.\s|\s*\n|\s+voc[eê]|(?:\s*\.\s*)?esperamos)',
+        r'ol[aá],\s*(.+?)\.\s*(?:\n|esperamos|ate\s+o\s+presente|voc[eê])',
+        r'ol[aá],\s*(.+?)\s*,\s*',
+        r'ol[aá]\s+(.+?)\s*\.',
+        r'sr\(?a?\)?\s*(.+?)\.',
+    ):
+        m = re.search(pat, msg, re.I | re.S)
+        if m:
+            name = _sanitize_cliente_name(m.group(1))
+            if name and '{' not in name and len(name) >= 2:
+                return name
+    return ''
 
 
 def _payload_has_sgp_semantic_fields(payload: Dict[str, Any]) -> bool:
@@ -968,18 +997,9 @@ def _collect_semantic_pool(mensagem: str, payload: Dict[str, Any]) -> Dict[str, 
             _add('date', d)
         for m in _MONEY_IN_TEXT_RE.finditer(msg):
             _add('money', m.group(1).strip())
-        for pat in (
-            r'ol[aá],\s*(.+?)(?:\s*,\s*n[aã]o|\s*\.\s|\s*\n|\s+voc[eê]|(?:\s*\.\s*)?esperamos)',
-            r'ol[aá],\s*(.+?)\.\s*(?:\n|esperamos|ate\s+o\s+presente)',
-            r'ol[aá]\s+(.+?)\s*,\s*n[aã]o',
-            r'ol[aá],\s*(.+?)\s*,\s*',
-            r'ol[aá]\s+(.+?)\s*\.',
-            r'sr\(?a?\)?\s*(.+?)\.',
-        ):
-            m = re.search(pat, msg, re.I | re.S)
-            if m:
-                _add('name', m.group(1).strip().strip(',').strip())
-                break
+        name = _extract_cliente_name_from_mensagem(msg)
+        if name:
+            _add('name', name)
 
     for slot, keys in _SLOT_SGP_KEYS.items():
         for key in keys:
@@ -1260,10 +1280,15 @@ def _extract_params_label_guided(template_body: str, mensagem: str) -> Dict[int,
             )
             if m2:
                 val = m2.group(1).strip().strip(',').strip()
+            else:
+                # Template Meta «Olá, {{1}}» + mensagem SGP «Prezado (a) *NOME*»
+                val = _extract_cliente_name_from_mensagem(msg) or None
         elif re.search(r'prezado', label_ctx, re.I):
-            m2 = re.search(r'prezado\s*\(?a?\)?\s*,?\s*([^\n,]+)', msg, re.I)
+            m2 = re.search(r'prezado\s*\(?a?\)?\s*,?\s*\*?([^*\n,]+)', msg, re.I)
             if m2:
                 val = m2.group(1).strip()
+            else:
+                val = _extract_cliente_name_from_mensagem(msg) or None
         elif re.search(r'vence em|vence hoje', label_ctx, re.I):
             m2 = re.search(
                 r'(?:vence\s+em|vence\s+hoje)\s+(\d{2}/\d{2}/\d{4})',
@@ -1288,6 +1313,10 @@ def _extract_params_label_guided(template_body: str, mensagem: str) -> Dict[int,
             m2 = re.search(r'ol[aá],?\s*([^\n,]+)', msg, re.I)
             if m2:
                 val = m2.group(1).strip()
+            else:
+                val = _extract_cliente_name_from_mensagem(msg) or None
+        elif n == 1 and _classify_template_var_slot(template_body, n) == 'name':
+            val = _extract_cliente_name_from_mensagem(msg) or None
         elif re.search(r'equipe\s+d[ao]\s*$', label_ctx) or 'provedor' in label_ctx:
             m2 = re.search(
                 r'equipe\s+d[ao]\s*([^\n]+?)(?:\s*$|\s+importante|\s+evite)',
@@ -1326,20 +1355,21 @@ def _extract_params_cobranca_sgp_heuristic(
     if not msg or not indices:
         return {}
 
-    name = ''
-    for pat in (
-        r'ol[aá],\s*(.+?)\s*,\s*n[aã]o\s+detectamos',
-        r'ol[aá],\s*(.+?)\s*\.\s*(?:\n|esperamos|ate\s+o\s+presente|voc[eê])',
-        r'ol[aá],\s*(.+?)\s*\.\s*(?:\n|voc[eê])',
-        r'ol[aá],\s*(.+?)\s*,\s*',
-        r'ol[aá]\s+(.+?)\s*,\s*n[aã]o\s+detectamos',
-    ):
-        m = re.search(pat, msg, re.I | re.S)
-        if m:
-            name = m.group(1).strip().strip(',').strip()
-            if name and '{' not in name:
-                break
-            name = ''
+    name = _extract_cliente_name_from_mensagem(msg)
+    if not name:
+        for pat in (
+            r'ol[aá],\s*(.+?)\s*,\s*n[aã]o\s+detectamos',
+            r'ol[aá],\s*(.+?)\s*\.\s*(?:\n|esperamos|ate\s+o\s+presente|voc[eê])',
+            r'ol[aá],\s*(.+?)\s*\.\s*(?:\n|voc[eê])',
+            r'ol[aá],\s*(.+?)\s*,\s*',
+            r'ol[aá]\s+(.+?)\s*,\s*n[aã]o\s+detectamos',
+        ):
+            m = re.search(pat, msg, re.I | re.S)
+            if m:
+                name = m.group(1).strip().strip(',').strip()
+                if name and '{' not in name:
+                    break
+                name = ''
 
     date_val = ''
     for pat in (

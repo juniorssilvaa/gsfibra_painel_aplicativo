@@ -295,8 +295,9 @@ class AIService:
                             "content": (
                                 "Neste turno o cliente pediu FATURA/boleto/pagamento. "
                                 "Nao trate como suporte de internet. "
-                                "Se os dados do ERP ainda nao foram confirmados, use a mensagem_cliente_sugerida "
-                                "no formato 'Encontrei seu contrato, {nome}!' + '1 - Contrato (ID): ENDERECO' "
+                                "Se os dados do ERP ainda nao foram confirmados, use APENAS "
+                                "mensagem_cliente_sugerida retornada por buscar_cliente "
+                                "(dados reais — nunca invente contrato/endereco) "
                                 "e peca confirmacao UMA vez; quando confirmar, chame selecionar_contrato. "
                                 "Se houver varios contratos e ainda nao escolheu, chame selecionar_contrato. "
                                 "Se o contrato ja estiver escolhido/confirmado (Redis), chame gerar_fatura "
