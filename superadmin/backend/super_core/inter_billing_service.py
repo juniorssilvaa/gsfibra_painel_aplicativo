@@ -175,14 +175,20 @@ def emitir_cobranca_para_provedor(
 
 
 def refresh_charge_from_inter(charge: InterBillingCharge, inter: InterService | None = None) -> InterBillingCharge:
+    """Consulta a cobrança no Inter e atualiza status local (+ assinatura do provedor se paga)."""
     inter = inter or InterService()
     res = inter.consultar_cobranca(charge.codigo_solicitacao)
     if not res.get("success"):
         return charge
     data = res.get("data") or {}
     normalized = InterService.normalize_cobranca_item(data, codigo_solicitacao=charge.codigo_solicitacao)
+    prev_status = charge.status
+    new_status = normalized.get("status") or charge.status
+    # Compat: API interna usa DELETED; model usa CANCELLED
+    if new_status == "DELETED":
+        new_status = InterBillingCharge.STATUS_CANCELLED
     charge.situacao = normalized.get("situacao") or charge.situacao
-    charge.status = normalized.get("status") or charge.status
+    charge.status = new_status
     if normalized.get("linhaDigitavel"):
         charge.linha_digitavel = normalized["linhaDigitavel"]
     if normalized.get("pixCopiaECola"):
@@ -198,8 +204,65 @@ def refresh_charge_from_inter(charge: InterBillingCharge, inter: InterService | 
             "updated_at",
         ]
     )
+    if charge.status != prev_status or charge.status == InterBillingCharge.STATUS_RECEIVED:
+        _apply_charge_status_to_provedor(charge)
     return charge
 
+
+def _apply_charge_status_to_provedor(charge: InterBillingCharge) -> None:
+    """Espelha RECEIVED/OVERDUE da cobrança Inter na assinatura local do provedor."""
+    prov = charge.provedor
+    if charge.status == InterBillingCharge.STATUS_RECEIVED:
+        if charge.data_vencimento:
+            next_due = _add_months(charge.data_vencimento, 1)
+            current = prov.subscription_next_due_date
+            if (not current) or current <= charge.data_vencimento:
+                prov.subscription_next_due_date = next_due
+        prov.subscription_status = "ACTIVE"
+        prov.save(update_fields=["subscription_next_due_date", "subscription_status"])
+        logger.info(
+            "[InterBilling] Cobrança RECEBIDA provedor=%s codigo=%s → ACTIVE",
+            prov.id,
+            charge.codigo_solicitacao,
+        )
+    elif charge.status == InterBillingCharge.STATUS_OVERDUE:
+        prov.subscription_status = "OVERDUE"
+        prov.save(update_fields=["subscription_status"])
+
+
+def sync_open_inter_charges_from_api(provedor: Provedor) -> dict[str, Any]:
+    """
+    Busca no Inter o status atual das cobranças abertas do provedor.
+    Necessário quando o webhook não chegou — evita suspender quem já pagou.
+    """
+    inter = InterService()
+    if not inter.is_ready():
+        return {"skipped": True, "reason": "inter_not_configured"}
+
+    qs = list(
+        InterBillingCharge.objects.filter(
+            provedor=provedor,
+            status__in=[InterBillingCharge.STATUS_PENDING, InterBillingCharge.STATUS_OVERDUE],
+        )
+        .select_related("provedor")
+        .order_by("data_vencimento")[:20]
+    )
+    updated = 0
+    received = 0
+    for ch in qs:
+        before = ch.status
+        ch = refresh_charge_from_inter(ch, inter=inter)
+        if ch.status != before:
+            updated += 1
+        if ch.status == InterBillingCharge.STATUS_RECEIVED:
+            received += 1
+
+    try:
+        provedor.refresh_from_db(fields=["subscription_status", "subscription_next_due_date"])
+    except Exception:
+        pass
+
+    return {"checked": len(qs), "updated": updated, "received": received}
 
 def list_inter_payments_for_provedor(provedor: Provedor) -> list[dict]:
     items = []
@@ -329,8 +392,11 @@ def sync_charge_from_webhook_payload(payload: dict) -> InterBillingCharge | None
         return None
 
     normalized = InterService.normalize_cobranca_item(payload, codigo_solicitacao=codigo)
+    new_status = normalized.get("status") or charge.status
+    if new_status == "DELETED":
+        new_status = InterBillingCharge.STATUS_CANCELLED
     charge.situacao = normalized.get("situacao") or charge.situacao
-    charge.status = normalized.get("status") or charge.status
+    charge.status = new_status
     if normalized.get("linhaDigitavel"):
         charge.linha_digitavel = normalized["linhaDigitavel"]
     if normalized.get("pixCopiaECola"):
@@ -347,16 +413,6 @@ def sync_charge_from_webhook_payload(payload: dict) -> InterBillingCharge | None
         ]
     )
 
-    prov = charge.provedor
-    if charge.status == InterBillingCharge.STATUS_RECEIVED:
-        # Avança próximo vencimento
-        if charge.data_vencimento:
-            next_due = _add_months(charge.data_vencimento, 1)
-            prov.subscription_next_due_date = next_due
-        prov.subscription_status = "ACTIVE"
-        prov.save(update_fields=["subscription_next_due_date", "subscription_status"])
-    elif charge.status == InterBillingCharge.STATUS_OVERDUE:
-        prov.subscription_status = "OVERDUE"
-        prov.save(update_fields=["subscription_status"])
+    _apply_charge_status_to_provedor(charge)
 
     return charge

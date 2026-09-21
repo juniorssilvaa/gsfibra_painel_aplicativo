@@ -2380,6 +2380,7 @@ export default function SuperadminProvedores() {
                     <ChevronsUpDown className={`w-3.5 h-3.5 ${sortKey === 'vencimento' ? 'text-primary' : 'text-muted-foreground/70'}`} />
                   </button>
                 </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold text-foreground uppercase tracking-wider">PORTADOR</th>
                 <th className="px-6 py-4 text-center text-xs font-semibold text-foreground uppercase tracking-wider">STATUS</th>
                 <th className="px-6 py-4 text-center text-xs font-semibold text-foreground uppercase tracking-wider">AÇÕES</th>
               </tr>
@@ -2495,6 +2496,27 @@ export default function SuperadminProvedores() {
                           </span>
                           <span className="text-[10px] text-muted-foreground">{hint}</span>
                         </div>
+                      );
+                    })()}
+                  </td>
+                  <td className="px-6 py-4 text-center align-middle">
+                    {(() => {
+                      const inter = isInterBilling(provedor);
+                      const hasSub = Boolean(provedor.asaas_subscription_id);
+                      if (!hasSub && !provedor.billing_provider) {
+                        return <span className="text-xs text-muted-foreground">—</span>;
+                      }
+                      return (
+                        <span
+                          className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+                            inter
+                              ? 'bg-orange-500/15 text-orange-300 border-orange-500/30'
+                              : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                          }`}
+                          title={inter ? 'Cobranças no Banco Inter' : 'Cobranças no Asaas'}
+                        >
+                          {inter ? 'Inter' : 'Asaas'}
+                        </span>
                       );
                     })()}
                   </td>

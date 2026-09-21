@@ -1749,7 +1749,21 @@ class ProvedorViewSet(viewsets.ModelViewSet):
                 (provedor.billing_provider or '') == Provedor.BILLING_PROVIDER_INTER
                 or (provedor.asaas_subscription_id or '').startswith('INTER-SUB-')
             ):
-                from .inter_billing_service import list_inter_payments_for_provedor
+                from .billing_auto_block import sync_provedor_billing_block
+                from .inter_billing_service import (
+                    list_inter_payments_for_provedor,
+                    sync_open_inter_charges_from_api,
+                )
+
+                try:
+                    sync_open_inter_charges_from_api(provedor)
+                except Exception as exc:
+                    logger.warning('[AsaasVerify] Sync Inter provedor=%s: %s', provedor.id, exc)
+                try:
+                    sync_provedor_billing_block(provedor)
+                except Exception as exc:
+                    logger.warning('[AsaasVerify] AutoBlock Inter provedor=%s: %s', provedor.id, exc)
+                provedor.refresh_from_db()
 
                 return Response({
                     'success': True,

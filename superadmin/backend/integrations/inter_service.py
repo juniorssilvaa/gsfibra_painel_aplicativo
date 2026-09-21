@@ -384,7 +384,7 @@ class InterService:
         if s in ("ATRASADO", "VENCIDO", "EXPIRADO", "PROTESTO"):
             return "OVERDUE"
         if s in ("CANCELADO", "CANCELADA", "FALHA_EMISSAO"):
-            return "DELETED"
+            return "CANCELLED"
         if s in ("A_RECEBER", "EMABERTO", "EMITIDO", "EM_PROCESSAMENTO"):
             return "PENDING"
         return s or "PENDING"

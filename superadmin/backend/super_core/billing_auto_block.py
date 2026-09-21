@@ -54,6 +54,19 @@ def _provider_has_blocking_overdue(prov: Provedor, asaas: AsaasService, min_days
     )
     if is_inter:
         from .models import InterBillingCharge
+        from .inter_billing_service import sync_open_inter_charges_from_api
+
+        # Sempre consulta o Inter antes de bloquear/liberar (webhook pode falhar)
+        try:
+            sync_result = sync_open_inter_charges_from_api(prov)
+            if sync_result.get('received'):
+                logger.info(
+                    '[AutoBlock] Inter: %s cobrança(s) RECEBIDA(S) no provedor %s',
+                    sync_result.get('received'),
+                    prov.id,
+                )
+        except Exception:
+            logger.exception('[AutoBlock] Falha ao sincronizar cobranças Inter provedor=%s', prov.id)
 
         for ch in InterBillingCharge.objects.filter(
             provedor=prov,
@@ -65,7 +78,8 @@ def _provider_has_blocking_overdue(prov: Provedor, asaas: AsaasService, min_days
                 continue
             if _compute_days_late(due) >= min_days:
                 return True
-        return (prov.subscription_status or '').upper() == 'OVERDUE'
+        # Sem cobrança aberta atrasada → não bloqueia (mesmo se status local ainda for OVERDUE)
+        return False
 
     sub_id = (prov.asaas_subscription_id or '').strip()
     if not sub_id:
