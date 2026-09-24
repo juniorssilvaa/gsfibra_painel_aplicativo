@@ -70,8 +70,9 @@ class HealthCheckExemptMiddleware(MiddlewareMixin):
         if request_path in ['/api/health', '/api/health/'] and request.method in ['GET', 'HEAD', 'OPTIONS']:
             # Retorna resposta JSON direta SEM acessar o banco de dados
             import json
+            from core.maintenance import health_payload
             response = HttpResponse(
-                json.dumps({"status": "ok"}), 
+                json.dumps(health_payload()), 
                 content_type="application/json", 
                 status=200
             )
@@ -117,8 +118,9 @@ class PreventAuthRedirectMiddleware(MiddlewareMixin):
         # aqui como redundância de segurança para rotas críticas.
         if path_to_check == '/api/health' and request.method in ['GET', 'HEAD', 'OPTIONS']:
             import json
+            from core.maintenance import health_payload
             response = HttpResponse(
-                json.dumps({"status": "ok"}), 
+                json.dumps(health_payload()), 
                 content_type="application/json", 
                 status=200
             )
@@ -153,8 +155,9 @@ class PreventAuthRedirectMiddleware(MiddlewareMixin):
             if '/api/health' in location or '/api/health' in request_path or '/api/health' in str(request.path_info):
                 # Retorna resposta direta ao invés de redirecionamento
                 import json
+                from core.maintenance import health_payload
                 return HttpResponse(
-                    json.dumps({"status": "ok"}), 
+                    json.dumps(health_payload()), 
                     content_type="application/json", 
                     status=200
                 )

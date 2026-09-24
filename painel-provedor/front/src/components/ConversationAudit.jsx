@@ -11,21 +11,40 @@ import gmailIcon from '../assets/gmail.png';
 import chatBgPattern from '../assets/chat-bg-pattern.svg';
 import chatBgPatternLight from '../assets/chat-bg-pattern-light.svg';
 
+const PAGE_SIZE = 50;
+
+const toLocalDateInput = (date) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+const computeDuration = (createdAt, endedAt) => {
+  if (!createdAt) return 'N/A';
+  const durationMs = (endedAt ? new Date(endedAt) : new Date()) - new Date(createdAt);
+  if (!Number.isFinite(durationMs) || durationMs < 0) return 'N/A';
+  const hours = Math.floor(durationMs / (1000 * 60 * 60));
+  const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+};
+
 export default function ConversationAudit({ provedorId }) {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [conversationDetails, setConversationDetails] = useState(null);
   const [conversationMessages, setConversationMessages] = useState([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [filters, setFilters] = useState({
-    dateFrom: '',
-    dateTo: ''
-  });
+  const [filters, setFilters] = useState(() => ({
+    dateFrom: toLocalDateInput(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+    dateTo: toLocalDateInput(new Date())
+  }));
+  const [page, setPage] = useState(1);
+  const [metrics, setMetrics] = useState({});
 
   // Ícones de status de mensagem (igual ao ChatArea)
   const AuditMessageStatusIcon = ({ message }) => {
@@ -150,6 +169,7 @@ export default function ConversationAudit({ provedorId }) {
   const fetchConversations = async () => {
     setLoading(true);
     setError('');
+    const term = searchTerm.trim();
     try {
       const token = localStorage.getItem('token');
 
@@ -161,6 +181,7 @@ export default function ConversationAudit({ provedorId }) {
 
       if (filters.dateFrom) params.append('date_from', filters.dateFrom);
       if (filters.dateTo) params.append('date_to', filters.dateTo);
+      if (term) params.append('search', term);
 
       const response = await axios.get(`/api/audit-logs/?${params}`, {
         headers: { Authorization: `Token ${token}` }
@@ -168,94 +189,9 @@ export default function ConversationAudit({ provedorId }) {
 
       const data = response.data.results || response.data || [];
 
-      // Enriquecer dados com informações adicionais
-      const enrichedData = await Promise.all(data.map(async (conv) => {
-        try {
-          // Buscar mensagens do Supabase em vez da API Django
-          const messages = await getMessages(conv.conversation_id, provedorId);
-
-          // Simular dados da conversa baseado na auditoria
-          const conversationData = {
-            created_at: conv.created_at,
-            ended_at: conv.ended_at,
-            message_count: messages.length,
-            status: 'closed'
-          };
-
-          // Calcular duração
-          let duration = 'N/A';
-          if (conversationData.created_at && conversationData.ended_at) {
-            const startTime = new Date(conversationData.created_at);
-            const endTime = new Date(conversationData.ended_at);
-            const durationMs = endTime - startTime;
-            const hours = Math.floor(durationMs / (1000 * 60 * 60));
-            const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
-
-            if (hours > 0) {
-              duration = `${hours}h ${minutes}m`;
-            } else {
-              duration = `${minutes}m`;
-            }
-          } else if (conversationData.created_at) {
-            const startTime = new Date(conversationData.created_at);
-            const now = new Date();
-            const durationMs = now - startTime;
-            const hours = Math.floor(durationMs / (1000 * 60 * 60));
-            const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
-
-            if (hours > 0) {
-              duration = `${hours}h ${minutes}m`;
-            } else {
-              duration = `${minutes}m`;
-            }
-          }
-
-          // Buscar CSAT rating
-          let csatRating = null;
-          try {
-            const csatResponse = await axios.get(`/api/csat/feedbacks/?conversation=${conv.conversation_id}`, {
-              headers: { Authorization: `Token ${token}` }
-            });
-
-            const csatData = csatResponse.data.results || csatResponse.data || [];
-            if (csatData.length > 0) {
-              csatRating = csatData[0].rating_value;
-            }
-          } catch (csatError) {
-            // CSAT não encontrado, usar null
-          }
-
-          // Buscar contagem de mensagens
-          let messageCount = 0;
-          try {
-            const messagesResponse = await axios.get(`/api/messages/?conversation=${conv.conversation_id}&for_audit=1`, {
-              headers: { Authorization: `Token ${token}` }
-            });
-
-            const messagesData = messagesResponse.data.results || messagesResponse.data || [];
-            messageCount = messagesData.length;
-          } catch (messagesError) {
-            // Mensagens não encontradas, usar 0
-          }
-
-          return {
-            ...conv,
-            duration,
-            csat_rating: csatRating,
-            message_count: messageCount
-          };
-        } catch (error) {
-          // Se não conseguir buscar dados adicionais, retornar dados originais
-          return {
-            ...conv,
-            duration: 'N/A',
-            csat_rating: null,
-            message_count: 0
-          };
-        }
-      }));
-
-      setConversations(enrichedData);
+      setConversations(data.map(conv => ({ ...conv, duration: computeDuration(conv.created_at, conv.ended_at) })));
+      setAppliedSearch(term);
+      setPage(1);
     } catch (err) {
       setError('Erro ao carregar conversas encerradas');
       setConversations([]);
@@ -513,13 +449,47 @@ export default function ConversationAudit({ provedorId }) {
   };
 
   const filteredConversations = conversations.filter(conv => {
-    if (!searchTerm) return true;
-    const searchLower = searchTerm.toLowerCase();
+    const term = searchTerm.trim();
+    if (!term || term === appliedSearch) return true;
+    const searchLower = term.toLowerCase();
+    const digits = term.replace(/\D/g, '');
+    const phoneKey = digits.length >= 8 ? digits.slice(-8) : digits;
     return (
       (conv.contact_name && conv.contact_name.toLowerCase().includes(searchLower)) ||
-      (conv.user && conv.user.toLowerCase().includes(searchLower))
+      (conv.user && conv.user.toLowerCase().includes(searchLower)) ||
+      (phoneKey.length >= 4 && conv.contact_phone && String(conv.contact_phone).includes(phoneKey)) ||
+      (digits && String(conv.conversation_id) === digits)
     );
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredConversations.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pagedConversations = filteredConversations.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageIdsKey = pagedConversations.map(c => c.conversation_id).filter(Boolean).join(',');
+
+  useEffect(() => {
+    const missing = [...new Set(pageIdsKey.split(',').filter(id => id && !(id in metrics)))];
+    if (!missing.length || !provedorId) return;
+    let cancelled = false;
+    const token = localStorage.getItem('token');
+    axios.get('/api/audit-logs/conversation_metrics/', {
+      params: { provedor_id: provedorId, ids: missing.join(',') },
+      headers: { Authorization: `Token ${token}` }
+    }).then(res => {
+      if (cancelled) return;
+      setMetrics(prev => ({ ...prev, ...(res.data?.metrics || {}) }));
+    }).catch(() => {
+      if (cancelled) return;
+      setMetrics(prev => {
+        const next = { ...prev };
+        missing.forEach(id => { next[id] = { message_count: null, csat_rating: null }; });
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageIdsKey, provedorId]);
 
   const getCSATEmoji = (csatRating) => {
     // Mapear rating CSAT para emoji e texto
@@ -617,9 +587,10 @@ export default function ConversationAudit({ provedorId }) {
                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
-                  placeholder="Pesquisar por cliente ou agente..."
+                  placeholder="Pesquisar por cliente, telefone, agente ou nº da conversa..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') fetchConversations(); }}
                   className="w-full pl-10 pr-4 py-2 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -681,12 +652,16 @@ export default function ConversationAudit({ provedorId }) {
                       <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
                         <MessageSquare className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
                         <p className="text-lg font-medium">Nenhuma conversa encerrada encontrada</p>
-                        <p className="text-sm">As conversas encerradas aparecerão aqui quando houver atividades.</p>
+                        <p className="text-sm">
+                          {appliedSearch
+                            ? `Nenhum atendimento de "${appliedSearch}" no período selecionado.`
+                            : 'Nenhum atendimento encerrado no período selecionado.'}
+                        </p>
                       </td>
                     </tr>
                   )}
 
-                  {filteredConversations.map((conv) => (
+                  {pagedConversations.map((conv) => (
                     <tr
                       key={conv.id}
                       className="hover:bg-muted/50 cursor-pointer transition-colors"
@@ -751,10 +726,12 @@ export default function ConversationAudit({ provedorId }) {
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-sm">
-                          {conv.message_count || 0} mensagens
+                          {metrics[conv.conversation_id]
+                            ? `${metrics[conv.conversation_id].message_count ?? '-'} mensagens`
+                            : '… mensagens'}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          Avaliação: <span className="text-lg">{getCSATEmoji(conv.csat_rating || null).emoji}</span>
+                          Avaliação: <span className="text-lg">{getCSATEmoji(metrics[conv.conversation_id]?.csat_rating || null).emoji}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">
                           {conv.resolution_type === 'ai_resolved' ? 'IA resolveu automaticamente' :
@@ -766,13 +743,40 @@ export default function ConversationAudit({ provedorId }) {
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-sm font-medium">
-                          {formatDuration(conv.conversation_duration_formatted) || '10 min'}
+                          {formatDuration(conv.duration)}
                         </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {!loading && !error && filteredConversations.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t text-sm text-muted-foreground">
+              <span>
+                Mostrando {pageStart + 1}–{pageStart + pagedConversations.length} de {filteredConversations.length} atendimento{filteredConversations.length === 1 ? '' : 's'}
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, Math.min(p, totalPages) - 1))}
+                    disabled={currentPage <= 1}
+                    className="px-3 py-1.5 border rounded-lg bg-background hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                  <span className="px-2 text-foreground">{currentPage} / {totalPages}</span>
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="px-3 py-1.5 border rounded-lg bg-background hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

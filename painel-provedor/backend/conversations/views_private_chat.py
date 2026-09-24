@@ -281,7 +281,55 @@ class PrivateMessageViewSet(viewsets.ModelViewSet):
             
         except Exception:
             pass
-    
+
+        try:
+            from core.agent_push import send_push_to_users
+
+            sender = message.sender
+            sender_name = (
+                f"{sender.first_name or ''} {sender.last_name or ''}".strip()
+                or sender.username
+            )
+            if message.message_type == 'text':
+                body = (message.content or '').strip() or 'Nova mensagem'
+                if len(body) > 120:
+                    body = body[:117] + '…'
+            else:
+                body = {
+                    'image': 'Foto',
+                    'video': 'Vídeo',
+                    'audio': 'Áudio',
+                    'file': 'Arquivo',
+                }.get(message.message_type, 'Nova mensagem')
+            send_push_to_users(
+                [message.recipient_id],
+                title=f'Chat interno · {sender_name}',
+                body=body,
+                data={
+                    'type': 'internal_chat',
+                    'sender_id': sender.id,
+                    'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+                },
+            )
+        except Exception:
+            pass
+
+    @action(detail=False, methods=['post'], url_path='mark_conversation_read')
+    def mark_conversation_read(self, request):
+        """Marca como lidas todas as mensagens recebidas de other_user_id."""
+        from django.utils import timezone
+
+        other_user_id = request.data.get('other_user_id') or request.query_params.get('other_user_id')
+        if not other_user_id:
+            return Response({'error': 'other_user_id é obrigatório'}, status=400)
+        updated = PrivateMessage.objects.filter(
+            sender_id=other_user_id,
+            recipient=request.user,
+            is_read=False,
+            is_deleted=False,
+        ).update(is_read=True, read_at=timezone.now())
+        return Response({'updated': updated})
+
     @action(detail=True, methods=['post'])
     def mark_read(self, request, pk=None):
         """Marcar mensagem como lida"""

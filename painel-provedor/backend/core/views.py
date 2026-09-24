@@ -98,11 +98,13 @@ def _is_superadmin_integration_authorized(request):
 @require_http_methods(["GET", "HEAD"])
 def health_view(request):
     """
-    Health check endpoint - retorna 200 OK sem tocar no banco de dados
+    Health check endpoint - retorna 200 OK sem tocar no banco de dados.
+    `maintenance` indica que o Superadmin está atualizando este provedor.
     """
     import json
+    from core.maintenance import health_payload
     return HttpResponse(
-        json.dumps({"status": "ok"}), 
+        json.dumps(health_payload()),
         content_type="application/json", 
         status=200
     )
@@ -203,14 +205,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.72.0"
+                "current_version": "2.73.0"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.72.0"
+            "current_version": "2.73.0"
         }, safe=False)
 
 
@@ -3326,6 +3328,57 @@ class UserViewSet(viewsets.ModelViewSet):
             queryset = queryset.select_related()
         
         return queryset.order_by('-created_at')
+
+    @action(detail=False, methods=['post'], url_path='register-push')
+    def register_push(self, request):
+        """Registra/atualiza token FCM do app CHAT-NIOHUB para o usuário logado."""
+        token = (
+            request.data.get('fcm_token')
+            or request.data.get('push_token')
+            or request.data.get('token')
+            or ''
+        )
+        token = str(token).strip()
+        if not token:
+            return Response({'error': 'fcm_token é obrigatório'}, status=400)
+        platform = str(request.data.get('platform') or '')[:20]
+        device_name = str(
+            request.data.get('device_name')
+            or request.data.get('device_model')
+            or ''
+        )[:120]
+        try:
+            from core.agent_push import register_agent_device
+            device = register_agent_device(
+                user=request.user,
+                token=token,
+                platform=platform,
+                device_name=device_name,
+            )
+            return Response({
+                'ok': True,
+                'id': device.id,
+                'platform': device.platform,
+                'updated_at': device.updated_at,
+            })
+        except Exception as exc:
+            logger.exception('[register-push] %s', exc)
+            return Response({'error': str(exc)}, status=500)
+
+    @action(detail=False, methods=['post'], url_path='unregister-push')
+    def unregister_push(self, request):
+        token = str(
+            request.data.get('fcm_token')
+            or request.data.get('push_token')
+            or request.data.get('token')
+            or ''
+        ).strip()
+        try:
+            from core.agent_push import deactivate_agent_device
+            n = deactivate_agent_device(user=request.user, token=token)
+            return Response({'ok': True, 'deactivated': n})
+        except Exception as exc:
+            return Response({'error': str(exc)}, status=500)
     
     def perform_create(self, serializer):
         user = self.request.user
@@ -5480,6 +5533,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             import logging
             import requests
             from django.conf import settings
+            from rest_framework.response import Response
             logger = logging.getLogger(__name__)
             
             # Obter provedor_id
@@ -5540,6 +5594,20 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                     params['conversation_id'] = f'eq.{conv_id}'
                 except (ValueError, TypeError):
                     pass
+
+            date_range = self._audit_date_range(
+                request.query_params.get('date_from'),
+                request.query_params.get('date_to'),
+            )
+            if date_range:
+                params['and'] = date_range
+
+            search_term = (request.query_params.get('search') or '').strip()
+            if search_term:
+                search_or = self._audit_search_filter(search_term, provedor_id, supabase_url, headers)
+                if not search_or:
+                    return Response({'count': 0, 'results': [], 'next': None, 'previous': None})
+                params['or'] = search_or
             
             # Filtrar apenas conversas encerradas se conversation_closed=true
             if conversation_closed:
@@ -5560,19 +5628,22 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                 limit_value = int(raw_limit)
             except (ValueError, TypeError):
                 limit_value = 50
+            # Com período ou busca, lista todas as conversas encerradas que casarem (sem limite de 50)
+            fetch_all = conversation_closed and bool(date_range or search_term)
+            if fetch_all:
+                limit_value = self.AUDIT_FETCH_ALL_CAP
             params['limit'] = limit_value
             
-            _supabase_timeout = getattr(settings, 'SUPABASE_REQUEST_TIMEOUT', 3)
+            _supabase_timeout = max(getattr(settings, 'SUPABASE_REQUEST_TIMEOUT', 3), 10 if fetch_all else 0)
             if not getattr(settings, 'SUPABASE_ENABLED', True):
                 logger.info("[AUDIT-LOGS] Supabase desabilitado, retornando vazio.")
                 return Response([], status=200)
             logger.info(f"[AUDIT-LOGS] Buscando do Supabase: {params}")
-            response = requests.get(audit_url, headers=headers, params=params, timeout=_supabase_timeout)
+            response, audit_logs = self._supabase_get_paged(
+                audit_url, headers, params, limit_value, _supabase_timeout
+            )
             
             if response.status_code == 200:
-                audit_logs = response.json()
-                if not isinstance(audit_logs, list):
-                    audit_logs = []
                 
                 logger.info(f"[AUDIT-LOGS] {len(audit_logs)} logs encontrados no Supabase")
                 
@@ -5599,16 +5670,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                 # Buscar todas as conversas de uma vez (otimização)
                 conversations_data = {}
                 if conversation_ids:
-                    conv_url = f"{supabase_url}/rest/v1/conversations"
-                    # Buscar todas as conversas de uma vez usando 'in'
-                    conv_ids_str = ','.join(str(cid) for cid in conversation_ids)
-                    conv_params = {'id': f'in.({conv_ids_str})', 'select': 'id,contact_id,inbox_id,created_at,updated_at,ended_at'}
-                    conv_response = requests.get(conv_url, headers=headers, params=conv_params, timeout=10)
-                    if conv_response.status_code == 200:
-                        convs = conv_response.json()
-                        if convs and isinstance(convs, list):
-                            for conv in convs:
-                                conversations_data[conv.get('id')] = conv
+                    for conv in self._supabase_get_in(
+                        f"{supabase_url}/rest/v1/conversations", headers, 'id', conversation_ids,
+                        'id,contact_id,inbox_id,created_at,updated_at,ended_at',
+                    ):
+                        conversations_data[conv.get('id')] = conv
                 
                 # Coletar todos os contact_ids únicos
                 contact_ids = set()
@@ -5620,15 +5686,10 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                 # Buscar todos os contatos de uma vez (otimização)
                 contacts_data = {}
                 if contact_ids:
-                    contact_url = f"{supabase_url}/rest/v1/contacts"
-                    contact_ids_str = ','.join(str(cid) for cid in contact_ids)
-                    contact_params = {'id': f'in.({contact_ids_str})', 'select': 'id,name,phone,avatar'}
-                    contact_response = requests.get(contact_url, headers=headers, params=contact_params, timeout=10)
-                    if contact_response.status_code == 200:
-                        contacts = contact_response.json()
-                        if contacts and isinstance(contacts, list):
-                            for contact in contacts:
-                                contacts_data[contact.get('id')] = contact
+                    for contact in self._supabase_get_in(
+                        f"{supabase_url}/rest/v1/contacts", headers, 'id', contact_ids, 'id,name,phone,avatar',
+                    ):
+                        contacts_data[contact.get('id')] = contact
                 
                 # NOTA: A tabela 'inboxes' não existe no Supabase
                 # O channel_type será extraído dos detalhes do audit log ou da conversa
@@ -5706,6 +5767,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                         'conversation_id': conv_id,
                         'contact_name': contact_data.get('name') if contact_data else (details.get('contact_name') if isinstance(details, dict) else None),
                         'contact_photo': contact_data.get('avatar') if contact_data else None,
+                        'contact_phone': contact_data.get('phone') if contact_data else None,
                         'channel_type': channel_type,
                         'created_at': conv_data.get('created_at') if conv_data else (log.get('ended_at') or log.get('created_at')),
                         'ended_at': conv_data.get('ended_at') if conv_data else log.get('ended_at'),
@@ -5798,6 +5860,213 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                 'next': None,
                 'previous': None
             })
+
+    AUDIT_FETCH_ALL_CAP = 5000
+    SUPABASE_PAGE_SIZE = 1000
+    SUPABASE_IN_CHUNK = 200
+
+    @classmethod
+    def _supabase_get_paged(cls, url, headers, params, max_rows, timeout):
+        """GET PostgREST paginado por offset (max-rows do Supabase é 1000). Retorna (última resposta, linhas)."""
+        import requests
+        rows = []
+        offset = 0
+        response = None
+        while len(rows) < max_rows:
+            page_limit = min(cls.SUPABASE_PAGE_SIZE, max_rows - len(rows))
+            page_params = {**params, 'limit': page_limit, 'offset': offset}
+            response = requests.get(url, headers=headers, params=page_params, timeout=timeout)
+            if response.status_code != 200:
+                break
+            batch = response.json()
+            if not isinstance(batch, list):
+                break
+            rows.extend(batch)
+            if len(batch) < page_limit:
+                break
+            offset += len(batch)
+        return response, rows
+
+    @classmethod
+    def _supabase_get_in(cls, url, headers, column, values, select, extra_params=None, timeout=10):
+        """GET PostgREST com `column=in.(...)` em blocos, para não estourar o tamanho da URL."""
+        import logging
+        values = [v for v in values if v is not None]
+        rows = []
+        for i in range(0, len(values), cls.SUPABASE_IN_CHUNK):
+            chunk = ','.join(str(v) for v in values[i:i + cls.SUPABASE_IN_CHUNK])
+            params = {column: f'in.({chunk})', 'select': select, **(extra_params or {})}
+            try:
+                response, batch = cls._supabase_get_paged(url, headers, params, 100000, timeout)
+                if response is not None and response.status_code == 200:
+                    rows.extend(batch)
+            except Exception as exc:
+                logging.getLogger(__name__).warning('[AUDIT-LOGS] Falha ao buscar %s: %s', url, exc)
+        return rows
+
+    @action(detail=False, methods=['get'])
+    def conversation_metrics(self, request):
+        """Contagem de mensagens e nota CSAT (Supabase) para uma lista de conversas: ?ids=1,2,3"""
+        from django.conf import settings
+
+        ids = []
+        for raw in (request.query_params.get('ids') or '').split(','):
+            raw = raw.strip()
+            if raw.isdigit():
+                ids.append(int(raw))
+        ids = ids[:200]
+        metrics = {i: {'message_count': 0, 'csat_rating': None} for i in ids}
+        if not ids:
+            return Response({'metrics': metrics})
+
+        user = request.user
+        if user.user_type == 'superadmin':
+            allowed = None
+        else:
+            allowed = set(user.provedores_admin.values_list('id', flat=True))
+            if getattr(user, 'provedor_id', None):
+                allowed.add(user.provedor_id)
+        provedor_id = None
+        try:
+            provedor_id = int(request.query_params.get('provedor_id') or 0) or None
+        except (TypeError, ValueError):
+            provedor_id = None
+        if allowed is not None:
+            if provedor_id not in allowed:
+                provedor_id = next(iter(allowed), None)
+            if not provedor_id:
+                return Response({'metrics': metrics})
+
+        supabase_url = getattr(settings, 'SUPABASE_URL', '').rstrip('/')
+        supabase_key = getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', '') or getattr(settings, 'SUPABASE_ANON_KEY', '')
+        if not supabase_url or not supabase_key or not getattr(settings, 'SUPABASE_ENABLED', True):
+            return Response({'metrics': metrics})
+
+        headers = {'apikey': supabase_key, 'Authorization': f'Bearer {supabase_key}'}
+        scope = {}
+        if provedor_id:
+            headers['X-Provedor-ID'] = str(provedor_id)
+            scope['provedor_id'] = f'eq.{provedor_id}'
+
+        messages_table = getattr(settings, 'SUPABASE_MESSAGES_TABLE', 'mensagens')
+        for row in self._supabase_get_in(
+            f'{supabase_url}/rest/v1/{messages_table}', headers, 'conversation_id', ids, 'conversation_id', scope,
+        ):
+            cid = row.get('conversation_id')
+            if cid in metrics:
+                metrics[cid]['message_count'] += 1
+
+        csat_table = getattr(settings, 'SUPABASE_CSAT_TABLE', 'csat_feedback')
+        for row in self._supabase_get_in(
+            f'{supabase_url}/rest/v1/{csat_table}', headers, 'conversation_id', ids,
+            'conversation_id,rating_value', {**scope, 'order': 'feedback_sent_at.desc'},
+        ):
+            cid = row.get('conversation_id')
+            if cid in metrics and metrics[cid]['csat_rating'] is None:
+                metrics[cid]['csat_rating'] = row.get('rating_value')
+
+        return Response({'metrics': metrics})
+
+    @staticmethod
+    def _audit_date_range(date_from, date_to):
+        """Filtro PostgREST por ended_at no fuso local (datas YYYY-MM-DD, date_to inclusivo)."""
+        from django.utils import timezone as dj_tz
+        tz = dj_tz.get_current_timezone()
+        parts = []
+        for raw, op, delta in ((date_from, 'gte', 0), (date_to, 'lt', 1)):
+            raw = (raw or '').strip()
+            if not raw:
+                continue
+            try:
+                day = datetime.strptime(raw[:10], '%Y-%m-%d') + timedelta(days=delta)
+            except ValueError:
+                continue
+            parts.append(f'ended_at.{op}.{dj_tz.make_aware(day, tz).isoformat()}')
+        return f"({','.join(parts)})" if parts else None
+
+    @staticmethod
+    def _audit_search_filter(term, provedor_id, supabase_url, headers):
+        """
+        Resolve a busca (nome/telefone do cliente, nome do agente ou nº da conversa)
+        em um filtro PostgREST `or=(conversation_id.in.(...),user_id.in.(...))`.
+        """
+        import logging
+        import re
+        import requests
+        from conversations.models import Contact, Conversation
+        logger = logging.getLogger(__name__)
+
+        digits = re.sub(r'\D', '', term)
+        has_letters = bool(re.search(r'[^\W\d_]', term))
+        # Últimos 8 dígitos casam com e sem o 9º dígito e com/sem DDI
+        phone_key = digits[-8:] if len(digits) >= 8 else (digits if len(digits) >= 4 else '')
+
+        conversation_ids = set()
+        user_ids = set()
+
+        if digits and not has_letters and len(digits) <= 7:
+            conversation_ids.add(int(digits))
+
+        contact_ids = set()
+        contact_q = Q()
+        if phone_key:
+            contact_q |= Q(phone__contains=phone_key)
+        if has_letters:
+            contact_q |= Q(name__icontains=term)
+        if contact_q:
+            local_contacts = Contact.objects.filter(contact_q)
+            if provedor_id:
+                local_contacts = local_contacts.filter(provedor_id=provedor_id)
+            contact_ids.update(local_contacts.values_list('id', flat=True)[:500])
+
+        try:
+            or_parts = []
+            if phone_key:
+                or_parts.append(f'phone.ilike.*{phone_key}*')
+            if has_letters:
+                safe_term = re.sub(r'[(),*]', ' ', term).strip()
+                if safe_term:
+                    or_parts.append(f'name.ilike.*{safe_term}*')
+            if or_parts:
+                c_params = {'select': 'id', 'or': f"({','.join(or_parts)})", 'limit': 500}
+                if provedor_id:
+                    c_params['provedor_id'] = f'eq.{provedor_id}'
+                resp = requests.get(f'{supabase_url}/rest/v1/contacts', headers=headers, params=c_params, timeout=10)
+                if resp.status_code == 200:
+                    contact_ids.update(c['id'] for c in resp.json() if c.get('id'))
+        except Exception as exc:
+            logger.warning('[AUDIT-LOGS] Busca de contatos no Supabase falhou: %s', exc)
+
+        if contact_ids:
+            conversation_ids.update(
+                Conversation.objects.filter(contact_id__in=contact_ids).values_list('id', flat=True)[:1000]
+            )
+            try:
+                ids_str = ','.join(str(i) for i in list(contact_ids)[:500])
+                resp = requests.get(
+                    f'{supabase_url}/rest/v1/conversations',
+                    headers=headers,
+                    params={'select': 'id', 'contact_id': f'in.({ids_str})', 'limit': 1000},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    conversation_ids.update(c['id'] for c in resp.json() if c.get('id'))
+            except Exception as exc:
+                logger.warning('[AUDIT-LOGS] Busca de conversas no Supabase falhou: %s', exc)
+
+        if has_letters:
+            user_ids.update(
+                User.objects.filter(
+                    Q(first_name__icontains=term) | Q(last_name__icontains=term) | Q(username__icontains=term)
+                ).values_list('id', flat=True)[:200]
+            )
+
+        filters = []
+        if conversation_ids:
+            filters.append(f"conversation_id.in.({','.join(str(i) for i in sorted(conversation_ids)[-1000:])})")
+        if user_ids:
+            filters.append(f"user_id.in.({','.join(str(i) for i in user_ids)})")
+        return f"({','.join(filters)})" if filters else None
     
     def get_queryset(self):
         """
@@ -8713,6 +8982,30 @@ class AdminSystemMessageWebhookView(APIView):
             'provedor_id': provedor_id,
             'superadmin_message_id': superadmin_message_id,
         }, status=status.HTTP_201_CREATED)
+
+
+class AdminMaintenanceWebhookView(APIView):
+    """
+    Liga/desliga a tela de manutenção dos usuários durante a atualização do provedor.
+
+    POST /api/webhooks/admin/maintenance/  {"active": true, "message": "...", "ttl_seconds": 1200}
+    Header obrigatório: Authorization: Bearer <SUPERADMIN_PROVIDER_TOKEN>
+    """
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        integration_ok, _ = _is_superadmin_integration_authorized(request)
+        if not integration_ok:
+            logger.warning("[maintenance] Auth inválida (Bearer).")
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        from core.maintenance import get_state, set_state
+        data = request.data if isinstance(request.data, dict) else {}
+        active = str(data.get('active', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+        stored = set_state(active, message=data.get('message') or '', ttl_seconds=data.get('ttl_seconds'))
+        logger.info("[maintenance] %s (redis=%s)", 'ATIVADO' if active else 'desativado', stored)
+        return Response({'ok': True, 'maintenance': get_state()})
 
 
 class AdminUsersStatusWebhookView(APIView):

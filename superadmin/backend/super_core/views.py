@@ -2071,11 +2071,17 @@ class ProvedorViewSet(viewsets.ModelViewSet):
         def run_deploy():
             try:
                 from .services.portainer_service import PortainerService
+                from .services.tenant_maintenance import begin_tenant_maintenance, set_tenant_maintenance_when_ready
                 instance.status = 'deploying'
                 instance.save()
                 
                 service = PortainerService(instance.vps)
-                success = service.deploy_provider_stack(instance)
+                previous_boot = begin_tenant_maintenance(instance)
+                success = False
+                try:
+                    success = service.deploy_provider_stack(instance)
+                finally:
+                    set_tenant_maintenance_when_ready(instance, previous_boot if success else None)
                 
                 if success:
                     instance.status = 'ativo'
@@ -2728,6 +2734,19 @@ class SystemConfigView(APIView):
         response_data = config.payload
         response_data['id'] = config.id
         return Response(response_data)
+
+
+@api_view(['GET'])
+@permission_classes_decorator([permissions.AllowAny])
+def operator_app_legal(request):
+    """Política de Privacidade e Termos de Uso do app dos atendentes (público)."""
+    config = SystemConfig.objects.first()
+    payload = (config.payload if config and isinstance(config.payload, dict) else {}) or {}
+    return Response({
+        'privacy_policy': payload.get('operator_app_privacy_text') or '',
+        'terms_of_use': payload.get('operator_app_terms_text') or '',
+        'updated_at': config.updated_at.isoformat() if config else None,
+    })
 
 
 def _get_system_config_singleton_sa() -> SystemConfig:

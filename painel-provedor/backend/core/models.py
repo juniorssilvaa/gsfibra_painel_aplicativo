@@ -139,6 +139,40 @@ class User(AbstractUser):
         return self.username
 
 
+class AgentPushDevice(models.Model):
+    """Token FCM do app CHAT-NIOHUB (atendente/operador)."""
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='push_devices',
+        verbose_name='Usuário',
+    )
+    token = models.CharField(max_length=512, unique=True, verbose_name='FCM Token')
+    platform = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        verbose_name='Plataforma',
+    )
+    device_name = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name='Aparelho',
+    )
+    active = models.BooleanField(default=True, verbose_name='Ativo')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Dispositivo Push do Atendente'
+        verbose_name_plural = 'Dispositivos Push dos Atendentes'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f'{self.user_id} · {self.platform or "device"} · …{self.token[-8:]}'
+
+
 class Company(models.Model):
     name = models.CharField(max_length=200, verbose_name='Nome da Empresa')
     slug = models.SlugField(unique=True, verbose_name='Slug')

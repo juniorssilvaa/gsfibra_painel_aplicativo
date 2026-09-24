@@ -22,6 +22,7 @@ def execute_release(update_id: int) -> None:
     from super_core.models import Provedor, SystemUpdate
     from super_core.services.ghcr_promote import promote_tenant_images
     from super_core.services.portainer_service import PortainerService
+    from super_core.services.tenant_maintenance import begin_tenant_maintenance, set_tenant_maintenance_when_ready
 
     close_old_connections()
     try:
@@ -75,11 +76,16 @@ def execute_release(update_id: int) -> None:
             service = PortainerService(provider.vps)
             # Libera disco/RAM dos exited de atualizações anteriores nesta VPS.
             service.prune_exited_containers()
-            success = service.deploy_provider_stack(
-                provider,
-                image_tag=version if channel == "stable" else None,
-            )
-            cleanup = service.settle_and_cleanup(stack_name)
+            previous_boot = begin_tenant_maintenance(provider)
+            success = False
+            try:
+                success = service.deploy_provider_stack(
+                    provider,
+                    image_tag=version if channel == "stable" else None,
+                )
+                cleanup = service.settle_and_cleanup(stack_name)
+            finally:
+                set_tenant_maintenance_when_ready(provider, previous_boot if success else None)
             if success:
                 provider.current_version = version
                 provider.last_update = timezone.now()

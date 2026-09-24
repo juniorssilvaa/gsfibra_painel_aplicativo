@@ -4,6 +4,11 @@ Todas as mudanças notáveis do projeto NioChat serão documentadas neste arquiv
 
 **Fonte oficial do histórico no produto:** `CHANGELOG.json` na raiz do repositório (servido por `/api/changelog/` e exibido no modal de versões). Atualize apenas esse JSON para novas versões.
 
+## [2.73.0] - 2026-09-24
+
+### 🐛 Corrigido
+- **Auditoria**: corrigida a tela de auditoria que retornava apenas 50 resultados — agora lista todos os atendimentos encerrados do período selecionado (com paginação) e a busca por nome ou telefone do cliente pesquisa em todo o histórico.
+
 ## [2.72.0] - 2026-09-19
 
 ### 🔧 Melhoria

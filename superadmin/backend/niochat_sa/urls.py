@@ -4,6 +4,7 @@ from django.urls import path, include
 from acs import public_api as acs_public
 from mobile_app import acs_views, public_api, push_views
 from mobile_app.sgp_proxy import proxy_sgp_request
+from super_core.views import operator_app_legal
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -20,6 +21,7 @@ urlpatterns = [
     ),
     path('api/public/plans/', public_api.public_plans, name='legacy-public-plans'),
     path('api/public/server-time/', public_api.public_server_time, name='legacy-public-server-time'),
+    path('api/public/operator-app/legal/', operator_app_legal, name='operator-app-legal'),
     path('api/app/register/', public_api.register_app_user, name='legacy-app-register'),
     path('api/devices/register/', push_views.register_device, name='legacy-devices-register'),
     path('api/wifi/config/', acs_views.wifi_config_api, name='legacy-wifi-config'),

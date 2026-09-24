@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.decorators import permission_classes
 from . import views
 from . import totp_views
+from . import app_legal_views
 from conversations import app_mobile
 from integrations.instagram_oauth import instagram_oauth_finish_internal
 from .views_provider_config import ProviderConfigView
@@ -41,6 +42,7 @@ urlpatterns = [
     path('webhooks/admin/upsert-user/', csrf_exempt(views.AdminUpsertUserWebhookView.as_view()), name='webhook-admin-upsert-user'),
     path('webhooks/admin/delete-user/', csrf_exempt(views.AdminDeleteUserWebhookView.as_view()), name='webhook-admin-delete-user'),
     path('webhooks/admin/users-status/', csrf_exempt(views.AdminUsersStatusWebhookView.as_view()), name='webhook-admin-users-status'),
+    path('webhooks/admin/maintenance/', csrf_exempt(views.AdminMaintenanceWebhookView.as_view()), name='webhook-admin-maintenance'),
     path('webhooks/admin/system-message/', csrf_exempt(views.AdminSystemMessageWebhookView.as_view()), name='webhook-admin-system-message'),
     path('webhooks/inbound/', csrf_exempt(views.InboundWebhookView.as_view()), name='webhook-inbound'),
     path(
@@ -70,6 +72,7 @@ urlpatterns = [
     path('auth/media-sign/', views.MediaSignView.as_view(), name='auth_media_sign'),
     path('auth/me/', views.UserMeView.as_view(), name='auth_me'),
     path('users/ping/', views.UsersPingView.as_view(), name='users_ping'),
+    path('app/legal/', app_legal_views.operator_app_legal, name='operator_app_legal'),
     path('users/status/', views.UserViewSet.as_view({'get': 'status'}), name='users_status'),
     path('health/', views.health_view, name='health'),
     path('health', views.health_view, name='health_no_slash'),  # Sem trailing slash também funciona

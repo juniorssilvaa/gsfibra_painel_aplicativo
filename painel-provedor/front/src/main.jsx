@@ -9,6 +9,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import ReminderAlert from './components/ReminderAlert';
 import { AppToaster } from './lib/notify';
+import MaintenanceGate from './components/MaintenanceGate';
 
 createRoot(document.getElementById("root")).render(
   <ErrorBoundary>
@@ -19,6 +20,7 @@ createRoot(document.getElementById("root")).render(
             <App />
             <ReminderAlert />
             <AppToaster />
+            <MaintenanceGate />
           </NotificationProvider>
         </LanguageProvider>
       </AuthProvider>

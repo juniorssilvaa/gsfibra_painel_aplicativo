@@ -101,3 +101,5 @@ watchdog_gevent==0.2.1
 wcwidth==0.2.14
 zope.event==6.0
 zope.interface==8.0.1
+firebase-admin>=6.1
+

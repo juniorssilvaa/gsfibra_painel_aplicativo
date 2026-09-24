@@ -206,6 +206,53 @@ def _resolve_recipients(
     return _users_with_alert_phone(candidates, pref_attr=pref_attr)
 
 
+def _resolve_push_user_ids(
+    provedor,
+    *,
+    target_user=None,
+    team=None,
+    exclude_user_id: Optional[int] = None,
+) -> List[int]:
+    """IDs de atendentes que devem receber push no app (não exige telefone)."""
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+    from conversations.models import TeamMember
+
+    User = get_user_model()
+    candidates = []
+
+    def _provider_agents():
+        return list(
+            User.objects.filter(
+                Q(provedor=provedor) | Q(provedores_admin=provedor),
+                is_active=True,
+            )
+            .exclude(user_type="superadmin")
+            .distinct()
+            .only("id")
+        )
+
+    if target_user is not None:
+        candidates = [target_user]
+    elif team is not None:
+        member_ids = TeamMember.objects.filter(team=team).values_list("user_id", flat=True)
+        candidates = list(User.objects.filter(id__in=member_ids, is_active=True).only("id"))
+        if not candidates:
+            candidates = _provider_agents()
+    else:
+        candidates = _provider_agents()
+
+    ids = []
+    for u in candidates:
+        uid = getattr(u, "id", None)
+        if not uid:
+            continue
+        if exclude_user_id and uid == exclude_user_id:
+            continue
+        ids.append(uid)
+    return ids
+
+
 def notify_agents_waiting_alert(
     provedor,
     conversa,
@@ -216,14 +263,47 @@ def notify_agents_waiting_alert(
     exclude_user_id: Optional[int] = None,
 ) -> dict[str, Any]:
     """
-    Envia WhatsApp aos atendentes com telefone no perfil.
+    Avisa atendentes: WhatsApp (se telefone) + push FCM no app CHAT-NIOHUB.
 
     - target_user: transferência direta para o atendente
-    - team: transferência para equipe (membros com telefone)
+    - team: transferência para equipe (membros)
     - sem target/team: fila geral do provedor
     """
     if not provedor or not conversa:
         return {"sent": False, "reason": "sem_provedor_ou_conversa", "notified": 0}
+
+    contact = getattr(conversa, "contact", None)
+    nome = (getattr(contact, "name", None) or "Cliente").strip()
+    conv_id = getattr(conversa, "id", None)
+    direta = target_user is not None
+    push_title = (
+        "Atendimento transferido"
+        if direta
+        else "Novo atendimento na espera"
+    )
+    push_body = f"{nome} · Conversa #{conv_id}" if conv_id else nome
+
+    # Push FCM (independente de telefone WhatsApp)
+    push_result: dict[str, Any] = {"sent": False, "success": 0}
+    try:
+        from core.agent_push import notify_agents_push
+
+        push_ids = _resolve_push_user_ids(
+            provedor,
+            target_user=target_user,
+            team=team,
+            exclude_user_id=exclude_user_id,
+        )
+        if push_ids:
+            push_result = notify_agents_push(
+                user_ids=push_ids,
+                title=push_title,
+                body=push_body,
+                conversation_id=conv_id,
+                event_type="transfer" if direta else "waiting",
+            )
+    except Exception as push_err:
+        logger.warning("[AgentAlert] Push FCM falhou: %s", push_err)
 
     recipients = _resolve_recipients(
         provedor,
@@ -232,13 +312,18 @@ def notify_agents_waiting_alert(
         exclude_user_id=exclude_user_id,
     )
     if not recipients:
-        return {"sent": False, "reason": "nenhum_atendente_com_telefone", "notified": 0}
+        return {
+            "sent": bool(push_result.get("sent")),
+            "notified": int(push_result.get("success") or 0),
+            "push": push_result,
+            "reason": "ok_push" if push_result.get("sent") else "nenhum_atendente_com_telefone",
+        }
 
     message = _build_message(
         conversa=conversa,
         motivo=motivo,
         equipe_nome=(getattr(team, "name", "") or "") if team is not None else "",
-        direta=target_user is not None,
+        direta=direta,
     )
     notified = 0
     failures = 0
@@ -258,8 +343,9 @@ def notify_agents_waiting_alert(
             failures += 1
 
     return {
-        "sent": notified > 0,
+        "sent": notified > 0 or bool(push_result.get("sent")),
         "notified": notified,
         "failures": failures,
-        "reason": "ok" if notified else "envio_falhou",
+        "push": push_result,
+        "reason": "ok" if (notified or push_result.get("sent")) else "envio_falhou",
     }

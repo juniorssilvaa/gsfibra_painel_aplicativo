@@ -2339,6 +2339,14 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                     status=500
                 )
 
+    @action(detail=True, methods=['get'], url_path='customer_info')
+    def customer_info(self, request, pk=None):
+        """Dados do cliente (contato + ERP/SGP quando o CPF/CNPJ já foi informado)."""
+        from .customer_info import build_customer_info
+
+        conversation = self.get_object()
+        return Response(build_customer_info(conversation))
+
     @action(detail=True, methods=['post'])
     def close_conversation_agent(self, request, pk=None):
         """Encerrar conversa por atendente"""

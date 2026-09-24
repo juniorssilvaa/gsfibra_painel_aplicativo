@@ -1,6 +1,20 @@
 {
-  "current_version": "2.72.0",
+  "current_version": "2.73.0",
   "versions": [
+    {
+      "version": "2.73.0",
+      "version_type": "minor",
+      "date": "2026-09-24",
+      "title": "Correção na tela de auditoria",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Auditoria",
+          "title": "Corrigida a tela de auditoria que retornava apenas 50 resultados",
+          "description": "A auditoria agora lista todos os atendimentos encerrados do período selecionado (com paginação) e a busca por nome ou telefone do cliente pesquisa em todo o histórico, não apenas nos 50 registros mais recentes."
+        }
+      ]
+    },
     {
       "version": "2.72.0",
       "version_type": "minor",

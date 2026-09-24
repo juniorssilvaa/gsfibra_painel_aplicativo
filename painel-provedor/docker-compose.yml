@@ -329,6 +329,10 @@ services:
           memory: 16M
       restart_policy:
         condition: on-failure
+      # Sobe o frontend novo antes de derrubar o antigo: o SPA segue carregando durante a
+      # atualização e exibe a tela de manutenção enquanto o backend é recriado.
+      update_config:
+        order: start-first
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=nethub"

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Settings, Save, Globe, Shield, Building } from 'lucide-react';
+import { Settings, Save, Globe, Shield, Building, FileText } from 'lucide-react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
@@ -559,6 +559,45 @@ export default function SuperadminConfig() {
                     </div>
                   </div>
                 </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Textos legais do app dos atendentes */}
+            <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden w-full">
+              <div className="bg-gradient-to-r from-violet-900/20 to-indigo-900/20 px-6 py-4 border-b border-border">
+                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-violet-400" />
+                  App do Atendente: Política de Privacidade e Termos de Uso
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Estes textos aparecem em Configurações no app CHAT - NIOHUB de todos os provedores.
+                </p>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-medium mb-2 text-foreground">Política de Privacidade</label>
+                    <textarea
+                      name="operator_app_privacy_text"
+                      value={config?.operator_app_privacy_text || ''}
+                      onChange={handleChange}
+                      rows={14}
+                      className="w-full px-4 py-3 rounded-lg bg-background border border-border text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                      placeholder="Texto da política de privacidade do app"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium mb-2 text-foreground">Termos de Uso</label>
+                    <textarea
+                      name="operator_app_terms_text"
+                      value={config?.operator_app_terms_text || ''}
+                      onChange={handleChange}
+                      rows={14}
+                      className="w-full px-4 py-3 rounded-lg bg-background border border-border text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                      placeholder="Texto dos termos de uso do app"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
