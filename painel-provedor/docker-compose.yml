@@ -137,6 +137,8 @@ services:
       # NÃO usar /app/backend/media — esse path não é o MEDIA_ROOT e a mídia se perdia a cada redeploy.
       - niochat-media:/app/painel-provedor/backend/media
       - niochat-static:/app/painel-provedor/backend/staticfiles
+      # Push FCM do app do atendente: o arquivo precisa existir na VPS (senão o Swarm não sobe a task).
+      - /opt/app_provedor/firebase-credentials.json:/opt/app_provedor/firebase-credentials.json:ro
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
@@ -259,6 +261,7 @@ services:
     volumes:
       # Imagem dramatiq usa WORKDIR /app/backend → mesmo volume, path da imagem worker
       - niochat-media:/app/backend/media
+      - /opt/app_provedor/firebase-credentials.json:/opt/app_provedor/firebase-credentials.json:ro
     command: ["python", "-m", "dramatiq", "conversations.dramatiq_tasks", "integrations.dramatiq_tasks", "--processes", "1", "--threads", "8", "--path", "/app/backend"]
     deploy:
       resources:
@@ -281,6 +284,7 @@ services:
       - nethub
     volumes:
       - niochat-media:/app/painel-provedor/backend/media
+      - /opt/app_provedor/firebase-credentials.json:/opt/app_provedor/firebase-credentials.json:ro
     environment:
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG}
