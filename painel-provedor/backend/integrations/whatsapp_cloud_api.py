@@ -5,6 +5,8 @@ import requests
 import logging
 from typing import Dict, Any, Optional
 
+from integrations.meta_oauth import PHONE_NUMBERS_API_VERSION
+
 logger = logging.getLogger(__name__)
 
 class WhatsAppCloudAPIService:
@@ -12,7 +14,7 @@ class WhatsAppCloudAPIService:
     Serviço para enviar mensagens via WhatsApp Cloud API
     """
     
-    BASE_URL = "https://graph.facebook.com/v21.0"
+    BASE_URL = f"https://graph.facebook.com/{PHONE_NUMBERS_API_VERSION}"
     
     def __init__(self, phone_number_id: str, access_token: str):
         """
@@ -74,10 +76,12 @@ class WhatsAppCloudAPIService:
                 "data": result
             }
         except requests.exceptions.RequestException as e:
-            logger.error(f"Erro ao enviar mensagem via Cloud API: {str(e)}")
+            response = getattr(e, "response", None)
+            detail = f" | Meta: {response.text[:300]}" if response is not None else ""
+            logger.error(f"Erro ao enviar mensagem via Cloud API: {str(e)}{detail}")
             return {
                 "success": False,
-                "error": str(e)
+                "error": f"{e}{detail}"
             }
     
     def send_image_message(

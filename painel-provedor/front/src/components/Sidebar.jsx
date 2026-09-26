@@ -38,6 +38,12 @@ const SidebarContext = createContext({
 
 export const useSidebarContext = () => useContext(SidebarContext);
 
+const NewBadge = () => (
+  <span className="inline-block align-middle ml-1.5 px-1.5 py-0.5 rounded bg-green-500 text-white text-[10px] font-bold uppercase leading-none whitespace-nowrap">
+    Novo
+  </span>
+);
+
 const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOpen, onClose, provedorId, onCollapseChange, onRemindersClick, isChatPage = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -140,7 +146,7 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
       { id: 'regras-atendimento', icon: SlidersHorizontal, label: t('regras_atendimento'), path: `/app/accounts/${resolvedProvedorId}/regras-atendimento` },
       { id: 'integracoes', icon: PlugZap, label: t('integracoes'), path: `/app/accounts/${resolvedProvedorId}/integracoes` },
       { id: 'dados-provedor', icon: Settings, label: t('dados_provedor'), path: `/app/accounts/${resolvedProvedorId}/dados-provedor` },
-      { id: 'recovery', icon: Brain, label: t('recovery'), path: `/app/accounts/${resolvedProvedorId}/recovery` },
+      { id: 'recovery', icon: Brain, label: t('recovery'), path: `/app/accounts/${resolvedProvedorId}/recovery`, isNew: true },
       { id: 'suggestions', icon: Lightbulb, label: t('suggestions'), path: `/app/accounts/${resolvedProvedorId}/suggestions` },
       { id: 'perfil', icon: User, label: t('perfil'), path: `/app/accounts/${resolvedProvedorId}/perfil` },
     ];
@@ -180,7 +186,10 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
           className={`niochat-sidebar-item ${active ? 'niochat-sidebar-item-active' : ''}`}
         >
           <Icon className={iconSizeClass} />
-          <span className={`flex-1 text-left ${isCollapsed ? 'hidden' : ''}`}>{item.label}</span>
+          <span className={`flex-1 text-left ${isCollapsed ? 'hidden' : ''}`}>
+            {item.label}
+            {item.isNew && <NewBadge />}
+          </span>
           {item.session && (
             <span className={`px-2 py-1 text-xs font-medium bg-green-500 text-white rounded-full ${isCollapsed ? 'hidden' : ''}`}>
               session
@@ -303,7 +312,10 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
                           item.id === 'chatbot-builder' ? 'w-6 h-6' : 'w-5 h-5'
                         } flex-shrink-0`}
                       />
-                      <span className={`transition-opacity duration-300 ${isCollapsed ? 'hidden' : 'inline'}`}>{item.label}</span>
+                      <span className={`transition-opacity duration-300 ${isCollapsed ? 'hidden' : 'inline'}`}>
+                        {item.label}
+                        {item.isNew && <NewBadge />}
+                      </span>
                     </Link>
                   );
                 })}
@@ -327,7 +339,10 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
                       title={isCollapsed ? item.label : ''}
                     >
                       <Icon className="w-5 h-5 flex-shrink-0" />
-                      <span className={`transition-opacity duration-300 ${isCollapsed ? 'hidden' : 'inline'}`}>{item.label}</span>
+                      <span className={`transition-opacity duration-300 ${isCollapsed ? 'hidden' : 'inline'}`}>
+                        {item.label}
+                        {item.isNew && <NewBadge />}
+                      </span>
                       {item.session && (
                         <span className={`px-2 py-1 text-xs font-medium bg-green-500 text-white rounded-full ml-auto transition-opacity duration-300 ${isCollapsed ? 'hidden' : 'inline'}`}>
                           {t('session')}

@@ -14,6 +14,7 @@ from django.utils.dateparse import parse_datetime
 logger = logging.getLogger(__name__)
 
 PERIOD_DAYS = {'today': 0, '7d': 6, '30d': 29}
+ANALYSIS_DELAY = timedelta(minutes=3)
 AI_OUTCOMES = ('ai_resolved', 'ai_transferred', 'agent_took_over')
 LEARNING_OUTCOMES = ('ai_transferred', 'agent_took_over')
 
@@ -115,12 +116,25 @@ def analyze_conversation_safe(conversation_id):
 
 
 def analyze_pending_closed(limit=200):
-    """Analisa encerradas do banco local que ainda não têm análise. Retorna quantas analisou."""
+    """
+    Analisa encerradas do banco local, sem análise, encerradas há pelo menos ANALYSIS_DELAY
+    (tempo para CSAT ou reabertura). Retorna quantas analisou.
+    """
+    from django.db.models import DateTimeField
+    from django.db.models.fields.json import KeyTextTransform
+    from django.db.models.functions import Cast, Coalesce
     from conversations.inbound_routing import CLOSED_STATUSES
     from conversations.models import AILearningAnalysis, Conversation
 
     pending = (
         Conversation.objects.filter(status__in=CLOSED_STATUSES)
+        .annotate(
+            _closed_at=Coalesce(
+                Cast(KeyTextTransform('closed_at', 'additional_attributes'), DateTimeField()),
+                'updated_at',
+            )
+        )
+        .filter(_closed_at__lte=timezone.now() - ANALYSIS_DELAY)
         .exclude(id__in=AILearningAnalysis.objects.values('conversation_id'))
         .select_related('inbox')
         .order_by('id')[:limit]

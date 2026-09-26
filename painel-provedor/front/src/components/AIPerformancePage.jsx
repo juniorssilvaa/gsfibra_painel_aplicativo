@@ -181,7 +181,7 @@ function AILearningTab({ provedorId }) {
           <Brain className="w-10 h-10 mx-auto mb-3 text-muted-foreground/60" />
           <h3 className="text-lg font-semibold text-foreground mb-1">Nenhum atendimento analisado no período</h3>
           <p className="text-sm text-muted-foreground max-w-lg mx-auto">
-            Os atendimentos encerrados são analisados automaticamente a cada 10 minutos. Os números aparecem aqui
+            Os atendimentos encerrados são analisados automaticamente cerca de 3 minutos após o encerramento. Os números aparecem aqui
             conforme a IA e a equipe atendem.
           </p>
         </div>

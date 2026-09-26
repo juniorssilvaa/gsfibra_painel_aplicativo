@@ -2607,7 +2607,12 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                         'user_id': user.id
                     }
                 )
-                if migration_result.get('success'):
+                if migration_result.get('deferred'):
+                    logger.info(
+                        f"[CloseConversation] ✓ Conversa {conversation.id} encerrada; "
+                        f"migração adiada para a rotina da meia-noite"
+                    )
+                elif migration_result.get('success'):
                     logger.info(
                         f"[CloseConversation] ✓ Conversa {conversation.id} migrada para Supabase"
                     )

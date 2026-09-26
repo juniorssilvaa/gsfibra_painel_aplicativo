@@ -1,6 +1,26 @@
 {
-  "current_version": "2.76.0",
+  "current_version": "2.76.1",
   "versions": [
+    {
+      "version": "2.76.1",
+      "version_type": "patch",
+      "date": "2026-09-26",
+      "title": "Correções no perfil do usuário e no aprendizado da IA",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Perfil do usuário",
+          "title": "Correção no módulo de perfil do usuário",
+          "description": "Correção no módulo de perfil do usuário."
+        },
+        {
+          "type": "fix",
+          "module": "Agente de IA / Aprendizagem",
+          "title": "Correção no formato de aprendizado da IA",
+          "description": "A IA agora analisa e aprende com os atendimentos cerca de 3 minutos após o encerramento. Antes, esse tempo era de 10 minutos."
+        }
+      ]
+    },
     {
       "version": "2.76.0",
       "version_type": "minor",

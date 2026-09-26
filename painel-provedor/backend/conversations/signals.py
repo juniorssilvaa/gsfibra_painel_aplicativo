@@ -260,6 +260,9 @@ def stamp_closed_at(sender, instance, **kwargs):
             if db_attrs.pop('closed_at', None):
                 Conversation.objects.filter(pk=instance.pk).update(additional_attributes=db_attrs)
             instance.additional_attributes = {k: v for k, v in attrs.items() if k != 'closed_at'}
+            # Reaberta: a análise do aprendizado é refeita no próximo encerramento, com o atendimento completo
+            from conversations.models import AILearningAnalysis
+            AILearningAnalysis.objects.filter(conversation_id=instance.pk).delete()
     except Exception as e:
         logger.warning(f"Erro ao marcar closed_at da conversa {instance.pk}: {e}")
 

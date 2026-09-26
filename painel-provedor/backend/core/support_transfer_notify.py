@@ -4,14 +4,9 @@ Notifica um WhatsApp configurado quando a IA (modo support) transfere uma conver
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
-
-
-def _digits_phone(phone: str) -> str:
-    return re.sub(r"\D", "", phone or "")
 
 
 def _build_summary_message(
@@ -45,31 +40,47 @@ def _build_summary_message(
     return "\n".join(linhas)
 
 
-def _send_via_cloud(provedor, to_phone: str, message: str) -> bool:
+def _cloud_channels(provedor, conversa) -> list:
+    """Canal da conversa transferida primeiro (número em uso); depois os demais, do mais novo ao mais antigo."""
     from core.models import Canal
-    from integrations.whatsapp_cloud_api import WhatsAppCloudAPIService
 
-    canal = (
-        Canal.objects.filter(
-            provedor=provedor,
-            tipo="whatsapp_oficial",
-            ativo=True,
-        )
+    channels = []
+    inbox = getattr(conversa, "inbox", None)
+    try:
+        own = inbox.get_canal_instance() if inbox else None
+    except Exception:
+        own = None
+    if own is not None and own.tipo == "whatsapp_oficial" and own.ativo:
+        channels.append(own)
+    others = (
+        Canal.objects.filter(provedor=provedor, tipo="whatsapp_oficial", ativo=True)
         .exclude(phone_number_id="")
         .exclude(token="")
-        .first()
+        .order_by("-id")
     )
-    if not canal:
-        return False
+    channels.extend(c for c in others if all(c.id != ch.id for ch in channels))
+    return channels
 
-    phone_number_id = (canal.phone_number_id or "").strip()
-    token = (canal.token or "").strip()
-    if not phone_number_id or not token:
-        return False
 
-    svc = WhatsAppCloudAPIService(phone_number_id=phone_number_id, access_token=token)
-    result = svc.send_text_message(to=to_phone, message=message)
-    return bool(result.get("success"))
+def _send_via_cloud(provedor, to_phone: str, message: str, conversa=None) -> bool:
+    from integrations.whatsapp_cloud_api import WhatsAppCloudAPIService
+
+    for canal in _cloud_channels(provedor, conversa):
+        phone_number_id = (canal.phone_number_id or "").strip()
+        token = (canal.token or "").strip()
+        if not phone_number_id or not token:
+            continue
+        svc = WhatsAppCloudAPIService(phone_number_id=phone_number_id, access_token=token)
+        result = svc.send_text_message(to=to_phone, message=message)
+        if result.get("success"):
+            return True
+        logger.warning(
+            "[SupportNotify] Cloud API recusou | provedor=%s canal=%s erro=%s",
+            provedor.id,
+            canal.id,
+            result.get("error"),
+        )
+    return False
 
 
 def _send_via_uazapi(provedor, to_phone: str, message: str) -> bool:
@@ -104,7 +115,9 @@ def notify_support_transfer(
     if agent_mode != "support":
         return {"sent": False, "reason": "nao_modo_support"}
 
-    notify_phone = _digits_phone(getattr(provedor, "support_transfer_notify_phone", "") or "")
+    from core.phone_utils import normalize_whatsapp_phone
+
+    notify_phone = normalize_whatsapp_phone(getattr(provedor, "support_transfer_notify_phone", "") or "")
     if len(notify_phone) < 10:
         return {"sent": False, "reason": "numero_nao_configurado"}
 
@@ -115,7 +128,7 @@ def notify_support_transfer(
     )
 
     try:
-        if _send_via_cloud(provedor, notify_phone, message):
+        if _send_via_cloud(provedor, notify_phone, message, conversa):
             logger.info(
                 "[SupportNotify] Transferência notificada via Cloud API | provedor=%s to=%s conv=%s equipe=%s",
                 provedor.id,

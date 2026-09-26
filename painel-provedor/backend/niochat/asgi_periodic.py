@@ -5,7 +5,7 @@ Dispara a cada ~60s:
 - encerramento de conversas em "closing" (mesma lógica do actor Dramatiq);
 - ciclo de cobrança superadmin (mesma lógica do actor Dramatiq);
 - bloqueio automático de provedores por fatura Asaas (cerca de a cada 10 minutos);
-- análise de aprendizado da IA das encerradas do dia (a cada 10 minutos);
+- análise de aprendizado da IA das encerradas há pelo menos 3 minutos (verificação a cada minuto);
 - rotina noturna: encerradas de dias anteriores vão ao Supabase (core.nightly_migration).
 
 Assim o backend sozinho já agenda cobrança e fechamentos, sem depender de
@@ -32,7 +32,7 @@ _ASAAS_BLOCK_CHECK_INTERVAL_SECONDS = 600  # valida bloqueio automático a cada 
 _last_version_report = 0.0
 _VERSION_REPORT_INTERVAL_SECONDS = 300
 _last_ai_learning_scan = 0.0
-_AI_LEARNING_SCAN_INTERVAL_SECONDS = 600
+_AI_LEARNING_SCAN_INTERVAL_SECONDS = 60
 
 
 def _sleep_until_next_minute() -> None:
