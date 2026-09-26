@@ -254,14 +254,14 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
   // Desktop: sidebar fixo
   return (
     <SidebarContext.Provider value={{ isCollapsed, setIsCollapsed }}>
-      <aside className={`h-full ${isCollapsed ? 'w-14' : 'w-56'} z-30 flex-shrink-0 flex flex-col transition-all duration-300`}>
+      <aside className={`h-full ${isCollapsed ? 'w-14' : 'w-48'} z-30 flex-shrink-0 flex flex-col transition-all duration-300`}>
         <div className={`bg-sidebar text-sidebar-foreground border-r border-sidebar-border h-full flex flex-col ${mobileOpen ? 'mobile-open' : ''}`}>
           {/* TOPO FIXO - Logo e Botão */}
           <div className={`p-4 border-b border-border flex items-center flex-shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
             <img
               src={logo}
               alt="NIO HUB"
-              className={`h-14 w-auto max-w-[10.5rem] object-contain object-left translate-x-1 transition-opacity duration-300 ${isCollapsed ? 'hidden' : 'block'}`}
+              className={`h-14 w-auto max-w-[7.5rem] object-contain object-left translate-x-1 transition-opacity duration-300 ${isCollapsed ? 'hidden' : 'block'}`}
             />
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}

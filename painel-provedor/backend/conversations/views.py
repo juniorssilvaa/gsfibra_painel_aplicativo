@@ -1088,14 +1088,44 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
             logger.info(f"[RETRIEVE] Provedor ID: {provedor_id}, User: {user.username}, User Type: {user.user_type}")
             
             # Buscar conversa no Supabase (mesma lógica do teste)
+            from core.audit_contacts import conversations_from_messages, resolve_contacts
+
             url = f"{supabase_url}/rest/v1/conversations"
             params = {'id': f'eq.{conversation_id}'}
+            if provedor_id:
+                params['provedor_id'] = f'eq.{provedor_id}'
             response = requests.get(url, headers=headers, params=params, timeout=10)
             
             logger.info(f"[RETRIEVE] Resposta Supabase: status={response.status_code}")
             
             if response.status_code == 200:
                 conversations = response.json()
+                if not conversations and provedor_id:
+                    # ID colidiu com conversa de outro provedor em `conversations`: reconstruir via mensagens/auditoria
+                    fallback = conversations_from_messages(
+                        supabase_url, headers, provedor_id, [conversation_id],
+                        getattr(settings, 'SUPABASE_MESSAGES_TABLE', 'mensagens'),
+                    ).get(conversation_id)
+                    if fallback:
+                        audit_resp = requests.get(
+                            f"{supabase_url}/rest/v1/auditoria", headers=headers, timeout=5,
+                            params={
+                                'conversation_id': f'eq.{conversation_id}',
+                                'provedor_id': f'eq.{provedor_id}',
+                                'select': 'ended_at,user_id',
+                                'order': 'ended_at.desc.nullslast',
+                                'limit': 1,
+                            },
+                        )
+                        audit_row = (audit_resp.json() or [{}])[0] if audit_resp.status_code == 200 else {}
+                        conversations = [{
+                            **fallback,
+                            'provedor_id': provedor_id,
+                            'status': 'closed',
+                            'ended_at': audit_row.get('ended_at'),
+                            'updated_at': audit_row.get('ended_at'),
+                            'assignee_id': audit_row.get('user_id'),
+                        }]
                 if conversations and isinstance(conversations, list) and len(conversations) > 0:
                     conversation_data = conversations[0]
                     logger.info(f"[RETRIEVE] Conversa encontrada no Supabase: {conversation_data.get('id')}")
@@ -1108,14 +1138,9 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                     
                     # Buscar dados do contato (mesma lógica do teste)
                     contact_data = {}
-                    if conversation_data.get('contact_id'):
-                        contact_url = f"{supabase_url}/rest/v1/contacts"
-                        contact_params = {'id': f'eq.{conversation_data.get("contact_id")}'}
-                        contact_response = requests.get(contact_url, headers=headers, params=contact_params, timeout=10)
-                        if contact_response.status_code == 200:
-                            contacts = contact_response.json()
-                            if contacts and isinstance(contacts, list) and len(contacts) > 0:
-                                contact_data = contacts[0]
+                    contact_id = conversation_data.get('contact_id')
+                    if contact_id:
+                        contact_data = resolve_contacts(supabase_url, headers, provedor_id, [contact_id]).get(int(contact_id), {})
                     
                     # NOTA: A tabela 'inboxes' não existe no Supabase
                     # O channel_type será extraído dos detalhes do audit log ou será 'whatsapp' por padrão
@@ -1129,6 +1154,8 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                             'limit': 1,
                             'order': 'created_at.desc'
                         }
+                        if provedor_id:
+                            audit_params['provedor_id'] = f'eq.{provedor_id}'
                         audit_response = requests.get(audit_url, headers=headers, params=audit_params, timeout=5)
                         if audit_response.status_code == 200:
                             audit_logs = audit_response.json()
@@ -1157,6 +1184,8 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                     csat_data = {}
                     csat_url = f"{supabase_url}/rest/v1/{getattr(settings, 'SUPABASE_CSAT_TABLE', 'csat_feedback')}"
                     csat_params = {'conversation_id': f'eq.{conversation_id}'}
+                    if provedor_id:
+                        csat_params['provedor_id'] = f'eq.{provedor_id}'
                     csat_response = requests.get(csat_url, headers=headers, params=csat_params, timeout=10)
                     if csat_response.status_code == 200:
                         csats = csat_response.json()
@@ -1215,6 +1244,11 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                                         logger.info(f"[RETRIEVE] {len(messages_data)} mensagens encontradas no Supabase (sem select)")
                     except Exception as e:
                         logger.warning(f"[RETRIEVE] Exceção ao buscar mensagens: {e}")
+
+                    from core.media_signing import sign_media_url
+                    for msg in messages_data:
+                        if isinstance(msg, dict) and msg.get('file_url'):
+                            msg['file_url'] = sign_media_url(msg['file_url'], ttl=3600)
                     
                     # Buscar provedor (se disponível via conversation)
                     provedor_data = {}
@@ -2608,6 +2642,81 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
             'csat_request_id': csat_request_id,
         })
     
+    @staticmethod
+    def _clean_tags(raw):
+        if not isinstance(raw, list):
+            return []
+        tags = []
+        for tag in raw:
+            tag = str(tag or '').strip()[:40]
+            if tag and tag.lower() not in {t.lower() for t in tags}:
+                tags.append(tag)
+        return tags[:20]
+
+    def _panel_info_payload(self, conversation):
+        contact = conversation.contact
+        c_attrs = (contact.additional_attributes or {}) if contact else {}
+        conv_attrs = conversation.additional_attributes or {}
+        inbox = conversation.inbox
+        assignee = conversation.assignee
+        return {
+            'contact': {
+                'id': contact.id if contact else None,
+                'name': contact.name if contact else None,
+                'phone': contact.phone if contact else None,
+                'email': contact.email if contact else None,
+                'avatar': (getattr(contact, 'avatar', None) or c_attrs.get('instagram_profile_pic')) if contact else None,
+                'empresa': c_attrs.get('empresa') or '',
+                'anotacoes': c_attrs.get('anotacoes') or '',
+                'tags': self._clean_tags(c_attrs.get('tags')),
+            },
+            'conversation': {
+                'id': conversation.id,
+                'created_at': conversation.created_at.isoformat() if conversation.created_at else None,
+                'channel': (InboxSerializer(inbox).data.get('custom_name') or inbox.name) if inbox else None,
+                'channel_type': inbox.channel_type if inbox else None,
+                'assignee': (assignee.get_full_name() or assignee.username) if assignee else None,
+                'tags': self._clean_tags(conv_attrs.get('tags')),
+            },
+        }
+
+    @action(detail=True, methods=['get', 'post'], url_path='panel-info')
+    def panel_info(self, request, pk=None):
+        """Dados do painel lateral do atendente (aba Início): contato + atendimento, com tags/anotações."""
+        try:
+            conversation = Conversation.objects.select_related(
+                'contact', 'inbox', 'inbox__provedor', 'assignee'
+            ).get(id=pk)
+        except Conversation.DoesNotExist:
+            return Response({'error': 'Conversa não encontrada'}, status=404)
+        if not self._can_manage_conversation(request.user, conversation):
+            return Response({'error': 'Sem permissão para esta conversa'}, status=403)
+
+        if request.method == 'POST':
+            contact_data = request.data.get('contact') or {}
+            conv_data = request.data.get('conversation') or {}
+            contact = conversation.contact
+            if contact and isinstance(contact_data, dict) and contact_data:
+                attrs = dict(contact.additional_attributes or {})
+                fields = []
+                if 'email' in contact_data:
+                    contact.email = (str(contact_data.get('email') or '').strip()[:254]) or None
+                    fields.append('email')
+                for key, limit in (('empresa', 200), ('anotacoes', 5000)):
+                    if key in contact_data:
+                        attrs[key] = str(contact_data.get(key) or '').strip()[:limit]
+                if 'tags' in contact_data:
+                    attrs['tags'] = self._clean_tags(contact_data.get('tags'))
+                contact.additional_attributes = attrs
+                contact.save(update_fields=fields + ['additional_attributes', 'updated_at'])
+            if isinstance(conv_data, dict) and 'tags' in conv_data:
+                conv_attrs = dict(conversation.additional_attributes or {})
+                conv_attrs['tags'] = self._clean_tags(conv_data.get('tags'))
+                conversation.additional_attributes = conv_attrs
+                conversation.save(update_fields=['additional_attributes'])
+
+        return Response(self._panel_info_payload(conversation))
+
     @action(detail=True, methods=['get'])
     def details_from_supabase(self, request, pk=None):
         """Buscar detalhes da conversa do Supabase"""
@@ -5778,12 +5887,6 @@ def serve_media_file(request, conversation_id, filename):
 
         decoded_filename = unquote(filename)
 
-        try:
-            conversation = Conversation.objects.select_related('inbox').get(id=conversation_id)
-        except Conversation.DoesNotExist:
-            logger.error(f"[ServeMedia] Conversa {conversation_id} não encontrada")
-            raise Http404("Conversa não encontrada")
-
         # Auth: assinatura HMAC (img/audio) OU token DRF no header com ACL
         signed_ok = verify_request_media_signature(request)
         auth_user = None
@@ -5791,7 +5894,12 @@ def serve_media_file(request, conversation_id, filename):
         if auth_header.startswith('Token '):
             auth_user = user_from_token_key(auth_header[7:].strip())
 
-        if media_require_signed_url():
+        conversation = Conversation.objects.select_related('inbox').filter(id=conversation_id).first()
+        if conversation is None:
+            # Conversa encerrada já migrada ao Supabase (removida do banco local); os arquivos continuam no volume.
+            if media_require_signed_url() and not signed_ok:
+                return HttpResponseForbidden("Assinatura de mídia inválida ou expirada")
+        elif media_require_signed_url():
             if not signed_ok:
                 if not auth_user or not user_may_access_conversation_media(auth_user, conversation):
                     return HttpResponseForbidden("Assinatura de mídia inválida ou expirada")
@@ -5802,7 +5910,7 @@ def serve_media_file(request, conversation_id, filename):
         final_filename = decoded_filename
 
         if not file_path:
-            recovered = _try_recover_file(conversation, decoded_filename)
+            recovered = _try_recover_file(conversation, decoded_filename) if conversation else None
             if recovered and os.path.isfile(recovered):
                 file_path = recovered
                 final_filename = os.path.basename(recovered)

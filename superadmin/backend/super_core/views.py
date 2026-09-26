@@ -1111,6 +1111,24 @@ class ProvedorViewSet(viewsets.ModelViewSet):
             'next_suggested': int(max_id) + 1,
         })
 
+    @action(detail=False, methods=['get'], url_path='health-overview',
+            permission_classes=[permissions.IsAuthenticated])
+    def health_overview(self, request):
+        """GET /api/provedores/health-overview/ — painel de saúde (verde/amarelo/vermelho) por provedor."""
+        if getattr(request.user, 'user_type', '') != 'superadmin' and not request.user.is_superuser:
+            return Response({'error': 'Forbidden'}, status=403)
+        from .services.provider_health import health_overview
+        return Response(health_overview())
+
+    @action(detail=True, methods=['post'], url_path='health-check',
+            permission_classes=[permissions.IsAuthenticated])
+    def health_check(self, request, pk=None):
+        """POST /api/provedores/{id}/health-check/ — consulta /api/health/ do tenant agora."""
+        if getattr(request.user, 'user_type', '') != 'superadmin' and not request.user.is_superuser:
+            return Response({'error': 'Forbidden'}, status=403)
+        from .services.provider_health import live_check
+        return Response(live_check(self.get_object()))
+
     @action(detail=False, methods=['post'], url_path='id-sequence-reset',
             permission_classes=[permissions.IsAuthenticated])
     def id_sequence_reset(self, request):
@@ -2581,6 +2599,14 @@ class ProviderHeartbeatView(APIView):
         provedor.current_version = version
         provedor.integration_token_last_used_at = timezone.now()
         provedor.save(update_fields=['current_version', 'integration_token_last_used_at', 'updated_at'])
+
+        health = request.data.get('health')
+        if isinstance(health, dict):
+            from .models import ProvedorHealth
+            ProvedorHealth.objects.update_or_create(
+                provedor=provedor,
+                defaults={'reported_at': provedor.integration_token_last_used_at, 'data': health},
+            )
         return Response({'ok': True, 'current_version': version})
 
 

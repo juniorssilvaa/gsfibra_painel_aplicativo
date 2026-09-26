@@ -1243,7 +1243,7 @@ const ConversationList = memo(({ onConversationSelect, selectedConversation, pro
 
   return (
     <div
-      className={`${isProviderAdmin ? 'w-[300px] min-w-[300px]' : 'w-[240px] min-w-[240px]'} flex-shrink-0 border-r border-border bg-background flex flex-col h-full`}
+      className={`${isProviderAdmin ? 'w-[260px] min-w-[260px]' : 'w-[240px] min-w-[240px]'} flex-shrink-0 border-r border-border bg-background flex flex-col h-full`}
     >
       <style>{`
         .conversation-list::-webkit-scrollbar {

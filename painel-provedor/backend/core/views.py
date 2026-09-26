@@ -205,14 +205,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.73.0"
+                "current_version": "2.74.0"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.73.0"
+            "current_version": "2.74.0"
         }, safe=False)
 
 
@@ -5668,28 +5668,25 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                             pass
                 
                 # Buscar todas as conversas de uma vez (otimização)
+                from core.audit_contacts import conversations_from_messages, resolve_contacts
+                provedor_scope = {'provedor_id': f'eq.{provedor_id}'} if provedor_id else None
                 conversations_data = {}
                 if conversation_ids:
                     for conv in self._supabase_get_in(
                         f"{supabase_url}/rest/v1/conversations", headers, 'id', conversation_ids,
-                        'id,contact_id,inbox_id,created_at,updated_at,ended_at',
+                        'id,contact_id,inbox_id,created_at,updated_at,ended_at', provedor_scope,
                     ):
                         conversations_data[conv.get('id')] = conv
-                
-                # Coletar todos os contact_ids únicos
-                contact_ids = set()
-                for conv_data in conversations_data.values():
-                    contact_id = conv_data.get('contact_id')
-                    if contact_id:
-                        contact_ids.add(contact_id)
-                
-                # Buscar todos os contatos de uma vez (otimização)
-                contacts_data = {}
-                if contact_ids:
-                    for contact in self._supabase_get_in(
-                        f"{supabase_url}/rest/v1/contacts", headers, 'id', contact_ids, 'id,name,phone,avatar',
-                    ):
-                        contacts_data[contact.get('id')] = contact
+
+                missing_conv_ids = conversation_ids - set(conversations_data)
+                if missing_conv_ids:
+                    conversations_data.update(conversations_from_messages(
+                        supabase_url, headers, provedor_id, missing_conv_ids,
+                        getattr(settings, 'SUPABASE_MESSAGES_TABLE', 'mensagens'),
+                    ))
+
+                contact_ids = {c.get('contact_id') for c in conversations_data.values() if c.get('contact_id')}
+                contacts_data = resolve_contacts(supabase_url, headers, provedor_id, contact_ids)
                 
                 # NOTA: A tabela 'inboxes' não existe no Supabase
                 # O channel_type será extraído dos detalhes do audit log ou da conversa
@@ -5769,8 +5766,8 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                         'contact_photo': contact_data.get('avatar') if contact_data else None,
                         'contact_phone': contact_data.get('phone') if contact_data else None,
                         'channel_type': channel_type,
-                        'created_at': conv_data.get('created_at') if conv_data else (log.get('ended_at') or log.get('created_at')),
-                        'ended_at': conv_data.get('ended_at') if conv_data else log.get('ended_at'),
+                        'created_at': (conv_data or {}).get('created_at') or log.get('ended_at') or log.get('created_at'),
+                        'ended_at': (conv_data or {}).get('ended_at') or log.get('ended_at'),
                         'updated_at': conv_data.get('updated_at') if conv_data else None,
                         'timestamp': log.get('ended_at') or log.get('created_at'),
                     }
@@ -6041,18 +6038,21 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             conversation_ids.update(
                 Conversation.objects.filter(contact_id__in=contact_ids).values_list('id', flat=True)[:1000]
             )
-            try:
-                ids_str = ','.join(str(i) for i in list(contact_ids)[:500])
-                resp = requests.get(
-                    f'{supabase_url}/rest/v1/conversations',
-                    headers=headers,
-                    params={'select': 'id', 'contact_id': f'in.({ids_str})', 'limit': 1000},
-                    timeout=10,
+            from core.audit_contacts import supabase_get_in
+            scope = {'provedor_id': f'eq.{provedor_id}'} if provedor_id else {}
+            ids_list = list(contact_ids)[:500]
+            conversation_ids.update(
+                c['id'] for c in supabase_get_in(
+                    f'{supabase_url}/rest/v1/conversations', headers, 'contact_id', ids_list, 'id', scope,
+                ) if c.get('id')
+            )
+            if provedor_id:
+                conversation_ids.update(
+                    m['conversation_id'] for m in supabase_get_in(
+                        f"{supabase_url}/rest/v1/{getattr(settings, 'SUPABASE_MESSAGES_TABLE', 'mensagens')}",
+                        headers, 'contact_id', ids_list, 'conversation_id', scope,
+                    ) if m.get('conversation_id')
                 )
-                if resp.status_code == 200:
-                    conversation_ids.update(c['id'] for c in resp.json() if c.get('id'))
-            except Exception as exc:
-                logger.warning('[AUDIT-LOGS] Busca de conversas no Supabase falhou: %s', exc)
 
         if has_letters:
             user_ids.update(

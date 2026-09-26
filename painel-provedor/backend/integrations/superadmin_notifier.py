@@ -511,6 +511,13 @@ def report_running_version() -> bool:
     if not version:
         return False
 
+    payload = {'version': version}
+    try:
+        from core.health_report import build_health_report
+        payload['health'] = build_health_report()
+    except Exception as exc:
+        logger.debug('[SuperadminNotifier] boletim de saúde indisponível: %s', exc)
+
     last_status = None
     for base in _superadmin_api_urls():
         provider_token = _resolve_provider_token(base)
@@ -520,7 +527,7 @@ def report_running_version() -> bool:
         try:
             resp = requests.post(
                 url,
-                json={'version': version},
+                json=payload,
                 headers={'Authorization': f'Bearer {provider_token}'},
                 timeout=12,
             )

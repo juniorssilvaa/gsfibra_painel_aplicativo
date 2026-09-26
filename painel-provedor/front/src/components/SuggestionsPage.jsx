@@ -116,7 +116,7 @@ function SuggestionDetailModal({ item, onClose, onCommentAdded }) {
   const statusMeta = STATUS_META[item.status] || STATUS_META.analise;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 md:pl-56">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 md:pl-48">
       <div className="w-full max-w-xl max-h-[85vh] rounded-xl border border-border bg-card shadow-xl flex flex-col overflow-hidden">
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border shrink-0">
           <div className="min-w-0">
@@ -330,7 +330,7 @@ export default function SuggestionsPage({ provedorId }) {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 md:pl-56">
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 md:pl-48">
           <div className="w-full max-w-lg rounded-xl border border-border bg-card shadow-xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h2 className="text-base font-bold text-foreground">Nova ideia</h2>

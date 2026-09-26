@@ -5,8 +5,6 @@ import {
   Paperclip,
   Smile,
   User,
-  MessageCircle,
-  Globe,
   UserCheck,
   CheckCircle2,
   ArrowRightLeft,
@@ -23,9 +21,7 @@ import {
   CreditCard,
   Calendar,
   Copy,
-  Database,
   Smartphone,
-  Edit2,
   Check,
   Phone,
 } from 'lucide-react';
@@ -38,9 +34,6 @@ import { toast } from '../lib/notify';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogPortal, DialogOverlay } from './ui/dialog';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import whatsappIcon from '../assets/whatsapp.png';
-import telegramIcon from '../assets/telegram.png';
-import gmailIcon from '../assets/gmail.png';
-import instagramIcon from '../assets/instagram.png';
 import logoImage from '../assets/logo.png';
 import chatBgPattern from '../assets/modo_dark.png';
 import chatBgPatternLight from '../assets/modo_claro.png';
@@ -54,7 +47,6 @@ import {
   CHAT_ORANGE_SEND_BTN,
   CONVERSATION_ACTION_BTN_BASE,
   chatOrangeSendStyle,
-  chatSaveStyle,
   conversationActionStyle,
 } from '../constants/conversationActionButtons';
 import { isReplyBlockedUntilAssignment } from '../utils/conversationAssignment';
@@ -210,9 +202,6 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
   const fetchedStatusConversationIdRef = useRef(null);
   // Estado local para o nome do contato (pode ser atualizado via WebSocket)
   const [contactName, setContactName] = useState(conversation.contact?.name);
-  const [isEditingContactName, setIsEditingContactName] = useState(false);
-  const [editingContactName, setEditingContactName] = useState('');
-  const [savingContactName, setSavingContactName] = useState(false);
   const messagesEndRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const highlightClearTimeoutRef = useRef(null);
@@ -828,59 +817,6 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
     );
   };
 
-  // Função para renderizar ícone do canal
-  const getChannelIcon = (channelType) => {
-    switch (channelType) {
-      case 'whatsapp':
-      case 'whatsapp_oficial':
-        return <img src={whatsappIcon} alt="WhatsApp" className="w-3 h-3" />;
-      case 'telegram':
-        return <img src={telegramIcon} alt="Telegram" className="w-3 h-3" />;
-      case 'email':
-        return <img src={gmailIcon} alt="Gmail" className="w-3 h-3" />;
-      case 'instagram':
-        return <img src={instagramIcon} alt="Instagram" className="w-3 h-3" />;
-      case 'webchat':
-        return <Globe className="w-3 h-3 text-cyan-500" />;
-      case 'app_mobile':
-        return <Smartphone className="w-3.5 h-3.5 text-orange-500" />;
-      default:
-        return <MessageCircle className="w-3 h-3 text-muted-foreground" />;
-    }
-  };
-
-  // Função para obter nome limpo do canal
-  const getChannelDisplayName = (inbox) => {
-    if (!inbox) return 'Canal';
-
-    // Priorizar o nome customizado se existir
-    if (inbox.custom_name) {
-      return inbox.custom_name;
-    }
-
-    // Fallback para o nome do inbox (preenchido no backend)
-    // Se o nome não for genérico/vazio, usar ele
-    if (inbox.name && 
-        inbox.name !== 'whatsapp_oficial' && 
-        inbox.name !== 'WhatsApp Oficial' &&
-        !inbox.name.includes('WhatsApp - null')) {
-      return inbox.name;
-    }
-
-    const channelTypes = {
-      'whatsapp': 'WhatsApp',
-      'email': 'Email',
-      'telegram': 'Telegram',
-      'webchat': 'Chat Web',
-      'facebook': 'Facebook',
-      'instagram': 'Instagram',
-      'whatsapp_oficial': 'WhatsApp Oficial',
-      'app_mobile': 'App Mobile',
-    };
-
-    return channelTypes[inbox.channel_type] || inbox.channel_type || 'Canal';
-  };
-
   // Função para buscar mensagens (últimas 150; histórico antigo sob demanda)
   const processRawMessages = (rawList) => {
     return (rawList || []).map(msg => {
@@ -978,8 +914,6 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
   // Atualizar estado local do nome do contato quando a conversa mudar
   useEffect(() => {
     setContactName(conversation.contact?.name);
-    setIsEditingContactName(false);
-    setEditingContactName((conversation.contact?.name || '').trim());
 
     // NÃO definir estado inicial baseado na prop conversation
     // Sempre buscar do backend para garantir dados atualizados
@@ -1649,7 +1583,6 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                 data.conversation?.contact?.name;
               if (newName) {
                 setContactName(newName);
-                setEditingContactName(newName.trim());
               }
               if (onConversationUpdate) {
                 if (data.conversation) {
@@ -2498,35 +2431,21 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
     }
   };
 
-  const startEditContactName = () => {
-    const current = ((contactName || conversation.contact?.name || '') + '').trim();
-    setEditingContactName(
-      contactNameLooksLikePlaceholder(current, conversation.contact?.phone) ? '' : current
-    );
-    setIsEditingContactName(true);
-  };
-
-  const cancelEditContactName = () => {
-    setIsEditingContactName(false);
-    setEditingContactName((contactName || conversation.contact?.name || '').trim());
-  };
-
-  const saveContactName = async () => {
-    const name = editingContactName.trim();
+  const saveContactName = async (rawName) => {
+    const name = (rawName || '').trim();
     if (!name) {
       toast.error('Informe um nome para o contato.');
-      return;
+      return false;
     }
     if (!conversation?.contact?.id) {
       toast.error('Contato não encontrado.');
-      return;
+      return false;
     }
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
     if (!token) {
       toast.error('Sessão expirada. Faça login novamente.');
-      return;
+      return false;
     }
-    setSavingContactName(true);
     try {
       const response = await axios.patch(
         `/api/contacts/${conversation.contact.id}/`,
@@ -2535,7 +2454,6 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       );
       const savedName = (response.data?.name || name).trim();
       setContactName(savedName);
-      setIsEditingContactName(false);
       if (onConversationUpdate) {
         onConversationUpdate({
           ...conversation,
@@ -2546,6 +2464,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
         });
       }
       toast.success('Nome do contato salvo.');
+      return true;
     } catch (err) {
       const msg =
         err.response?.data?.name?.[0] ||
@@ -2553,8 +2472,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
         err.response?.data?.error ||
         'Não foi possível salvar o nome.';
       toast.error(typeof msg === 'string' ? msg : 'Não foi possível salvar o nome.');
-    } finally {
-      setSavingContactName(false);
+      return false;
     }
   };
 
@@ -3407,160 +3325,8 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       <div className="flex min-h-0 flex-1 flex-col relative overflow-hidden bg-background border-r">
         {/* Header da conversa */}
         <div className="border-b border-border px-3 py-2 bg-card shrink-0">
-          <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center space-x-2 min-w-0">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-primary/10">
-                {conversation.contact?.avatar ? (
-                  <img
-                    src={conversation.contact.avatar}
-                    alt={conversation.contact.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      e.target.nextSibling.style.display = 'flex';
-                    }}
-                  />
-                ) : null}
-                <User 
-                  size={16} 
-                  className={`text-primary ${conversation.contact?.avatar ? 'hidden' : 'block'}`} 
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0">
-                {isEditingContactName ? (
-                  <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
-                    <input
-                      type="text"
-                      value={editingContactName}
-                      onChange={(e) => setEditingContactName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') saveContactName();
-                        if (e.key === 'Escape') cancelEditContactName();
-                      }}
-                      maxLength={255}
-                      autoFocus
-                      disabled={savingContactName}
-                      placeholder="Nome do cliente"
-                      className="h-7 min-w-[140px] max-w-[280px] flex-1 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                    />
-                    <button
-                      type="button"
-                      onClick={saveContactName}
-                      disabled={savingContactName}
-                      className="p-1 rounded-md text-white hover:opacity-90 disabled:opacity-50"
-                      style={chatSaveStyle()}
-                      title="Salvar nome"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelEditContactName}
-                      disabled={savingContactName}
-                      className="p-1 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                      title="Cancelar"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <h3 className="text-sm font-medium text-foreground truncate max-w-[240px] sm:max-w-[320px]">
-                      {(() => {
-                        const displayName =
-                          (contactName && contactName.trim()) ||
-                          conversation.contact?.name?.trim();
-                        const contactPhone = conversation.contact?.phone;
-                        if (displayName && displayName.length > 0) {
-                          return displayName;
-                        }
-                        return contactPhone || 'Contato sem nome';
-                      })()}
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={startEditContactName}
-                      disabled={supervisorMode}
-                      className="p-0.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0 disabled:opacity-40 disabled:pointer-events-none"
-                      title={supervisorMode ? 'Edição indisponível em modo supervisão' : 'Editar nome do contato'}
-                    >
-                      <Edit2 className="w-3 h-3" />
-                    </button>
-                  </>
-                )}
-                <div className="flex items-center space-x-1 text-[11px] text-muted-foreground shrink-0">
-                  {getChannelIcon(conversation.inbox?.channel_type)}
-                  <span className="font-medium">
-                    Canal: {getChannelDisplayName(conversation.inbox)}
-                  </span>
-                </div>
-              </div>
-              {conversation.contact?.phone && (
-                <p className="text-[11px] leading-tight text-muted-foreground mt-0.5 truncate">
-                  {conversation.contact.phone}
-                  {(conversation.additional_attributes?.protocolo ||
-                    conversation.protocolo) && (
-                    <span className="ml-2 text-[11px] font-medium text-foreground/80">
-                      · Protocolo:{' '}
-                      <span className="font-semibold tracking-wide">
-                        {conversation.additional_attributes?.protocolo ||
-                          conversation.protocolo}
-                      </span>
-                      {conversation.additional_attributes?.protocol_source === 'sgp' && (
-                        <span className="ml-1 text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
-                          (SGP)
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  {!isEditingContactName &&
-                    contactNameLooksLikePlaceholder(
-                      contactName || conversation.contact?.name,
-                      conversation.contact?.phone
-                    ) && (
-                      <span className="ml-1.5 text-[10px] text-amber-600 dark:text-amber-400">
-                        · Defina um nome com o lápis
-                      </span>
-                    )}
-                </p>
-              )}
-              {!conversation.contact?.phone &&
-                (conversation.additional_attributes?.protocolo || conversation.protocolo) && (
-                <p className="text-[11px] leading-tight text-muted-foreground mt-0.5 truncate">
-                  Protocolo:{' '}
-                  <span className="font-semibold text-foreground/80 tracking-wide">
-                    {conversation.additional_attributes?.protocolo || conversation.protocolo}
-                  </span>
-                  {conversation.additional_attributes?.protocol_source === 'sgp' && (
-                    <span className="ml-1 text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
-                      (SGP)
-                    </span>
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
-
+          <div className="flex items-center justify-end gap-2">
           <div className="flex items-center space-x-1.5 shrink-0">
-
-            {/* Toggle Acesso Rápido (SGP / Asaas) */}
-            <button
-              type="button"
-              onClick={() => setShowSgpSidebar(!showSgpSidebar)}
-              className={`${CONVERSATION_ACTION_BTN_BASE} h-7 px-2`}
-              style={conversationActionStyle(showSgpSidebar ? 'sgpAtivo' : 'sgp')}
-              title={
-                showSgpSidebar
-                  ? `Fechar painel ${billingSource === 'asaas' ? 'Asaas' : 'SGP'}`
-                  : `Abrir painel ${billingSource === 'asaas' ? 'Asaas' : 'SGP'}`
-              }
-            >
-              <Database className="h-3.5 w-3.5 shrink-0" />
-            </button>
 
             {!supervisorMode && isWhatsAppChannel && voiceCall.capability?.configured !== false && (
               <button
@@ -5223,18 +4989,23 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       </div>
 
       {/* Sidebar Acesso Rápido (SGP ou Asaas) */}
-      {showSgpSidebar && (
-        <div className="animate-in slide-in-from-right duration-300">
-          <SgpSidebar 
-            conversation={conversation} 
-            user={user} 
-            messages={filteredMessages} 
-            onClose={() => setShowSgpSidebar(false)}
-            onConversationUpdate={onConversationUpdate}
-            billingSource={billingSource}
-          />
-        </div>
-      )}
+      <div className="h-full shrink-0">
+        <SgpSidebar
+          conversation={conversation}
+          user={user}
+          messages={filteredMessages}
+          expanded={showSgpSidebar}
+          onToggleExpanded={() => setShowSgpSidebar((v) => !v)}
+          onConversationUpdate={onConversationUpdate}
+          billingSource={billingSource}
+          contactName={contactName}
+          onSaveContactName={supervisorMode ? null : saveContactName}
+          contactNameNeedsEdit={contactNameLooksLikePlaceholder(
+            contactName || conversation.contact?.name,
+            conversation.contact?.phone
+          )}
+        />
+      </div>
 
       {/* Modal CSAT ao encerrar */}
       {showCloseCSATModal && (

@@ -120,6 +120,12 @@ def start_inline_periodic_tasks() -> None:
         if _started:
             return
         _started = True
+    try:
+        from core.health_report import install_error_counter
+
+        install_error_counter()
+    except Exception:
+        logger.exception("[ASGI periodic] falha ao instalar contador de erros")
     t = threading.Thread(
         target=_periodic_loop,
         name="niochat-asgi-periodic",

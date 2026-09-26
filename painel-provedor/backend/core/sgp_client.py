@@ -380,6 +380,53 @@ class SGPClient:
                 "error": str(e)
             }
 
+    def listar_tipos_ocorrencia(self, cpf_cnpj=None, senha=None):
+        """
+        Lista tipos de ocorrência do SGP (POST /api/central/tipoocorrencia/list/).
+        Envia token/app e, quando disponíveis, cpfcnpj + senha da central do assinante;
+        se o SGP recusar essa combinação, repete só com token/app.
+        Retorna [{'codigo': int, 'descricao': str}, ...].
+        """
+        url = f'{self.base_url}/api/central/tipoocorrencia/list/'
+        base_data = {'token': self.token, 'app': self.app_name}
+        tentativas = []
+        cpf_limpo = re.sub(r"\D", "", str(cpf_cnpj or ""))
+        if cpf_limpo and senha:
+            tentativas.append({**base_data, 'cpfcnpj': cpf_limpo, 'senha': str(senha)})
+        tentativas.append(base_data)
+
+        ultimo_erro = None
+        for data in tentativas:
+            try:
+                r = requests.post(url, data=data, timeout=20)
+                self.logger.info(
+                    "[SGP] listar_tipos_ocorrencia | HTTP %s | cpfcnpj=%s",
+                    r.status_code, _mascarar_cpf_cnpj(data.get('cpfcnpj')),
+                )
+                if r.status_code != 200:
+                    ultimo_erro = f"HTTP {r.status_code}"
+                    continue
+                resp = _parse_json_response(r, logger=self.logger, context="SGP listar_tipos_ocorrencia")
+                itens = resp if isinstance(resp, list) else (
+                    resp.get('tipos') or resp.get('result') or resp.get('data') or []
+                    if isinstance(resp, dict) else []
+                )
+                tipos = []
+                for it in itens:
+                    if not isinstance(it, dict):
+                        continue
+                    codigo = it.get('codigo', it.get('id'))
+                    descricao = (it.get('descricao') or it.get('nome') or '').strip()
+                    if codigo is not None and descricao:
+                        tipos.append({'codigo': codigo, 'descricao': descricao})
+                if tipos:
+                    return sorted(tipos, key=lambda t: t['descricao'].lower())
+                ultimo_erro = "lista vazia"
+            except Exception as e:
+                ultimo_erro = str(e)
+                self.logger.warning("[SGP] listar_tipos_ocorrencia | erro=%s", e)
+        raise SGPInvalidResponse(f"Não foi possível listar os tipos de ocorrência ({ultimo_erro}).")
+
     # ==========================================================
     # FATURA / PAGAMENTOS
     # ==========================================================

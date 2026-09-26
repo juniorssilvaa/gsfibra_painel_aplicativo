@@ -1,6 +1,20 @@
 {
-  "current_version": "2.73.0",
+  "current_version": "2.74.0",
   "versions": [
+    {
+      "version": "2.74.0",
+      "version_type": "minor",
+      "date": "2026-09-25",
+      "title": "Novo menu de ações rápidas no chat",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento / ChatArea",
+          "title": "Novo menu de ações rápidas na tela do chat",
+          "description": "Novo menu lateral na tela de atendimento com as abas Início, Cliente, Financeiro, Suporte e Wi-Fi. O atendente vê os dados do contato e do atendimento (protocolo, canal, atendente e tags), identifica o cliente pelo CPF/CNPJ, envia PIX ou boleto, abre chamados com os tipos cadastrados no ERP e consulta ou altera o Wi-Fi do cliente, sem sair da conversa."
+        }
+      ]
+    },
     {
       "version": "2.73.0",
       "version_type": "minor",

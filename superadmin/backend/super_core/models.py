@@ -146,6 +146,16 @@ class Provedor(models.Model):
         ordering = ['nome']
 
 
+class ProvedorHealth(models.Model):
+    """Último boletim de saúde enviado pelo tenant no heartbeat."""
+    provedor = models.OneToOneField(Provedor, on_delete=models.CASCADE, related_name='health')
+    reported_at = models.DateTimeField()
+    data = models.JSONField(default=dict, blank=True)
+
+    def __str__(self):
+        return f"Saúde {self.provedor_id} @ {self.reported_at:%Y-%m-%d %H:%M}"
+
+
 class SystemUpdate(models.Model):
     STATUS_PENDING = 'pending'
     STATUS_RUNNING = 'running'

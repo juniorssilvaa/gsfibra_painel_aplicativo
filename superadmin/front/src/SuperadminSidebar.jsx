@@ -1,10 +1,11 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { BarChart2, MessageCircle, Eye, Users, Database, Megaphone, LogOut, Wifi, Settings, Link2, Server, Lightbulb, Smartphone, Router } from 'lucide-react';
+import { BarChart2, MessageCircle, Eye, Users, Database, Megaphone, LogOut, Wifi, Settings, Link2, Server, Lightbulb, Smartphone, Router, Activity } from 'lucide-react';
 
 const menu = [
   { key: 'dashboard', label: 'Dashboard', icon: <BarChart2 size={20} /> },
   { key: 'provedores', label: 'Provedores', icon: <Wifi size={20} /> },
+  { key: 'saude', label: 'Saúde dos Provedores', icon: <Activity size={20} /> },
   { key: 'app-mobile', label: 'App Mobile', icon: <Smartphone size={20} /> },
   { key: 'acs', label: 'ACS', icon: <Router size={20} /> },
   { key: 'canais', label: 'Canais', icon: <MessageCircle size={20} /> },

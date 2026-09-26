@@ -190,6 +190,51 @@ class SGPIntegrationViewSet(viewsets.ViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['post'], url_path='tipos-ocorrencia')
+    def tipos_ocorrencia(self, request):
+        """Lista os tipos de ocorrência (chamado) direto do SGP do provedor."""
+        from django.core.cache import cache
+
+        provedor_id = request.data.get('provedor_id')
+        cpfcnpj = "".join(filter(str.isdigit, str(request.data.get('cpfcnpj') or '')))
+        contrato_id = str(request.data.get('contrato_id') or '').strip()
+        if not provedor_id:
+            return Response({"error": "provedor_id é obrigatório."}, status=status.HTTP_400_BAD_REQUEST)
+
+        cache_key = f"sgp_tipos_ocorrencia:{provedor_id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return Response({"tipos": cached})
+
+        try:
+            provedor = Provedor.objects.get(id=provedor_id)
+        except Provedor.DoesNotExist:
+            return Response({"error": "Provedor não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        sgp = self._get_sgp_client(provedor)
+        if not sgp:
+            return Response({"error": "Integração SGP não configurada para este provedor."}, status=status.HTTP_404_NOT_FOUND)
+
+        senha_central = None
+        if cpfcnpj:
+            try:
+                resultado = sgp.consultar_cliente(cpfcnpj)
+                contratos = (resultado or {}).get('contratos') or [] if isinstance(resultado, dict) else []
+                escolhido = next(
+                    (c for c in contratos if contrato_id and str(get_contrato_id(c) or '') == contrato_id),
+                    contratos[0] if contratos else None,
+                )
+                if escolhido:
+                    senha_central = escolhido.get('contratoCentralSenha') or None
+            except Exception as e:
+                logger.warning("[SGP] tipos_ocorrencia | falha ao obter senha da central: %s", e)
+
+        try:
+            tipos = sgp.listar_tipos_ocorrencia(cpf_cnpj=cpfcnpj, senha=senha_central)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        cache.set(cache_key, tipos, 600)
+        return Response({"tipos": tipos})
+
     @action(detail=False, methods=['post'], url_path='abrir-chamado')
     def abrir_chamado(self, request):
         """Abre um novo chamado técnico."""
@@ -210,34 +255,15 @@ class SGPIntegrationViewSet(viewsets.ViewSet):
             if resultado.get('success') and resultado.get('protocolo') and conversation_id:
                 try:
                     from conversations.models import Conversation
-                    from conversations.protocol_service import (
-                        apply_sgp_protocol,
-                        format_protocol_update_customer_message,
-                    )
-                    from core.chatbot_engine import ChatbotEngine
+                    from conversations.protocol_service import apply_sgp_protocol
 
                     conversation = Conversation.objects.filter(id=conversation_id).first()
                     if conversation:
-                        proto_result = apply_sgp_protocol(
+                        apply_sgp_protocol(
                             conversation,
                             resultado.get('protocolo'),
                             chamado_id=resultado.get('chamado_id'),
                         )
-                        if (proto_result or {}).get('changed'):
-                            customer_msg = format_protocol_update_customer_message(
-                                (proto_result or {}).get('protocolo_anterior'),
-                                resultado.get('protocolo'),
-                            )
-                            try:
-                                ChatbotEngine.send_message_agnostic_sync(
-                                    conversation, customer_msg
-                                )
-                            except Exception as send_err:
-                                logger.warning(
-                                    "[SGP] Falha ao avisar cliente sobre protocolo atualizado conv=%s: %s",
-                                    conversation_id,
-                                    send_err,
-                                )
                 except Exception as proto_err:
                     logger.warning(
                         "[SGP] Falha ao vincular protocolo SGP à conversa %s: %s",

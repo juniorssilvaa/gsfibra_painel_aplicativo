@@ -944,9 +944,22 @@ export default function ConversationAudit({ provedorId }) {
                                     </div>
 
                                     {/* Conteúdo da mensagem com links destacados */}
-                                    <div className="text-sm whitespace-pre-wrap">
-                                      {renderMessageWithLinks(message.content || message.text || 'Mensagem sem conteúdo')}
-                                    </div>
+                                    {message.message_type === 'revoke' ? (
+                                      <div className="text-sm italic opacity-75">Mensagem apagada</div>
+                                    ) : (message.content || message.text || !message.file_url) && !(hasDocument && message.file_url) && (
+                                      <div className="text-sm whitespace-pre-wrap">
+                                        {renderMessageWithLinks(message.content || message.text || 'Mensagem sem conteúdo')}
+                                      </div>
+                                    )}
+
+                                    {/* Áudios */}
+                                    {hasAudio && message.file_url && (
+                                      <div className="mb-2 mt-1">
+                                        <audio controls preload="metadata" className="max-w-full" src={buildMediaUrl(message.file_url)}>
+                                          Seu navegador não suporta o elemento de áudio.
+                                        </audio>
+                                      </div>
+                                    )}
 
                                     {/* Imagens */}
                                     {hasImage && message.file_url && (

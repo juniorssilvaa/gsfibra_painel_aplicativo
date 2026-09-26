@@ -4586,7 +4586,7 @@ export default function Integrations({ provedorId, mode = 'full' }) {
 
       {/* MODAL DE GERENCIAR MODELOS (WhatsApp Oficial) */}
       {showTemplateModal && selectedChannelForTemplates && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 md:pl-56">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 md:pl-48">
           <div className={`bg-card border border-border p-8 rounded-xl shadow-lg w-full ${showCreateTemplate ? 'max-w-7xl' : 'max-w-4xl'} max-h-[90vh] overflow-y-auto relative`}>
             {/* Botão fechar */}
             <button
