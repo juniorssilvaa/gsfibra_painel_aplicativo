@@ -10,6 +10,7 @@ import SupportNiohubBadge from './SupportNiohubBadge';
 import Sidebar from './Sidebar';
 import RemindersModal from './RemindersModal';
 import ChatArea from './ChatArea';
+import { consumeResumeAfterUpdate } from './MaintenanceGate';
 import { useAuth } from '../contexts/AuthContext';
 import { getEffectiveProvedorId } from '../utils/effectiveProvedorId';
 import { isSupervisorMonitoring } from '../utils/conversationSupervision';
@@ -126,9 +127,21 @@ const ConversationsPage = ({ selectedConversation: propSelectedConversation, set
   }, []);
 
   // Não restaurar chat do localStorage: ao atualizar a página ou voltar do dashboard,
-  // o atendimento começa sem conversa aberta.
+  // o atendimento começa sem conversa aberta. Exceção: reload automático pós-atualização
+  // do sistema, que reabre a conversa em que o atendente estava.
   useEffect(() => {
     localStorage.removeItem('selectedConversation');
+    const resumeId = consumeResumeAfterUpdate()?.conversationId;
+    if (!resumeId) return;
+    axios.get(`/api/conversations/${resumeId}/`, { skipErrorToast: true })
+      .then(({ data }) => {
+        if (!data?.id) return;
+        const status = data.status || data.additional_attributes?.status;
+        if (['closed', 'encerrada', 'resolved', 'finalizada'].includes(status)) return;
+        setSelectedConversation(data);
+        localStorage.setItem('selectedConversation', JSON.stringify(data));
+      })
+      .catch(() => {});
   }, []);
 
   // Ao sair da tela de atendimento ou abrir Contatos, limpar a conversa aberta

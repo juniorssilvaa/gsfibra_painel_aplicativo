@@ -1,6 +1,20 @@
 {
-  "current_version": "2.75.0",
+  "current_version": "2.75.1",
   "versions": [
+    {
+      "version": "2.75.1",
+      "version_type": "patch",
+      "date": "2026-09-26",
+      "title": "Melhorias na tela de login",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Login",
+          "title": "Melhorias na tela de login",
+          "description": "Ajustes de estabilidade na tela de login, deixando o acesso ao sistema mais rápido."
+        }
+      ]
+    },
     {
       "version": "2.75.0",
       "version_type": "minor",

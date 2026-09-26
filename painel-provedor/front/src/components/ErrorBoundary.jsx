@@ -1,25 +1,32 @@
 import React from 'react';
+import { MaintenanceScreen, isStaleChunkError, recoverFromStaleBuild } from './MaintenanceGate';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, staleBuild: false, error: null, errorInfo: null };
   }
 
   static getDerivedStateFromError(error) {
     // Atualiza o state para mostrar a UI de erro
-    return { hasError: true };
+    return { hasError: true, staleBuild: isStaleChunkError(error) };
   }
 
   componentDidCatch(error, errorInfo) {
-    // Log do erro
+    // Build novo publicado durante a sessão: tela de atualização + reload automático
+    const staleBuild = isStaleChunkError(error) && recoverFromStaleBuild();
     this.setState({
       error: error,
-      errorInfo: errorInfo
+      errorInfo: errorInfo,
+      staleBuild,
     });
   }
 
   render() {
+    if (this.state.hasError && this.state.staleBuild) {
+      return <MaintenanceScreen />;
+    }
+
     if (this.state.hasError) {
       // UI de fallback
       return (

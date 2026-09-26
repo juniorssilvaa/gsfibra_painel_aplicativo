@@ -7,6 +7,13 @@ const POLL_MAINTENANCE_MS = 5000;
 // Falhas seguidas do backend (502/503/504/sem resposta) antes de assumir atualização em andamento
 const FAILURES_TO_ENTER = 2;
 const SKIP_FLAG = '__maintenanceProbe';
+// Se o frontend continuar com o mesmo build (atualização só de backend), recarrega após esse tempo
+const SAME_BUILD_GRACE_MS = 60000;
+const RESUME_MAX_AGE_MS = 15 * 60 * 1000;
+
+const RESUME_KEY = 'niohub:resume-after-update';
+export const RESUME_DRAFT_KEY = 'niohub:resume-draft';
+export const BEFORE_UPDATE_RELOAD_EVENT = 'niohub:before-update-reload';
 
 const isGatewayFailure = (error) => {
   if (axios.isCancel?.(error) || error?.code === 'ERR_CANCELED') return false;
@@ -15,16 +22,147 @@ const isGatewayFailure = (error) => {
   return true;
 };
 
+const ENTRY_SCRIPT_RE = /<script[^>]*type="module"[^>]*src="([^"]+)"/i;
+
+const loadedEntryScript = () =>
+  document.querySelector('script[type="module"][src*="/assets/"]')?.getAttribute('src') || null;
+
+const fetchFrontEntry = async () => {
+  try {
+    const res = await fetch(`/?_=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' });
+    if (!res.ok) return { ok: false };
+    const html = await res.text();
+    if (!html.includes('id="root"')) return { ok: false };
+    return { ok: true, entry: html.match(ENTRY_SCRIPT_RE)?.[1] || null };
+  } catch {
+    return { ok: false };
+  }
+};
+
+const readJson = (storage, key) => {
+  try {
+    const raw = storage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Conversa aberta antes do reload pós-atualização (uso único). */
+export const consumeResumeAfterUpdate = () => {
+  const saved = readJson(sessionStorage, RESUME_KEY);
+  sessionStorage.removeItem(RESUME_KEY);
+  if (!saved || Date.now() - (saved.ts || 0) > RESUME_MAX_AGE_MS) return null;
+  return saved;
+};
+
+/** Rascunho digitado na conversa antes do reload pós-atualização (uso único). */
+export const consumeResumeDraft = (conversationId) => {
+  const saved = readJson(sessionStorage, RESUME_DRAFT_KEY);
+  if (!saved) return null;
+  const stale = Date.now() - (saved.ts || 0) > RESUME_MAX_AGE_MS;
+  if (stale || String(saved.conversationId) === String(conversationId)) {
+    sessionStorage.removeItem(RESUME_DRAFT_KEY);
+  }
+  return !stale && String(saved.conversationId) === String(conversationId) ? saved.text : null;
+};
+
+const reloadPreservingState = () => {
+  window.dispatchEvent(new Event(BEFORE_UPDATE_RELOAD_EVENT));
+  try {
+    const conversation = readJson(localStorage, 'selectedConversation');
+    sessionStorage.setItem(RESUME_KEY, JSON.stringify({ ts: Date.now(), conversationId: conversation?.id ?? null }));
+  } catch {
+    // sessionStorage indisponível: recarrega sem restaurar a conversa
+  }
+  window.location.reload();
+};
+
+// Chunks do build anterior somem quando o frontend novo entra no ar (o servidor devolve index.html)
+const STALE_CHUNK_RE = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Unable to preload CSS|ChunkLoadError|Loading (CSS )?chunk \S+ failed|not a valid JavaScript MIME type/i;
+const STALE_RELOAD_KEY = 'niohub:stale-build-reload-at';
+// Se o mesmo erro voltar logo após o reload, não é troca de build: deixa o erro aparecer (sem loop)
+const STALE_RELOAD_COOLDOWN_MS = 2 * 60 * 1000;
+let staleBuildRecovering = false;
+
+export const isStaleChunkError = (error) => STALE_CHUNK_RE.test(String(error?.message || error || ''));
+
+/** Recarrega (preservando a conversa) quando o frontend novo responder. false = já tentou há pouco. */
+export const recoverFromStaleBuild = () => {
+  if (staleBuildRecovering) return true;
+  const last = Number(sessionStorage.getItem(STALE_RELOAD_KEY) || 0);
+  if (Date.now() - last < STALE_RELOAD_COOLDOWN_MS) return false;
+  staleBuildRecovering = true;
+  const attempt = async () => {
+    const front = await fetchFrontEntry();
+    if (!front.ok) {
+      window.setTimeout(attempt, POLL_MAINTENANCE_MS);
+      return;
+    }
+    try {
+      sessionStorage.setItem(STALE_RELOAD_KEY, String(Date.now()));
+    } catch {
+      // sem sessionStorage não há proteção contra loop; o cooldown do próximo erro não se aplica
+    }
+    reloadPreservingState();
+  };
+  void attempt();
+  return true;
+};
+
+export function MaintenanceScreen() {
+  return (
+    <div
+      className="fixed inset-0 z-[2147483000] flex items-center justify-center bg-[#F5F6F8] px-6"
+      role="alertdialog"
+      aria-live="assertive"
+      aria-label="Sistema em atualização"
+    >
+      <div className="max-w-md text-center">
+        <Settings
+          className="mx-auto mb-10 h-10 w-10 text-[#1A73E8] animate-[spin_6s_linear_infinite]"
+          strokeWidth={2.2}
+        />
+        <h1 className="text-[28px] font-bold leading-tight text-[#1F2328]">
+          Estamos preparando algumas melhorias!
+        </h1>
+        <p className="mt-4 text-[15px] leading-relaxed text-[#57606A]">
+          Nosso sistema está recebendo uma atualização para ficar ainda melhor para você. Voltaremos em instantes.
+        </p>
+        <p className="mt-8 text-xs text-[#8C959F]">
+          Esta página será recarregada automaticamente.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function MaintenanceGate() {
   const [active, setActive] = useState(false);
   const activeRef = useRef(false);
   const failuresRef = useRef(0);
   const checkingRef = useRef(false);
   const timerRef = useRef(null);
+  const sameBuildSinceRef = useRef(null);
 
   const enter = useCallback(() => {
+    if (!activeRef.current) sameBuildSinceRef.current = null;
     activeRef.current = true;
     setActive(true);
+  }, []);
+
+  // Só recarrega quando o frontend responde (evita cair no "Bad Gateway" do proxy) e, se possível,
+  // já com o build novo, para o atendente voltar com as correções aplicadas.
+  const resumeWhenFrontReady = useCallback(async () => {
+    const front = await fetchFrontEntry();
+    if (!front.ok) return;
+    const loaded = loadedEntryScript();
+    const isNewBuild = !loaded || !front.entry || front.entry !== loaded;
+    if (!isNewBuild) {
+      if (!sameBuildSinceRef.current) sameBuildSinceRef.current = Date.now();
+      if (Date.now() - sameBuildSinceRef.current < SAME_BUILD_GRACE_MS) return;
+    }
+    reloadPreservingState();
   }, []);
 
   const check = useCallback(async () => {
@@ -40,7 +178,7 @@ export default function MaintenanceGate() {
       if (res.data?.maintenance?.active) {
         enter();
       } else if (activeRef.current) {
-        window.location.reload();
+        await resumeWhenFrontReady();
       }
     } catch (error) {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
@@ -50,7 +188,7 @@ export default function MaintenanceGate() {
     } finally {
       checkingRef.current = false;
     }
-  }, [enter]);
+  }, [enter, resumeWhenFrontReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,37 +218,20 @@ export default function MaintenanceGate() {
       }
     );
 
+    const onPreloadError = () => {
+      if (recoverFromStaleBuild()) enter();
+    };
+    window.addEventListener('vite:preloadError', onPreloadError);
+
     return () => {
       cancelled = true;
       window.clearTimeout(timerRef.current);
       axios.interceptors.response.eject(interceptor);
+      window.removeEventListener('vite:preloadError', onPreloadError);
     };
-  }, [check]);
+  }, [check, enter]);
 
   if (!active) return null;
 
-  return (
-    <div
-      className="fixed inset-0 z-[2147483000] flex items-center justify-center bg-[#F5F6F8] px-6"
-      role="alertdialog"
-      aria-live="assertive"
-      aria-label="Sistema em atualização"
-    >
-      <div className="max-w-md text-center">
-        <Settings
-          className="mx-auto mb-10 h-10 w-10 text-[#1A73E8] animate-[spin_6s_linear_infinite]"
-          strokeWidth={2.2}
-        />
-        <h1 className="text-[28px] font-bold leading-tight text-[#1F2328]">
-          Estamos preparando algumas melhorias!
-        </h1>
-        <p className="mt-4 text-[15px] leading-relaxed text-[#57606A]">
-          Nosso sistema está recebendo uma atualização para ficar ainda melhor para você. Voltaremos em instantes.
-        </p>
-        <p className="mt-8 text-xs text-[#8C959F]">
-          Esta página será recarregada automaticamente.
-        </p>
-      </div>
-    </div>
-  );
+  return <MaintenanceScreen />;
 }

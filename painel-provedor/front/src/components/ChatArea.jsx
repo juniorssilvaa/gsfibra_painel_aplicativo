@@ -41,6 +41,7 @@ import CustomAudioPlayer from './ui/CustomAudioPlayer';
 import FilePreview from './FilePreview';
 import { formatWhatsAppPreviewHtml } from './InvoiceCardMessagePreview';
 import { buildMediaUrl, openMediaInNewTab } from '../config/environment';
+import { BEFORE_UPDATE_RELOAD_EVENT, RESUME_DRAFT_KEY, consumeResumeDraft } from './MaintenanceGate';
 import { buildAuthenticatedWebSocketUrl } from '../utils/websocketUrl';
 import { useTheme } from '../hooks/useTheme';
 import {
@@ -182,6 +183,26 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
 
   // HOOKS DEVEM VIR ANTES DE QUALQUER RETURN CONDICIONAL (Regra dos Hooks)
   const [message, setMessage] = useState('');
+  const draftRef = useRef('');
+  draftRef.current = message;
+  useEffect(() => {
+    const draft = consumeResumeDraft(conversation?.id);
+    if (draft) setMessage(draft);
+    const saveDraft = () => {
+      if (!conversation?.id || !draftRef.current.trim()) return;
+      try {
+        sessionStorage.setItem(RESUME_DRAFT_KEY, JSON.stringify({
+          ts: Date.now(),
+          conversationId: conversation.id,
+          text: draftRef.current,
+        }));
+      } catch {
+        // sessionStorage indisponível: segue sem o rascunho
+      }
+    };
+    window.addEventListener(BEFORE_UPDATE_RELOAD_EVENT, saveDraft);
+    return () => window.removeEventListener(BEFORE_UPDATE_RELOAD_EVENT, saveDraft);
+  }, [conversation?.id]);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);

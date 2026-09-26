@@ -12,18 +12,21 @@ import { AppToaster } from './lib/notify';
 import MaintenanceGate from './components/MaintenanceGate';
 
 createRoot(document.getElementById("root")).render(
-  <ErrorBoundary>
-    <Router>
-      <AuthProvider>
-        <LanguageProvider>
-          <NotificationProvider>
-            <App />
-            <ReminderAlert />
-            <AppToaster />
-            <MaintenanceGate />
-          </NotificationProvider>
-        </LanguageProvider>
-      </AuthProvider>
-    </Router>
-  </ErrorBoundary>
+  <>
+    <ErrorBoundary>
+      <Router>
+        <AuthProvider>
+          <LanguageProvider>
+            <NotificationProvider>
+              <App />
+              <ReminderAlert />
+              <AppToaster />
+            </NotificationProvider>
+          </LanguageProvider>
+        </AuthProvider>
+      </Router>
+    </ErrorBoundary>
+    {/* Fora do ErrorBoundary: continua exibindo a manutenção e recarregando mesmo se o app quebrar */}
+    <MaintenanceGate />
+  </>
 );

@@ -325,6 +325,15 @@ services:
     networks:
       - internal
       - nethub
+    # Com start-first, o Swarm só derruba o frontend antigo quando o novo fica healthy.
+    # O intervalo cobre o refresh do Traefik (15s): sem ele o Traefik ainda roteia para o
+    # task antigo já parado e devolve "Bad Gateway".
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8012/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     deploy:
       resources:
         limits:
