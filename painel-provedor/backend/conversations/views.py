@@ -139,66 +139,65 @@ def log_conversation_closure(request, conversation, action_type, resolution_type
         except Exception as _sup_err:
             pass
         
-        # Enviar dados da conversa para Supabase
-        try:
-            from core.supabase_service import supabase_service
-            supabase_service.save_conversation(
-                provedor_id=conversation.inbox.provedor_id,
-                conversation_id=conversation.id,
-                contact_id=conversation.contact_id,
-                inbox_id=conversation.inbox_id,
-                status=conversation.status,
-                assignee_id=conversation.assignee_id,
-                created_at_iso=conversation.created_at.isoformat(),
-                updated_at_iso=conversation.updated_at.isoformat(),
-                ended_at_iso=conversation.updated_at.isoformat(),
-                additional_attributes=conversation.additional_attributes
-            )
-        except Exception as _conv_err:
-            pass
-        
-        # Enviar dados do contato para Supabase
-        try:
-            contact = conversation.contact
-            supabase_service.save_contact(
-                provedor_id=conversation.inbox.provedor_id,
-                contact_id=contact.id,
-                name=contact.name,
-                phone=getattr(contact, 'phone', None),
-                email=getattr(contact, 'email', None),
-                avatar=getattr(contact, 'avatar', None),
-                created_at_iso=contact.created_at.isoformat(),
-                updated_at_iso=contact.updated_at.isoformat(),
-                additional_attributes=contact.additional_attributes
-            )
-        except Exception as _contact_err:
-            pass
-        
-        # Enviar todas as mensagens da conversa para Supabase
-        try:
-            # from conversations.models import Message
-            messages = Message.objects.filter(conversation=conversation).order_by('created_at')
-            messages_sent = 0
-            
-            for msg in messages:
-                success = supabase_service.save_message(
+        # Conversa, contato e mensagens vão ao Supabase só na migração (rotina noturna quando adiada);
+        # enviar aqui duplicaria a contagem local + Supabase nos dashboards.
+        from core.chat_migration_service import defer_closed_migration
+        if not defer_closed_migration():
+            # Enviar dados da conversa para Supabase
+            try:
+                from core.supabase_service import supabase_service
+                supabase_service.save_conversation(
                     provedor_id=conversation.inbox.provedor_id,
                     conversation_id=conversation.id,
-                    contact_id=contact.id,
-                    content=msg.content,
-                    message_type=msg.message_type,
-                    is_from_customer=msg.is_from_customer,
-                    external_id=msg.external_id,
-                    file_url=msg.file_url,
-                    file_name=getattr(msg, 'file_name', None),
-                    file_size=getattr(msg, 'file_size', None),
-                    additional_attributes=msg.additional_attributes,
-                    created_at_iso=msg.created_at.isoformat()
+                    contact_id=conversation.contact_id,
+                    inbox_id=conversation.inbox_id,
+                    status=conversation.status,
+                    assignee_id=conversation.assignee_id,
+                    created_at_iso=conversation.created_at.isoformat(),
+                    updated_at_iso=conversation.updated_at.isoformat(),
+                    ended_at_iso=conversation.updated_at.isoformat(),
+                    additional_attributes=conversation.additional_attributes
                 )
-                if success:
-                    messages_sent += 1
-        except Exception as _msg_err:
-            pass
+            except Exception as _conv_err:
+                pass
+
+            # Enviar dados do contato para Supabase
+            try:
+                contact = conversation.contact
+                supabase_service.save_contact(
+                    provedor_id=conversation.inbox.provedor_id,
+                    contact_id=contact.id,
+                    name=contact.name,
+                    phone=getattr(contact, 'phone', None),
+                    email=getattr(contact, 'email', None),
+                    avatar=getattr(contact, 'avatar', None),
+                    created_at_iso=contact.created_at.isoformat(),
+                    updated_at_iso=contact.updated_at.isoformat(),
+                    additional_attributes=contact.additional_attributes
+                )
+            except Exception as _contact_err:
+                pass
+
+            # Enviar todas as mensagens da conversa para Supabase
+            try:
+                messages = Message.objects.filter(conversation=conversation).order_by('created_at')
+                for msg in messages:
+                    supabase_service.save_message(
+                        provedor_id=conversation.inbox.provedor_id,
+                        conversation_id=conversation.id,
+                        contact_id=contact.id,
+                        content=msg.content,
+                        message_type=msg.message_type,
+                        is_from_customer=msg.is_from_customer,
+                        external_id=msg.external_id,
+                        file_url=msg.file_url,
+                        file_name=getattr(msg, 'file_name', None),
+                        file_size=getattr(msg, 'file_size', None),
+                        additional_attributes=msg.additional_attributes,
+                        created_at_iso=msg.created_at.isoformat()
+                    )
+            except Exception as _msg_err:
+                pass
         
         # Agendar solicitação de CSAT para 2 minutos após encerramento
         try:
@@ -987,10 +986,24 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
             logger.info(f"[RETRIEVE] Conversa {conversation_id} - is_24h_window_open={is_24h_window_open}, last_user_message_at={conversation.last_user_message_at}")
 
             from core.media_signing import sign_media_url
-            
+            from conversations.inbound_routing import CLOSED_STATUSES, conversation_ended_at
+
+            ended_at = None
+            csat_data = None
+            if conversation.status in CLOSED_STATUSES:
+                ended_at = conversation_ended_at(conversation)
+                feedback = CSATFeedback.objects.filter(conversation=conversation).order_by('-feedback_sent_at').first()
+                if feedback:
+                    csat_data = {
+                        'rating_value': feedback.rating_value,
+                        'feedback_sent_at': feedback.feedback_sent_at.isoformat() if feedback.feedback_sent_at else None,
+                    }
+
             result = {
                 'id': conversation.id,
                 'status': conversation.status,
+                'ended_at': ended_at,
+                'csat': csat_data,
                 'waiting_for_agent': conversation.waiting_for_agent,
                 'panel_waiting_content_hidden': waiting_queue_content_redacted_for_agent(request, conversation),
                 'created_at': conversation.created_at.isoformat() if conversation.created_at else None,
@@ -1746,16 +1759,27 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                 logger.info(f"[START_WITH_TEMPLATE] Usando conversa existente: {conversation.id}")
             except Conversation.DoesNotExist:
                 logger.warning(f"[START_WITH_TEMPLATE] Conversa {conversation_id} não encontrada, criando nova")
-        
+
+        from core.chat_migration_service import defer_closed_migration
+        from conversations.inbound_routing import CLOSED_STATUSES
+        deferred = defer_closed_migration()
+        if conversation and deferred and conversation.status in CLOSED_STATUSES:
+            logger.info(f"[START_WITH_TEMPLATE] Conversa {conversation.id} encerrada: abrindo novo atendimento")
+            conversation = None
+
         if not conversation:
-            conversation, conversation_created = Conversation.objects.get_or_create(
-                contact=contact,
-                inbox=inbox,
-                defaults={
-                    'status': 'open',
-                    'assignee': request.user,
-                }
-            )
+            existing_qs = Conversation.objects.filter(contact=contact, inbox=inbox)
+            if deferred:
+                existing_qs = existing_qs.exclude(status__in=CLOSED_STATUSES)
+            conversation = existing_qs.order_by('-id').first()
+            conversation_created = conversation is None
+            if conversation_created:
+                conversation = Conversation.objects.create(
+                    contact=contact,
+                    inbox=inbox,
+                    status='open',
+                    assignee=request.user,
+                )
             if conversation_created:
                 logger.info(f"[START_WITH_TEMPLATE] Nova conversa criada e atribuída a {request.user.username}: {conversation.id}")
                 conversation.mark_assigned_at()

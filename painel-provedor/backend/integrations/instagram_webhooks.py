@@ -178,7 +178,8 @@ def _get_or_create_contact_conversation(sender_id, provedor, inbox, ia_team, can
             sender_id,
         )
 
-    conversation = Conversation.objects.filter(contact=contact, inbox=inbox).first()
+    from conversations.inbound_routing import find_inbound_conversation
+    conversation = find_inbound_conversation(contact, inbox)
     if not conversation:
         conversation = Conversation.objects.create(
             contact=contact,
@@ -207,10 +208,12 @@ def _process_instagram_reaction_event(event, ig_account_id, canal, provedor, inb
     if not mid:
         return
 
-    contact, conversation = _get_or_create_contact_conversation(
-        sender_id, provedor, inbox, None, canal
-    )
-    target = Message.objects.filter(external_id=str(mid), conversation=conversation).first()
+    contact = Contact.objects.filter(phone=str(sender_id)[:20], provedor=provedor).first()
+    target = None
+    if contact:
+        target = Message.objects.filter(
+            external_id=str(mid), conversation__contact=contact, conversation__inbox=inbox
+        ).order_by('-id').first()
     if not target:
         logger.info('[InstagramWebhook] Reação em mensagem não encontrada mid=%s', mid)
         return
@@ -230,7 +233,7 @@ def _process_instagram_reaction_event(event, ig_account_id, canal, provedor, inb
             }
         },
     )
-    logger.info('[InstagramWebhook] Reação recebida conversa=%s emoji=%s', conversation.id, emoji)
+    logger.info('[InstagramWebhook] Reação recebida conversa=%s emoji=%s', target.conversation_id, emoji)
 
 
 def _parse_attachments(attachments, conversation_id, mid):
@@ -327,14 +330,14 @@ def _maybe_process_csat(conversation, contact, content: str, button_id=None) -> 
             csat_feedback.rating_value,
             csat_feedback.emoji_rating,
         )
-        if conversation.status != 'closed':
+        if csat_feedback.conversation_id == conversation.id and conversation.status != 'closed':
             conversation.status = 'closed'
             conversation.save(update_fields=['status'])
 
         try:
             from core.chat_migration_service import chat_migration_service
             migration_result = chat_migration_service.encerrar_e_migrar(
-                conversation_id=conversation.id,
+                conversation_id=csat_feedback.conversation_id,
                 metadata={
                     'migrado_apos_csat': True,
                     'csat_feedback_id': csat_feedback.id,

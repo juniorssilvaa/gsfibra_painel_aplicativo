@@ -4,7 +4,9 @@ Tarefas periódicas leves no mesmo processo do ASGI (Daphne).
 Dispara a cada ~60s:
 - encerramento de conversas em "closing" (mesma lógica do actor Dramatiq);
 - ciclo de cobrança superadmin (mesma lógica do actor Dramatiq);
-- bloqueio automático de provedores por fatura Asaas (cerca de a cada 10 minutos).
+- bloqueio automático de provedores por fatura Asaas (cerca de a cada 10 minutos);
+- análise de aprendizado da IA das encerradas do dia (a cada 10 minutos);
+- rotina noturna: encerradas de dias anteriores vão ao Supabase (core.nightly_migration).
 
 Assim o backend sozinho já agenda cobrança e fechamentos, sem depender de
 RUN_HEARTBEAT nem de processo dramatiq separado (útil em dev e instalações simples).
@@ -29,6 +31,8 @@ _last_asaas_block_check = 0.0
 _ASAAS_BLOCK_CHECK_INTERVAL_SECONDS = 600  # valida bloqueio automático a cada 10 minutos
 _last_version_report = 0.0
 _VERSION_REPORT_INTERVAL_SECONDS = 300
+_last_ai_learning_scan = 0.0
+_AI_LEARNING_SCAN_INTERVAL_SECONDS = 600
 
 
 def _sleep_until_next_minute() -> None:
@@ -43,7 +47,7 @@ def _sleep_until_next_minute() -> None:
 
 
 def _periodic_loop() -> None:
-    global _last_asaas_block_check, _last_version_report
+    global _last_asaas_block_check, _last_version_report, _last_ai_learning_scan
 
     time.sleep(25)
     while True:
@@ -84,6 +88,30 @@ def _periodic_loop() -> None:
             run_chatbot_inactivity_scan()
         except Exception:
             logger.exception("[ASGI periodic] erro em chatbot inactivity scan")
+
+        try:
+            now_m = time.monotonic()
+            if now_m - _last_ai_learning_scan >= _AI_LEARNING_SCAN_INTERVAL_SECONDS:
+                _last_ai_learning_scan = now_m
+                from conversations.ai_learning import analyze_pending_closed
+
+                analyzed = analyze_pending_closed()
+                if analyzed:
+                    logger.info("[ASGI periodic] aprendizado da IA: %s atendimento(s) analisado(s)", analyzed)
+
+                from ai.learnings import start_pending_suggestions
+
+                start_pending_suggestions()
+        except Exception:
+            logger.exception("[ASGI periodic] erro na análise de aprendizado da IA")
+
+        try:
+            from core.nightly_migration import maybe_start_nightly_migration
+
+            if maybe_start_nightly_migration():
+                logger.info("[ASGI periodic] rotina noturna de migração iniciada")
+        except Exception:
+            logger.exception("[ASGI periodic] erro ao iniciar rotina noturna de migração")
 
         try:
             now_m = time.monotonic()

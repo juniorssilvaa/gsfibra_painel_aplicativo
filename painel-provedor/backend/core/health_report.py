@@ -89,15 +89,22 @@ def _channels():
 
 def _conversations():
     from conversations.models import Conversation, Message
+    from core.chat_migration_service import defer_closed_migration
+    from core.nightly_migration import closed_before, pending_migration_cutoff
+
     active = Conversation.objects.exclude(status='closed')
-    pending_cutoff = timezone.now() - timedelta(minutes=PENDING_MIGRATION_AFTER_MINUTES)
+    if defer_closed_migration():
+        pending_migration = closed_before(pending_migration_cutoff()).count()
+    else:
+        pending_cutoff = timezone.now() - timedelta(minutes=PENDING_MIGRATION_AFTER_MINUTES)
+        pending_migration = Conversation.objects.filter(status='closed', updated_at__lt=pending_cutoff).count()
     last_inbound = (
         Message.objects.filter(is_from_customer=True).order_by('-created_at').values_list('created_at', flat=True).first()
     )
     return {
         'open': active.count(),
         'waiting_agent': active.filter(waiting_for_agent=True, assignee__isnull=True).count(),
-        'pending_migration': Conversation.objects.filter(status='closed', updated_at__lt=pending_cutoff).count(),
+        'pending_migration': pending_migration,
         'last_inbound_at': _iso(last_inbound),
     }
 

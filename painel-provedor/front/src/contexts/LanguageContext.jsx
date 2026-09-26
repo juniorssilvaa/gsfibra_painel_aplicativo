@@ -86,7 +86,7 @@ const translations = {
     'users': 'Usuários',
     'teams': 'Equipes',
     'audit': 'Auditoria',
-    'recovery': 'Recuperador de conversas',
+    'recovery': 'Desempenho da IA',
     'suggestions': 'Sugestões',
     'session': 'session',
 
@@ -227,7 +227,7 @@ const translations = {
     'users': 'Users',
     'teams': 'Teams',
     'audit': 'Audit',
-    'recovery': 'Conversation Recovery',
+    'recovery': 'AI Performance',
     'suggestions': 'Suggestions',
     'session': 'session',
     'chatbot_builder': 'Chatbot',
@@ -306,7 +306,7 @@ const translations = {
     'users': 'Usuarios',
     'teams': 'Equipos',
     'audit': 'Auditoría',
-    'recovery': 'Recuperador de conversaciones',
+    'recovery': 'Desempeño de la IA',
     'suggestions': 'Sugerencias',
     'session': 'session',
 
@@ -449,7 +449,7 @@ const translations = {
     'users': 'Utilisateurs',
     'teams': 'Équipes',
     'audit': 'Audit',
-    'recovery': 'Récupération de conversations',
+    'recovery': "Performance de l'IA",
     'suggestions': 'Suggestions',
     'session': 'session',
 
@@ -592,7 +592,7 @@ const translations = {
     'users': 'Benutzer',
     'teams': 'Teams',
     'audit': 'Audit',
-    'recovery': 'Konversationswiederherstellung',
+    'recovery': 'KI-Leistung',
     'suggestions': 'Vorschläge',
     'session': 'session',
 
@@ -735,7 +735,7 @@ const translations = {
     'users': 'Utenti',
     'teams': 'Squadre',
     'audit': 'Audit',
-    'recovery': 'Recupero conversazioni',
+    'recovery': 'Prestazioni IA',
     'suggestions': 'Suggerimenti',
     'session': 'session',
 

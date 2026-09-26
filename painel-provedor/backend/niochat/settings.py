@@ -44,11 +44,11 @@ from django.core.exceptions import ImproperlyConfigured
 # BASE
 # ============================================
 
-__version__ = "2.75.1"
-__version_info__ = (2, 75, 1)
+__version__ = "2.76.0"
+__version_info__ = (2, 76, 0)
 
 # Compatibilidade legado
-VERSION = "2.75.1"
+VERSION = "2.76.0"
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Sempre usar config que prioriza variáveis de ambiente sobre arquivo .env
@@ -577,6 +577,16 @@ SUPABASE_MESSAGES_TABLE = config('SUPABASE_MESSAGES_TABLE', default='mensagens')
 SUPABASE_CSAT_TABLE = config('SUPABASE_CSAT_TABLE', default='csat_feedback')
 SUPABASE_CONTACTS_TABLE = config('SUPABASE_CONTACTS_TABLE', default='contacts')
 SUPABASE_CONVERSATIONS_TABLE = config('SUPABASE_CONVERSATIONS_TABLE', default='conversations')
+
+# Conversas encerradas ficam no banco local até a rotina noturna (00:00) migrar ao Supabase.
+# False volta ao comportamento antigo (migra e remove do local logo ao encerrar).
+DEFER_CLOSED_MIGRATION = config('DEFER_CLOSED_MIGRATION', default=True, cast=bool)
+
+# Aprendizado da IA: sugestões geradas pelo LLM do provedor (usa a chave de IA dele).
+# O limite é de atendimentos analisados por provedor por dia.
+AI_LEARNING_SUGGESTIONS_ENABLED = config('AI_LEARNING_SUGGESTIONS_ENABLED', default=True, cast=bool)
+AI_LEARNING_DAILY_LIMIT = config('AI_LEARNING_DAILY_LIMIT', default=30, cast=int)
+AI_LEARNING_AUTO_APPROVE_SAFE = config('AI_LEARNING_AUTO_APPROVE_SAFE', default=True, cast=bool)
 
 # Desative com SUPABASE_ENABLED=False quando a VPS não tiver acesso ao Supabase.
 # Por padrão é True apenas se SUPABASE_URL estiver configurado.

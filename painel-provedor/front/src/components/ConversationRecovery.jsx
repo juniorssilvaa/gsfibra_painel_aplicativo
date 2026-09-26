@@ -19,7 +19,7 @@ const arcAnimationStyle = `
   }
 `;
 
-const ConversationRecovery = ({ provedorId }) => {
+const ConversationRecovery = ({ provedorId, embedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [recoveryStats, setRecoveryStats] = useState({
     totalAttempts: 0,
@@ -150,7 +150,7 @@ const ConversationRecovery = ({ provedorId }) => {
 
   if (loading) {
     return (
-      <div className="p-6">
+      <div className={embedded ? '' : 'p-6'}>
         <div className="flex items-center justify-center h-64">
           <div className="text-muted-foreground">Carregando recuperador...</div>
         </div>
@@ -159,12 +159,16 @@ const ConversationRecovery = ({ provedorId }) => {
   }
 
   return (
-    <div className="p-6">
+    <div className={embedded ? '' : 'p-6'}>
       {/* Adicionar CSS da animação */}
       <style dangerouslySetInnerHTML={{ __html: arcAnimationStyle }} />
       
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Recuperador de conversas</h1>
+      <div className={embedded ? 'mb-6' : 'mb-8'}>
+        {embedded ? (
+          <h2 className="text-xl font-semibold text-foreground mb-1">Recuperador de conversas</h2>
+        ) : (
+          <h1 className="text-3xl font-bold text-foreground mb-2">Recuperador de conversas</h1>
+        )}
         <p className="text-muted-foreground">
           Se um cliente parar de responder, o atendente virtual enviará uma mensagem para tentar recuperar a venda.
         </p>

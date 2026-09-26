@@ -386,10 +386,10 @@ def ingest_inbound_message(
         contact.save(update_fields=list(dict.fromkeys(changed_contact)))
 
     # App mobile: fila humana (Espera). Sem equipe IA / chatbot.
-    conversation = Conversation.objects.select_related('team', 'inbox', 'contact').filter(
-        contact=contact,
-        inbox=inbox,
-    ).first()
+    from conversations.inbound_routing import find_inbound_conversation
+    conversation = find_inbound_conversation(
+        contact, inbox, queryset=Conversation.objects.select_related('team', 'inbox', 'contact')
+    )
     if not conversation:
         conversation = Conversation.objects.create(
             contact=contact,
@@ -616,7 +616,7 @@ class AppMobileMessagesWebhookView(APIView):
                 'messages': [],
             })
 
-        conversation = Conversation.objects.filter(contact=contact, inbox=inbox).first()
+        conversation = Conversation.objects.filter(contact=contact, inbox=inbox).order_by('-id').first()
         if not conversation:
             return Response({
                 'success': True,

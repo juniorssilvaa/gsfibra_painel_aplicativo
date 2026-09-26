@@ -22,6 +22,7 @@ from ai.audit import ToolCallLog, log_llm_decision, log_turn_end, log_turn_start
 from ai.context import build_full_context_blocks
 from ai.definitions.tool_definitions import build_tools_for_provedor
 from ai.executor.tool_executor import ToolExecutor
+from ai.learnings import learnings_system_message
 from ai.memory import normalize_phone_number, redis_memory_service
 from ai.prompt_base import build_system_prompt
 from ai.providers.config import (
@@ -272,6 +273,26 @@ class AIService:
                 or chat_messages[-1].get("content") != mensagem
             ):
                 chat_messages.append({"role": "user", "content": mensagem})
+
+            try:
+                learnings_msg = await sync_to_async(learnings_system_message)(provedor.id, mensagem)
+                if not learnings_msg:
+                    previous_user = next(
+                        (
+                            m["content"]
+                            for m in reversed(messages)
+                            if m.get("role") == "user" and m.get("content") != mensagem
+                        ),
+                        "",
+                    )
+                    if previous_user:
+                        learnings_msg = await sync_to_async(learnings_system_message)(
+                            provedor.id, f"{mensagem}\n{previous_user}"
+                        )
+                if learnings_msg:
+                    chat_messages.append({"role": "system", "content": learnings_msg})
+            except Exception:
+                logger.exception("[AI] Falha ao buscar aprendizados do provedor %s", provedor.id)
 
             if intent_atual == "FATURA":
                 agent_mode = self._agent_mode(provedor)

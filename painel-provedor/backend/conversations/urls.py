@@ -41,6 +41,12 @@ from .recovery_views import (
     get_recovery_settings,
     update_recovery_settings
 )
+from .ai_learning_views import (
+    ai_learning_export,
+    ai_learning_item_detail,
+    ai_learning_items,
+    ai_learning_metrics,
+)
 
 
 router = DefaultRouter()
@@ -121,6 +127,10 @@ urlpatterns = [
     path('recovery/campaign/', send_recovery_campaign, name='recovery-campaign'),
     path('recovery/settings/', get_recovery_settings, name='recovery-settings'),
     path('recovery/settings/update/', update_recovery_settings, name='recovery-settings-update'),
+    path('ai-learning/metrics/', ai_learning_metrics, name='ai-learning-metrics'),
+    path('ai-learning/items/', ai_learning_items, name='ai-learning-items'),
+    path('ai-learning/items/<int:pk>/', ai_learning_item_detail, name='ai-learning-item-detail'),
+    path('ai-learning/export/', ai_learning_export, name='ai-learning-export'),
 
 ]
 

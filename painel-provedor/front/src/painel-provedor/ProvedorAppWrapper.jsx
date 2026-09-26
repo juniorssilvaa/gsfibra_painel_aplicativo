@@ -17,7 +17,7 @@ const Settings = lazy(() => import('../components/Settings'));
 const UserManagement = lazy(() => import('../components/UserManagement'));
 const TeamsPage = lazy(() => import('../components/TeamsPage'));
 const ConversationAudit = lazy(() => import('../components/ConversationAudit'));
-const ConversationRecovery = lazy(() => import('../components/ConversationRecovery'));
+const AIPerformancePage = lazy(() => import('../components/AIPerformancePage'));
 const SuggestionsPage = lazy(() => import('../components/SuggestionsPage'));
 const CompanyManagement = lazy(() => import('../components/CompanyManagement'));
 const CSATDashboard = lazy(() => import('../components/CSATDashboard'));
@@ -204,7 +204,7 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
                 <Route path="users" element={<UserManagement provedorId={resolvedProvedorId} />} />
                 <Route path="equipes" element={<TeamsPage />} />
                 <Route path="audit" element={<ConversationAudit provedorId={resolvedProvedorId} />} />
-                <Route path="recovery" element={<ConversationRecovery provedorId={resolvedProvedorId} />} />
+                <Route path="recovery" element={<AIPerformancePage provedorId={resolvedProvedorId} />} />
                 <Route path="suggestions" element={<SuggestionsPage provedorId={resolvedProvedorId} />} />
                 <Route path="companies" element={<CompanyManagement provedorId={resolvedProvedorId} />} />
                 <Route path="csat" element={<CSATHome provedorId={resolvedProvedorId} />} />

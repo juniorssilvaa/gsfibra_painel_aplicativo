@@ -544,11 +544,10 @@ def persist_inbound_template_send(
         },
     )
 
-    conversation, _ = Conversation.objects.get_or_create(
-        contact=contact,
-        inbox=inbox,
-        defaults={'status': 'closed'},
-    )
+    from conversations.inbound_routing import find_inbound_conversation
+    conversation = find_inbound_conversation(contact, inbox)
+    if conversation is None:
+        conversation = Conversation.objects.create(contact=contact, inbox=inbox, status='closed')
 
     body_tpl = _body_text_from_template(template_def) if template_def else ''
     if is_template:

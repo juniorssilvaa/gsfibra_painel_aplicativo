@@ -1,6 +1,20 @@
 {
-  "current_version": "2.75.1",
+  "current_version": "2.76.0",
   "versions": [
+    {
+      "version": "2.76.0",
+      "version_type": "minor",
+      "date": "2026-09-26",
+      "title": "Módulo de aprendizagem do Agente de IA (Beta)",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Agente de IA / Aprendizagem",
+          "title": "Agente de IA agora aprende sozinho (Beta)",
+          "description": "O Agente de IA agora conta com um módulo de aprendizagem próprio: conforme a IA atende os clientes e os atendentes humanos assumem ou complementam os atendimentos, ela aprende com essas conversas e passa a resolver sozinha casos parecidos. Aprendizados simples entram em uso automaticamente, e os que envolvem valores, descontos, prazos, promessas ou dados de pagamento aguardam a aprovação do administrador. Tudo pode ser acompanhado, editado, desativado ou exportado em Desempenho da IA > Aprendizado da IA. Esta versão é beta."
+        }
+      ]
+    },
     {
       "version": "2.75.1",
       "version_type": "patch",

@@ -261,7 +261,8 @@ def resolve_inbound_csat_gate(
                 button_id=button_id,
             )
             result['csat_feedback'] = feedback
-            if feedback and conversation.status != 'closed':
+            # A nota pode ser de um atendimento anterior do contato: não encerrar a conversa ativa
+            if feedback and feedback.conversation_id == conversation.id and conversation.status != 'closed':
                 conversation.status = 'closed'
                 conversation.save(update_fields=['status'])
         except Exception:
@@ -282,6 +283,48 @@ def resolve_inbound_csat_gate(
         allow_closing_reopen=allow_closing_reopen,
     )
     return result
+
+
+def conversation_ended_at(conversation):
+    """Horário do encerramento (ISO): closed_at gravado pelo signal ou updated_at para encerradas antigas."""
+    attrs = conversation.additional_attributes if isinstance(conversation.additional_attributes, dict) else {}
+    if attrs.get('closed_at'):
+        return attrs['closed_at']
+    return conversation.updated_at.isoformat() if conversation.updated_at else None
+
+
+def reusable_closed_conversation(conversation):
+    """
+    A última conversa encerrada ainda deve receber o inbound do cliente? (None = abrir atendimento novo)
+
+    Com DEFER_CLOSED_MIGRATION as encerradas ficam no banco local até a rotina noturna; reaproveitá-las
+    misturaria atendimentos (histórico, auditoria e CSAT). Só é reaproveitada se ainda houver CSAT
+    aguardando resposta (o gate de CSAT decide) ou se o cliente nunca escreveu nela (disparo/template),
+    para a resposta ficar junto do que foi enviado.
+    """
+    from core.chat_migration_service import defer_closed_migration
+
+    if conversation is None or not defer_closed_migration():
+        return conversation
+    if has_blocking_csat(conversation):
+        return conversation
+    if not conversation.messages.filter(is_from_customer=True).exists():
+        return conversation
+    return None
+
+
+def find_inbound_conversation(contact, inbox, queryset=None):
+    """Conversa que recebe a mensagem inbound do contato neste inbox (None = criar nova)."""
+    from conversations.models import Conversation
+    from core.chat_migration_service import defer_closed_migration
+
+    qs = (queryset if queryset is not None else Conversation.objects.all()).filter(contact=contact, inbox=inbox)
+    if not defer_closed_migration():
+        return qs.first()
+    active = qs.exclude(status__in=CLOSED_STATUSES).order_by('-id').first()
+    if active:
+        return active
+    return reusable_closed_conversation(qs.filter(status__in=CLOSED_STATUSES).order_by('-id').first())
 
 
 def reopen_conversation_for_bot(

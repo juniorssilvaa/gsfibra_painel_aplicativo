@@ -234,6 +234,37 @@ def stamp_agent_chat_visible_from_on_return_to_bot(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender=Conversation)
+def stamp_closed_at(sender, instance, **kwargs):
+    """
+    Grava additional_attributes.closed_at quando a conversa passa a encerrada (removido ao reabrir).
+    As encerradas esperam a rotina noturna e updated_at muda nesse meio tempo; closed_at é o
+    horário real usado como ended_at na migração e na auditoria. Via update() para não re-disparar signals
+    e porque muitos encerramentos salvam com update_fields=['status'].
+    """
+    from conversations.inbound_routing import CLOSED_STATUSES
+
+    attrs = instance.additional_attributes if isinstance(instance.additional_attributes, dict) else {}
+    is_closed = instance.status in CLOSED_STATUSES
+    if is_closed == bool(attrs.get('closed_at')):
+        return
+    try:
+        db_attrs = Conversation.objects.filter(pk=instance.pk).values_list('additional_attributes', flat=True).first()
+        db_attrs = dict(db_attrs) if isinstance(db_attrs, dict) else {}
+        if is_closed:
+            if not db_attrs.get('closed_at'):
+                from django.utils import timezone as dj_tz
+                db_attrs['closed_at'] = dj_tz.now().isoformat()
+                Conversation.objects.filter(pk=instance.pk).update(additional_attributes=db_attrs)
+            instance.additional_attributes = {**attrs, 'closed_at': db_attrs['closed_at']}
+        else:
+            if db_attrs.pop('closed_at', None):
+                Conversation.objects.filter(pk=instance.pk).update(additional_attributes=db_attrs)
+            instance.additional_attributes = {k: v for k, v in attrs.items() if k != 'closed_at'}
+    except Exception as e:
+        logger.warning(f"Erro ao marcar closed_at da conversa {instance.pk}: {e}")
+
+
+@receiver(post_save, sender=Conversation)
 def notify_conversation_change(sender, instance, created, **kwargs):
     """
     Notifica mudanças de conversa via WebSocket

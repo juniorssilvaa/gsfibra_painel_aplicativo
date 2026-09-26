@@ -12,7 +12,7 @@ import {
   UserCog, // Ícone para Equipes
   Notebook, // Ícone para Contatos
   Headphones, // Ícone para Atendimento
-  RefreshCw, // Ícone para Recuperador
+  Brain, // Ícone para Desempenho da IA
   Lightbulb, // Ícone para Sugestões
   Smile, // Ícone para CSAT
   PlugZap, // Ícone para Integrações
@@ -140,7 +140,7 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
       { id: 'regras-atendimento', icon: SlidersHorizontal, label: t('regras_atendimento'), path: `/app/accounts/${resolvedProvedorId}/regras-atendimento` },
       { id: 'integracoes', icon: PlugZap, label: t('integracoes'), path: `/app/accounts/${resolvedProvedorId}/integracoes` },
       { id: 'dados-provedor', icon: Settings, label: t('dados_provedor'), path: `/app/accounts/${resolvedProvedorId}/dados-provedor` },
-      { id: 'recovery', icon: RefreshCw, label: t('recovery'), path: `/app/accounts/${resolvedProvedorId}/recovery` },
+      { id: 'recovery', icon: Brain, label: t('recovery'), path: `/app/accounts/${resolvedProvedorId}/recovery` },
       { id: 'suggestions', icon: Lightbulb, label: t('suggestions'), path: `/app/accounts/${resolvedProvedorId}/suggestions` },
       { id: 'perfil', icon: User, label: t('perfil'), path: `/app/accounts/${resolvedProvedorId}/perfil` },
     ];

@@ -771,3 +771,92 @@ class CSATRequest(models.Model):
         
     def __str__(self):
         return f"CSAT Request - {self.contact} - {self.status} - {self.conversation_ended_at.strftime('%d/%m/%Y %H:%M')}"
+
+
+class AILearningAnalysis(models.Model):
+    """
+    Sinais de aprendizado de um atendimento encerrado (só banco local, nunca vai ao Supabase).
+    conversation_id sem FK: a conversa sai do local na rotina noturna e a análise continua.
+    """
+    OUTCOME_CHOICES = [
+        ('ai_resolved', 'Resolvido pela IA'),
+        ('ai_transferred', 'IA transferiu para humano'),
+        ('agent_took_over', 'Atendente assumiu da IA'),
+        ('chatbot', 'Chatbot'),
+        ('human_only', 'Somente atendente'),
+        ('no_reply', 'Sem resposta'),
+    ]
+
+    provedor = models.ForeignKey(Provedor, on_delete=models.CASCADE, related_name='ai_learning_analyses')
+    conversation_id = models.BigIntegerField()
+    contact_id = models.BigIntegerField(null=True, blank=True)
+    channel_type = models.CharField(max_length=30, blank=True, default='')
+    conversation_started_at = models.DateTimeField(null=True, blank=True)
+    conversation_closed_at = models.DateTimeField(null=True, blank=True)
+    customer_messages = models.PositiveIntegerField(default=0)
+    ai_messages = models.PositiveIntegerField(default=0)
+    chatbot_messages = models.PositiveIntegerField(default=0)
+    agent_messages = models.PositiveIntegerField(default=0)
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES)
+    transfer_reason = models.TextField(blank=True, default='')
+    # Transferência ou atendente assumindo: material para a etapa de sugestões de aprendizado
+    learning_candidate = models.BooleanField(default=False)
+    # pending | done | skipped (nada reaproveitável) | failed
+    suggestion_status = models.CharField(max_length=10, default='pending')
+    suggestion_attempted_at = models.DateTimeField(null=True, blank=True)
+    analyzed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ai_learning_analyses'
+        constraints = [
+            models.UniqueConstraint(fields=['provedor', 'conversation_id'], name='ai_learning_unique_conversation'),
+        ]
+        indexes = [
+            models.Index(fields=['provedor', 'conversation_closed_at'], name='ai_learning_prov_closed_idx'),
+        ]
+
+    def __str__(self):
+        return f"AILearningAnalysis conv={self.conversation_id} {self.outcome}"
+
+
+class AILearning(models.Model):
+    """
+    Aprendizado da IA de um provedor (base de conhecimento consultada por busca, fora do prompt base).
+    Só os aprovados chegam à IA, e apenas os relevantes para a mensagem do cliente.
+    Sugestões de baixo risco são aprovadas automaticamente; as sensíveis guardam em
+    review_reason o motivo de aguardarem o admin.
+    """
+    STATUS_CHOICES = [
+        ('suggested', 'Sugerido'),
+        ('approved', 'Aprovado'),
+        ('disabled', 'Desativado'),
+        ('rejected', 'Rejeitado'),
+    ]
+    SOURCE_CHOICES = [
+        ('llm', 'Sugerido pela IA'),
+        ('manual', 'Cadastrado pelo provedor'),
+    ]
+
+    provedor = models.ForeignKey(Provedor, on_delete=models.CASCADE, related_name='ai_learnings')
+    situation = models.CharField(max_length=300)
+    answer = models.TextField()
+    keywords = models.CharField(max_length=500, blank=True, default='')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='suggested')
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='llm')
+    source_conversation_ids = models.JSONField(default=list, blank=True)
+    review_reason = models.CharField(max_length=200, blank=True, default='')
+    times_used = models.PositiveIntegerField(default=0)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ai_learnings'
+        indexes = [
+            models.Index(fields=['provedor', 'status'], name='ai_learning_prov_status_idx'),
+        ]
+
+    def __str__(self):
+        return f"AILearning {self.id} [{self.status}] {self.situation[:40]}"

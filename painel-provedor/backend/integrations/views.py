@@ -63,7 +63,7 @@ def process_sent_message(data, msg_data, chatid_full, clean_instance, uazapi_url
             return JsonResponse({'status': 'ignored', 'reason': 'contact not found'}, status=200)
         
         # Buscar conversa
-        conversation = Conversation.objects.filter(contact=contact).first()
+        conversation = Conversation.objects.filter(contact=contact).order_by('-id').first()
         if not conversation:
             return JsonResponse({'status': 'ignored', 'reason': 'conversation not found'}, status=200)
         
@@ -1436,12 +1436,15 @@ def webhook_evolution_uazapi(request):
             status__in=['open', 'snoozed', 'pending', 'closing']  # Incluir 'closing' para verificar tolerância
         ).first()
         
-        # Se não encontrou conversa ativa, buscar qualquer conversa (incluindo fechadas)
+        # Se não encontrou conversa ativa, usar a última encerrada (se ainda puder receber o inbound)
         if not existing_conversation:
-            existing_conversation = ConversationModel.objects.filter(
-                contact=contact,
-                inbox__channel_type='whatsapp'
-            ).first()
+            from conversations.inbound_routing import reusable_closed_conversation
+            existing_conversation = reusable_closed_conversation(
+                ConversationModel.objects.filter(
+                    contact=contact,
+                    inbox__channel_type='whatsapp'
+                ).order_by('-id').first()
+            )
         
         if existing_conversation:
             # Verificar se a conversa está ativa

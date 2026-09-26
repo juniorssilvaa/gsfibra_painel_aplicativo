@@ -66,6 +66,33 @@ def conversations_from_messages(supabase_url, headers, provedor_id, conversation
     return result
 
 
+def local_conversations(provedor_id, conversation_ids):
+    """{conversation_id: {...}} das conversas ainda no banco local (encerradas aguardando a rotina noturna)."""
+    result = {}
+    if not conversation_ids:
+        return result
+    try:
+        from conversations.inbound_routing import conversation_ended_at
+        from conversations.models import Conversation
+        qs = Conversation.objects.filter(id__in=list(conversation_ids)).select_related('inbox')
+        if provedor_id:
+            qs = qs.filter(inbox__provedor_id=provedor_id)
+        for c in qs:
+            result[c.id] = {
+                'id': c.id,
+                'contact_id': c.contact_id,
+                'inbox_id': c.inbox_id,
+                'channel_type': c.inbox.channel_type if c.inbox else None,
+                'created_at': c.created_at.isoformat() if c.created_at else None,
+                'updated_at': c.updated_at.isoformat() if c.updated_at else None,
+                'ended_at': conversation_ended_at(c),
+                'additional_attributes': c.additional_attributes or {},
+            }
+    except Exception as exc:
+        logger.warning('[AUDIT] Falha ao buscar conversas locais: %s', exc)
+    return result
+
+
 def resolve_contacts(supabase_url, headers, provedor_id, contact_ids):
     """{contact_id: {id, name, phone, avatar}} — Contact local do provedor, depois Supabase escopado."""
     contact_ids = {int(c) for c in contact_ids if c}

@@ -205,14 +205,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.75.1"
+                "current_version": "2.76.0"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.75.1"
+            "current_version": "2.76.0"
         }, safe=False)
 
 
@@ -270,7 +270,7 @@ def process_sent_message(data, msg_data, chatid_full, clean_instance, uazapi_url
             return JsonResponse({'status': 'ignored', 'reason': 'contact not found'}, status=200)
         
         # Buscar conversa
-        conversation = Conversation.objects.filter(contact=contact).first()
+        conversation = Conversation.objects.filter(contact=contact).order_by('-id').first()
         if not conversation:
             return JsonResponse({'status': 'ignored', 'reason': 'conversation not found'}, status=200)
         
@@ -1631,12 +1631,15 @@ def webhook_evolution_uazapi(request):
             status__in=['open', 'snoozed', 'pending']  # Apenas conversas ativas
         ).first()
         
-        # Se não encontrou conversa ativa, buscar qualquer conversa (incluindo fechadas)
+        # Se não encontrou conversa ativa, usar a última encerrada (se ainda puder receber o inbound)
         if not existing_conversation:
-            existing_conversation = ConversationModel.objects.filter(
-                contact=contact,
-                inbox__channel_type='whatsapp'
-            ).first()
+            from conversations.inbound_routing import reusable_closed_conversation
+            existing_conversation = reusable_closed_conversation(
+                ConversationModel.objects.filter(
+                    contact=contact,
+                    inbox__channel_type='whatsapp'
+                ).order_by('-id').first()
+            )
         
         if existing_conversation:
             # Verificar se a conversa está ativa
@@ -5668,7 +5671,9 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                             pass
                 
                 # Buscar todas as conversas de uma vez (otimização)
-                from core.audit_contacts import conversations_from_messages, resolve_contacts, resolve_closed_by
+                from core.audit_contacts import (
+                    conversations_from_messages, local_conversations, resolve_closed_by, resolve_contacts,
+                )
                 provedor_scope = {'provedor_id': f'eq.{provedor_id}'} if provedor_id else None
                 conversations_data = {}
                 if conversation_ids:
@@ -5678,6 +5683,10 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                     ):
                         conversations_data[conv.get('id')] = conv
 
+                # Encerradas do dia continuam no banco local até a rotina noturna
+                missing_conv_ids = conversation_ids - set(conversations_data)
+                if missing_conv_ids:
+                    conversations_data.update(local_conversations(provedor_id, missing_conv_ids))
                 missing_conv_ids = conversation_ids - set(conversations_data)
                 if missing_conv_ids:
                     conversations_data.update(conversations_from_messages(
@@ -5746,9 +5755,9 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                             elif 'instagram' in details_str.lower():
                                 channel_type = 'instagram'
                         
-                        # 2. Tentar do campo channel_type direto
+                        # 2. Tentar do campo channel_type direto (ou do inbox local)
                         if not channel_type:
-                            channel_type = details.get('channel_type')
+                            channel_type = details.get('channel_type') or (conv_data or {}).get('channel_type')
                     
                     # 3. Padrão se não encontrou
                     if not channel_type:
@@ -5953,6 +5962,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         supabase_url = getattr(settings, 'SUPABASE_URL', '').rstrip('/')
         supabase_key = getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', '') or getattr(settings, 'SUPABASE_ANON_KEY', '')
         if not supabase_url or not supabase_key or not getattr(settings, 'SUPABASE_ENABLED', True):
+            self._apply_local_conversation_metrics(metrics, ids, provedor_id)
             return Response({'metrics': metrics})
 
         headers = {'apikey': supabase_key, 'Authorization': f'Bearer {supabase_key}'}
@@ -5978,7 +5988,30 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             if cid in metrics and metrics[cid]['csat_rating'] is None:
                 metrics[cid]['csat_rating'] = row.get('rating_value')
 
+        self._apply_local_conversation_metrics(metrics, ids, provedor_id)
         return Response({'metrics': metrics})
+
+    @staticmethod
+    def _apply_local_conversation_metrics(metrics, ids, provedor_id):
+        """Conversas ainda no banco local (encerradas do dia): contagem e CSAT vêm do local."""
+        from django.db.models import Count
+        from conversations.models import Conversation, CSATFeedback
+
+        local_qs = Conversation.objects.filter(id__in=ids)
+        if provedor_id:
+            local_qs = local_qs.filter(inbox__provedor_id=provedor_id)
+        local_ids = []
+        for row in local_qs.annotate(n=Count('messages')).values('id', 'n'):
+            metrics[row['id']]['message_count'] = row['n']
+            metrics[row['id']]['csat_rating'] = None
+            local_ids.append(row['id'])
+        if not local_ids:
+            return
+        for fb in CSATFeedback.objects.filter(conversation_id__in=local_ids).order_by('-feedback_sent_at').values(
+            'conversation_id', 'rating_value'
+        ):
+            if metrics[fb['conversation_id']]['csat_rating'] is None:
+                metrics[fb['conversation_id']]['csat_rating'] = fb['rating_value']
 
     @staticmethod
     def _audit_date_range(date_from, date_to):

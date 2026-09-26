@@ -1,17 +1,27 @@
 """
 Service para migração de conversas encerradas do PostgreSQL local para o Supabase
 Implementa arquitetura dual database:
-- PostgreSQL Local: Conversas ATIVAS (status IN ('open', 'pending', 'snoozed'))
+- PostgreSQL Local: Conversas ATIVAS e as encerradas do dia (DEFER_CLOSED_MIGRATION)
 - Supabase: Conversas ENCERRADAS (status = 'closed') - apenas histórico
+
+Com DEFER_CLOSED_MIGRATION ligado, o encerramento só marca a conversa; a rotina noturna
+(core.nightly_migration) migra as encerradas antes da meia-noite e remove do local.
 """
 import logging
 from typing import Dict, Any, Optional, List
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from conversations.models import Conversation, Message, Contact
+from conversations.inbound_routing import conversation_ended_at
 from core.supabase_service import supabase_service
 
 logger = logging.getLogger(__name__)
+
+
+def defer_closed_migration() -> bool:
+    from django.conf import settings
+    return bool(getattr(settings, 'DEFER_CLOSED_MIGRATION', True))
 
 
 class ChatMigrationService:
@@ -156,7 +166,20 @@ class ChatMigrationService:
         if conversation_already_in_supabase:
             result['conversation_sent'] = True
             result['contact_sent'] = True
-            result['messages_sent'] = len(messages)
+            # A conversa pode ter sido enviada antes (ex.: no encerramento) e recebido mensagens depois:
+            # envia só as que faltam para não perder nada ao remover do local.
+            existing = self._timestamps_mensagens_no_supabase(conversation.id, provedor_id)
+            if existing is None:
+                result['success'] = False
+                result['errors'].append('Não foi possível conferir as mensagens já migradas')
+                return result
+            already, sent = 0, 0
+            for msg in messages:
+                if msg.created_at and msg.created_at in existing:
+                    already += 1
+                elif self._enviar_mensagem(msg, conversation, contact, provedor_id, result):
+                    sent += 1
+            result['messages_sent'] = already + sent
         else:
             # 2. Enviar contato primeiro (necessário para foreign keys)
             try:
@@ -192,7 +215,7 @@ class ChatMigrationService:
                     created_at_iso=conversation.created_at.isoformat() if conversation.created_at else None,
                     updated_at_iso=conversation.updated_at.isoformat() if conversation.updated_at else None,
                     last_message_at_iso=conversation.last_message_at.isoformat() if conversation.last_message_at else None,
-                    ended_at_iso=conversation.updated_at.isoformat() if conversation.status == 'closed' else None,
+                    ended_at_iso=conversation_ended_at(conversation) if conversation.status == 'closed' else None,
                     additional_attributes=conversation.additional_attributes
                 )
                 result['conversation_sent'] = conversation_success
@@ -207,29 +230,8 @@ class ChatMigrationService:
             # 4. Enviar todas as mensagens
             messages_sent = 0
             for msg in messages:
-                try:
-                    msg_success = self.supabase_service.save_message(
-                        provedor_id=provedor_id,
-                        conversation_id=conversation.id,
-                        contact_id=contact.id,
-                        content=msg.content,
-                        message_type=msg.message_type,
-                        is_from_customer=msg.is_from_customer,
-                        external_id=msg.external_id,
-                        file_url=msg.file_url,
-                        file_name=msg.file_name,
-                        file_size=msg.file_size,
-                        additional_attributes=msg.additional_attributes,
-                        created_at_iso=msg.created_at.isoformat() if msg.created_at else None,
-                        updated_at_iso=msg.updated_at.isoformat() if msg.updated_at else None
-                    )
-                    if msg_success:
-                        messages_sent += 1
-                    else:
-                        result['errors'].append(f'Falha ao enviar mensagem {msg.id} para Supabase')
-                except Exception as e:
-                    logger.error(f"Erro ao enviar mensagem {msg.id} para Supabase: {e}", exc_info=True)
-                    result['errors'].append(f'Erro ao enviar mensagem {msg.id}: {str(e)}')
+                if self._enviar_mensagem(msg, conversation, contact, provedor_id, result):
+                    messages_sent += 1
 
             result['messages_sent'] = messages_sent
 
@@ -237,8 +239,11 @@ class ChatMigrationService:
                 result['success'] = False
                 result['errors'].append(f'Apenas {messages_sent}/{len(messages)} mensagens foram enviadas')
 
-        # 5. CSAT — sempre tentar (mesmo se conversa já existia no Supabase)
+        # 5. CSAT — sempre tentar (mesmo se conversa já existia no Supabase).
+        # A nota já vai ao Supabase quando o cliente responde; reenviar duplicaria no dashboard.
         csat_feedbacks = conversation_data.get('csat_feedbacks') or []
+        if csat_feedbacks and self._csat_ja_no_supabase(conversation.id, provedor_id):
+            csat_feedbacks = []
         csat_sent = 0
         for fb in csat_feedbacks:
             try:
@@ -288,6 +293,92 @@ class ChatMigrationService:
             # Não bloquear migração por erro em auditoria
         
         return result
+
+    def _enviar_mensagem(self, msg, conversation, contact, provedor_id: int, result: Dict[str, Any]) -> bool:
+        try:
+            ok = self.supabase_service.save_message(
+                provedor_id=provedor_id,
+                conversation_id=conversation.id,
+                contact_id=contact.id,
+                content=msg.content,
+                message_type=msg.message_type,
+                is_from_customer=msg.is_from_customer,
+                external_id=msg.external_id,
+                file_url=msg.file_url,
+                file_name=msg.file_name,
+                file_size=msg.file_size,
+                additional_attributes=msg.additional_attributes,
+                created_at_iso=msg.created_at.isoformat() if msg.created_at else None,
+                updated_at_iso=msg.updated_at.isoformat() if msg.updated_at else None
+            )
+            if not ok:
+                result['errors'].append(f'Falha ao enviar mensagem {msg.id} para Supabase')
+            return ok
+        except Exception as e:
+            logger.error(f"Erro ao enviar mensagem {msg.id} para Supabase: {e}", exc_info=True)
+            result['errors'].append(f'Erro ao enviar mensagem {msg.id}: {str(e)}')
+            return False
+
+    def _timestamps_mensagens_no_supabase(self, conversation_id: int, provedor_id: int):
+        """created_at (datetime) das mensagens já no Supabase; None se não der para consultar."""
+        import requests
+        from django.conf import settings
+
+        url = f"{settings.SUPABASE_URL}/rest/v1/{self.supabase_service.messages_table}"
+        headers = {
+            'apikey': settings.SUPABASE_ANON_KEY,
+            'Authorization': f'Bearer {settings.SUPABASE_ANON_KEY}',
+            'X-Provedor-ID': str(provedor_id),
+        }
+        found, offset, page = set(), 0, 1000
+        try:
+            while True:
+                response = requests.get(url, headers=headers, timeout=10, params={
+                    'conversation_id': f'eq.{conversation_id}',
+                    'provedor_id': f'eq.{provedor_id}',
+                    'select': 'created_at',
+                    'limit': page,
+                    'offset': offset,
+                })
+                if response.status_code != 200:
+                    return None
+                batch = response.json()
+                for row in batch:
+                    parsed = parse_datetime(row.get('created_at') or '')
+                    if parsed:
+                        found.add(parsed)
+                if len(batch) < page:
+                    return found
+                offset += page
+        except Exception as e:
+            logger.warning(f"Erro ao consultar mensagens migradas da conversa {conversation_id}: {e}")
+            return None
+
+    def _csat_ja_no_supabase(self, conversation_id: int, provedor_id: int) -> bool:
+        """True se a conversa já tem CSAT no Supabase (na dúvida False: melhor duplicar que perder a nota)."""
+        import requests
+        from django.conf import settings
+
+        try:
+            response = requests.get(
+                f"{settings.SUPABASE_URL}/rest/v1/{self.supabase_service.csat_table}",
+                headers={
+                    'apikey': settings.SUPABASE_ANON_KEY,
+                    'Authorization': f'Bearer {settings.SUPABASE_ANON_KEY}',
+                    'X-Provedor-ID': str(provedor_id),
+                },
+                params={
+                    'conversation_id': f'eq.{conversation_id}',
+                    'provedor_id': f'eq.{provedor_id}',
+                    'select': 'conversation_id',
+                    'limit': 1,
+                },
+                timeout=10,
+            )
+            return response.status_code == 200 and bool(response.json())
+        except Exception as e:
+            logger.warning(f"Erro ao consultar CSAT migrado da conversa {conversation_id}: {e}")
+            return False
     
     def _merge_closure_metadata_into_conversation(
         self, conversation, metadata: Optional[Dict[str, Any]] = None
@@ -343,7 +434,8 @@ class ChatMigrationService:
             logger.error(f"Erro ao remover conversa {conversation_id} do local: {e}", exc_info=True)
             return False
     
-    def encerrar_e_migrar(self, conversation_id: int, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def encerrar_e_migrar(self, conversation_id: int, metadata: Optional[Dict[str, Any]] = None,
+                          force: bool = False) -> Dict[str, Any]:
         """
         Processo completo: encerra conversa, migra para Supabase e remove do local
         
@@ -352,6 +444,7 @@ class ChatMigrationService:
         Args:
             conversation_id: ID da conversa
             metadata: Metadados adicionais (ex: resolution_type, user_id, etc)
+            force: migra agora mesmo com DEFER_CLOSED_MIGRATION ligado (rotina noturna)
             
         Returns:
             Dict com resultado completo:
@@ -389,7 +482,20 @@ class ChatMigrationService:
             
             # 2b. Persistir metadados de encerramento em additional_attributes (histórico no Supabase / dashboards)
             self._merge_closure_metadata_into_conversation(conversation, metadata)
-            
+
+            # Encerradas ficam no local até a rotina noturna (análise da IA durante o dia)
+            if not force and defer_closed_migration():
+                result['success'] = True
+                result['deferred'] = True
+                return result
+
+            # Sinais de aprendizado da IA ficam no local; a conversa sai daqui em seguida
+            from conversations.ai_learning import analyze_conversation_safe
+            analyze_conversation_safe(conversation_id)
+            if force:
+                from ai.learnings import suggest_before_migration_safe
+                suggest_before_migration_safe(conversation_id)
+
             # 3. Migrar para Supabase
             migration_result = self.migrar_para_supabase(conversation_data)
             

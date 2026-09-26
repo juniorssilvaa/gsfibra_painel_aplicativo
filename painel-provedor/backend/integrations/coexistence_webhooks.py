@@ -663,13 +663,24 @@ def process_message_echoes(waba_id: str, value: dict):
                 # Obter ou criar equipe IA automaticamente apenas se estiver no modo IA
                 ia_team = Team.get_or_create_ia_team(provedor)
             
+            early_echo_text = ""
+            if message_type == "text":
+                early_echo_text = (echo.get("text", {}) or {}).get("body", "") or ""
+
+            from core.attendance_auto_resolve import (
+                keep_conversation_closed_after_auto_message,
+                should_suppress_reopen_for_auto_message,
+            )
+
+            suppress_echo_reopen = should_suppress_reopen_for_auto_message(early_echo_text, provedor)
+
             # Criar conversa. No modo chatbot, status é "pending" e não tem equipe IA.
-            # Usar filter().first() para evitar MultipleObjectsReturned
-            conversation = Conversation.objects.filter(
-                contact=contact,
-                inbox=inbox
-            ).first()
-            
+            from conversations.inbound_routing import find_inbound_conversation
+            conversation = find_inbound_conversation(contact, inbox)
+            if conversation is None and suppress_echo_reopen:
+                # Confirmação automática não abre atendimento: fica registrada no último encerrado.
+                conversation = Conversation.objects.filter(contact=contact, inbox=inbox).order_by('-id').first()
+
             if not conversation:
                 conversation = Conversation.objects.create(
                     contact=contact,
@@ -682,16 +693,6 @@ def process_message_echoes(waba_id: str, value: dict):
             else:
                 conv_created = False
 
-            early_echo_text = ""
-            if message_type == "text":
-                early_echo_text = (echo.get("text", {}) or {}).get("body", "") or ""
-
-            from core.attendance_auto_resolve import (
-                keep_conversation_closed_after_auto_message,
-                should_suppress_reopen_for_auto_message,
-            )
-
-            suppress_echo_reopen = should_suppress_reopen_for_auto_message(early_echo_text, provedor)
             echo_was_closed = conversation.status in ["closed", "resolved", "finalizada", "closing"]
 
             # Eco do WhatsApp Business (ex.: confirmação automática): não reabrir atendimento encerrado
@@ -1263,25 +1264,6 @@ def process_incoming_messages(waba_id: str, value: dict):
                 # Obter ou criar equipe IA automaticamente apenas se estiver no modo IA
                 ia_team = Team.get_or_create_ia_team(provedor)
             
-            # Criar conversa. No modo chatbot, status é "pending" e não tem equipe IA.
-            # Usar filter().first() para evitar MultipleObjectsReturned
-            conversation = Conversation.objects.select_related('team').filter(
-                contact=contact,
-                inbox=inbox
-            ).first()
-            
-            if not conversation:
-                conversation = Conversation.objects.create(
-                    contact=contact,
-                    inbox=inbox,
-                    status="snoozed",
-                    team=ia_team,       # Atribuir à equipe IA se for modo IA
-                    assignee=None       # Sem atendente específico
-                )
-                conv_created = True
-            else:
-                conv_created = False
-
             early_inbound_text = ""
             if message_type == "text":
                 early_inbound_text = (msg.get("text", {}) or {}).get("body", "") or ""
@@ -1294,6 +1276,30 @@ def process_incoming_messages(waba_id: str, value: dict):
             suppress_inbound_reopen = should_suppress_reopen_for_auto_message(
                 early_inbound_text, provedor
             )
+
+            # Criar conversa. No modo chatbot, status é "pending" e não tem equipe IA.
+            from conversations.inbound_routing import find_inbound_conversation
+            conversation = find_inbound_conversation(
+                contact, inbox, queryset=Conversation.objects.select_related('team')
+            )
+            if conversation is None and suppress_inbound_reopen:
+                # Resposta automática do cliente não abre atendimento: fica no último encerrado.
+                conversation = Conversation.objects.select_related('team').filter(
+                    contact=contact, inbox=inbox
+                ).order_by('-id').first()
+
+            if not conversation:
+                conversation = Conversation.objects.create(
+                    contact=contact,
+                    inbox=inbox,
+                    status="snoozed",
+                    team=ia_team,       # Atribuir à equipe IA se for modo IA
+                    assignee=None       # Sem atendente específico
+                )
+                conv_created = True
+            else:
+                conv_created = False
+
             inbound_was_closed = conversation.status in [
                 'closed', 'resolved', 'finalizada', 'encerrada', 'closing',
             ]
@@ -1761,7 +1767,7 @@ def process_incoming_messages(waba_id: str, value: dict):
                     try:
                         from core.chat_migration_service import chat_migration_service
                         chat_migration_service.encerrar_e_migrar(
-                            conversation_id=conversation.id,
+                            conversation_id=csat_gate['csat_feedback'].conversation_id,
                             metadata={
                                 'migrado_apos_csat': True,
                                 'csat_feedback_id': csat_gate['csat_feedback'].id,
@@ -1908,13 +1914,13 @@ def process_incoming_messages(waba_id: str, value: dict):
                         )
                         if csat_feedback:
                             csat_processed = True
-                            if conversation.status != 'closed':
+                            if csat_feedback.conversation_id == conversation.id and conversation.status != 'closed':
                                 conversation.status = 'closed'
                                 conversation.save(update_fields=['status'])
                             try:
                                 from core.chat_migration_service import chat_migration_service
                                 chat_migration_service.encerrar_e_migrar(
-                                    conversation_id=conversation.id,
+                                    conversation_id=csat_feedback.conversation_id,
                                     metadata={
                                         'migrado_apos_csat': True,
                                         'csat_feedback_id': csat_feedback.id,
