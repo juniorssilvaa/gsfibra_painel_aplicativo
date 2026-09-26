@@ -7,10 +7,14 @@ sobrescrito). `mensagens` guarda provedor_id + contact_id corretos, e o Contact 
 não é removido na migração, então essas são as fontes confiáveis.
 """
 import logging
+import re
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+_CLOSED_BY_NAME_RE = re.compile(r'encerrada manualmente por\s+(.+?)\s+com\s', re.IGNORECASE)
+_HUMAN_CLOSE_ACTIONS = ('conversation_closed_manual', 'conversation_closed_agent')
 
 IN_CHUNK = 200
 PAGE_SIZE = 1000
@@ -87,3 +91,32 @@ def resolve_contacts(supabase_url, headers, provedor_id, contact_ids):
             if row.get('id') is not None:
                 result.setdefault(row['id'], row)
     return result
+
+
+def resolve_closed_by(action, details, user_name=None, user_id=None, conv_attrs=None):
+    """(tipo, nome) de quem encerrou: tipo em agent | ai | chatbot | system."""
+    details = details if isinstance(details, dict) else {}
+    text = details.get('details') if isinstance(details.get('details'), str) else ''
+    attrs = conv_attrs if isinstance(conv_attrs, dict) else {}
+    closure_source = str(attrs.get('closure_source') or '')
+
+    if action in _HUMAN_CLOSE_ACTIONS:
+        if user_name:
+            return 'agent', user_name
+        match = _CLOSED_BY_NAME_RE.search(text)
+        if match:
+            return 'agent', match.group(1).strip()
+
+    if closure_source.startswith('chatbot'):
+        return 'chatbot', 'Chatbot'
+    if action == 'conversation_closed_ai' or closure_source.startswith('ia_'):
+        return 'ai', 'IA'
+    if action == 'conversation_closed_timeout':
+        return 'ai', 'IA (inatividade)'
+    if user_name:
+        return 'agent', user_name
+    if user_id is not None:
+        return 'agent', 'Atendente'
+    if attrs.get('encerrado_por') == 'ai' or attrs.get('resolucao_automacao'):
+        return 'ai', 'IA'
+    return 'system', 'Sistema'

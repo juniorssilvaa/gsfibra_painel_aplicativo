@@ -44,11 +44,11 @@ from django.core.exceptions import ImproperlyConfigured
 # BASE
 # ============================================
 
-__version__ = "2.74.0"
-__version_info__ = (2, 74, 0)
+__version__ = "2.75.0"
+__version_info__ = (2, 75, 0)
 
 # Compatibilidade legado
-VERSION = "2.74.0"
+VERSION = "2.75.0"
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Sempre usar config que prioriza variáveis de ambiente sobre arquivo .env
@@ -262,7 +262,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Segurança: tickets WS/SSE e URLs de mídia assinadas
 REALTIME_TICKET_MAX_AGE = config('REALTIME_TICKET_MAX_AGE', default=90, cast=int)
 REALTIME_ALLOW_LEGACY_TOKEN_QUERY = config('REALTIME_ALLOW_LEGACY_TOKEN_QUERY', default=False, cast=bool)
-MEDIA_SIGNED_URL_TTL = config('MEDIA_SIGNED_URL_TTL', default=120, cast=int)
+MEDIA_SIGNED_URL_TTL = config('MEDIA_SIGNED_URL_TTL', default=86400, cast=int)
 MEDIA_SIGNED_URL_TTL_EXTERNAL = config('MEDIA_SIGNED_URL_TTL_EXTERNAL', default=604800, cast=int)
 MEDIA_REQUIRE_SIGNED_URL = config('MEDIA_REQUIRE_SIGNED_URL', default=True, cast=bool)
 

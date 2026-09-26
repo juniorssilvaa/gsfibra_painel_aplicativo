@@ -1,6 +1,26 @@
 {
-  "current_version": "2.74.0",
+  "current_version": "2.75.0",
   "versions": [
+    {
+      "version": "2.75.0",
+      "version_type": "minor",
+      "date": "2026-09-26",
+      "title": "Melhorias na Auditoria e correção na exibição de mídias",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Auditoria",
+          "title": "Melhorias no módulo de Auditoria",
+          "description": "O histórico da conversa na auditoria agora tem o mesmo visual da tela de atendimento, com imagens, áudios, documentos e menus do chatbot, mostrando o nome de quem enviou cada mensagem. A coluna Agente passa a exibir quem encerrou o atendimento (nome do atendente, IA ou chatbot) e a janela de Detalhes da Conversa agora abre centralizada."
+        },
+        {
+          "type": "fix",
+          "module": "Atendimento / Mídias",
+          "title": "Corrigido o erro \"Assinatura de mídia inválida ou expirada\"",
+          "description": "Imagens, áudios e documentos deixavam de abrir ao trocar de conversa e voltar, ou ao reabrir uma imagem, exigindo atualizar a página. O link de acesso às mídias agora vale por 24 horas."
+        }
+      ]
+    },
     {
       "version": "2.74.0",
       "version_type": "minor",

@@ -27,7 +27,7 @@ _PROTECTED_PREFIXES = (
 
 
 def media_signed_url_ttl() -> int:
-    return int(getattr(settings, "MEDIA_SIGNED_URL_TTL", 120))
+    return int(getattr(settings, "MEDIA_SIGNED_URL_TTL", 86400))
 
 
 def media_signed_url_ttl_external() -> int:

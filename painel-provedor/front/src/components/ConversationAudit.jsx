@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Eye, Search, Filter, Calendar, X, MessageSquare, Clock, Hash, Bot, User, Smartphone } from 'lucide-react';
 import axios from 'axios';
-import { buildMediaUrl } from '../config/environment';
 import { getMessages, getAuditLogs } from '../lib/supabase';
 
 // Importar ícones dos canais
 import whatsappIcon from '../assets/whatsapp.png';
 import telegramIcon from '../assets/telegram.png';
 import gmailIcon from '../assets/gmail.png';
-import chatBgPattern from '../assets/chat-bg-pattern.svg';
-import chatBgPatternLight from '../assets/chat-bg-pattern-light.svg';
+import chatBgPattern from '../assets/modo_dark.png';
+import chatBgPatternLight from '../assets/modo_claro.png';
+import { useTheme } from '../hooks/useTheme';
+import AuditChatMessage from './AuditChatMessage';
 
 const PAGE_SIZE = 50;
 
@@ -28,6 +29,7 @@ const computeDuration = (createdAt, endedAt) => {
 };
 
 export default function ConversationAudit({ provedorId }) {
+  const isDarkTheme = useTheme();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -355,89 +357,21 @@ export default function ConversationAudit({ provedorId }) {
     return 'bg-blue-100 text-blue-800';
   };
 
-  // Função para renderizar mensagens com links destacados (mesma do ChatArea)
-  const renderMessageWithLinks = (text) => {
-    if (!text || typeof text !== 'string') return text;
-
-    // Regex para detectar URLs completas
-    const urlRegex = /(https?:\/\/[^\s\n<>"']+|www\.[^\s\n<>"']+)/gi;
-
-    // Dividir o texto em partes (texto e URLs)
-    const parts = [];
-    let lastIndex = 0;
-    let match;
-
-    urlRegex.lastIndex = 0;
-
-    while ((match = urlRegex.exec(text)) !== null) {
-      // Adicionar texto antes da URL
-      if (match.index > lastIndex) {
-        parts.push({ type: 'text', content: text.substring(lastIndex, match.index) });
-      }
-
-      // Adicionar a URL (remover pontuação final se houver)
-      let urlContent = match[0];
-      urlContent = urlContent.replace(/[.,;:!?]+$/, '');
-
-      parts.push({ type: 'url', content: urlContent });
-      lastIndex = match.index + match[0].length;
-    }
-
-    // Adicionar texto restante
-    if (lastIndex < text.length) {
-      parts.push({ type: 'text', content: text.substring(lastIndex) });
-    }
-
-    // Se não encontrou URLs, retornar texto original
-    if (parts.length === 0) {
-      return text;
-    }
-
-    // Renderizar partes
-    return parts.map((part, index) => {
-      if (part.type === 'url') {
-        // Garantir que a URL tenha protocolo
-        let href = part.content;
-        if (!href.startsWith('http://') && !href.startsWith('https://')) {
-          href = 'https://' + href;
-        }
-
-        return (
-          <a
-            key={index}
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline transition-colors break-all"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              wordBreak: 'break-all',
-              color: '#7DD3FC',
-              textDecoration: 'underline',
-              textDecorationColor: '#7DD3FC'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.color = '#5BC0EB';
-              e.target.style.textDecorationColor = '#5BC0EB';
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.color = '#7DD3FC';
-              e.target.style.textDecorationColor = '#7DD3FC';
-            }}
-          >
-            {part.content}
-          </a>
-        );
-      }
-      return <span key={index}>{part.content}</span>;
-    });
+  const getClosedBy = (conv) => {
+    if (!conv) return { type: 'system', name: 'Sistema' };
+    if (conv.closed_by_type) return { type: conv.closed_by_type, name: conv.closed_by_name || 'Sistema' };
+    if (conv.action === 'conversation_closed_ai') return { type: 'ai', name: 'IA' };
+    if (typeof conv.user === 'string' && conv.user) return { type: 'agent', name: conv.user.split(' (')[0] };
+    return { type: 'system', name: 'Sistema' };
   };
 
-  const getActionIcon = (action) => {
-    if (action === 'conversation_closed_ai') {
-      return <img src="/logoia.png?v=1" alt="IA" className="w-4 h-4" />;
+  const renderClosedByIcon = (type, size = 'w-4 h-4') => {
+    if (type === 'ai') {
+      return <img src="/logoia.png?v=1" alt="IA" className={`${size} rounded-full object-cover`} />;
     }
-    return <User className="w-4 h-4 text-blue-600" />;
+    if (type === 'chatbot') return <Bot className={`${size} text-purple-600`} />;
+    if (type === 'agent') return <User className={`${size} text-blue-600`} />;
+    return <User className={`${size} text-gray-400`} />;
   };
 
   const formatDuration = (duration) => {
@@ -457,6 +391,7 @@ export default function ConversationAudit({ provedorId }) {
     return (
       (conv.contact_name && conv.contact_name.toLowerCase().includes(searchLower)) ||
       (conv.user && conv.user.toLowerCase().includes(searchLower)) ||
+      (conv.closed_by_name && conv.closed_by_name.toLowerCase().includes(searchLower)) ||
       (phoneKey.length >= 4 && conv.contact_phone && String(conv.contact_phone).includes(phoneKey)) ||
       (digits && String(conv.conversation_id) === digits)
     );
@@ -697,11 +632,8 @@ export default function ConversationAudit({ provedorId }) {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          {getActionIcon(conv.action)}
-                          <div className="font-medium">
-                            {conv.action === 'conversation_closed_ai' ? 'Pela IA' :
-                              (typeof conv.user === 'string' ? conv.user.split(' (')[0] : conv.user || 'Sistema')}
-                          </div>
+                          {renderClosedByIcon(getClosedBy(conv).type)}
+                          <div className="font-medium">{getClosedBy(conv).name}</div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -784,7 +716,7 @@ export default function ConversationAudit({ provedorId }) {
         {/* Modal de Detalhes */}
         {selectedConversation && (
           <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-start z-[100] p-4 pl-[17rem] overflow-hidden"
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 overflow-hidden"
             onClick={closeConversationModal}
           >
             <div
@@ -793,10 +725,7 @@ export default function ConversationAudit({ provedorId }) {
             >
               {/* Header do Modal */}
               <div className="flex items-center justify-between p-6 border-b">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5" />
-                  Detalhes da Conversa
-                </h2>
+                <h2 className="text-xl font-semibold">Detalhes da Conversa</h2>
                 <button
                   onClick={closeConversationModal}
                   className="p-2 hover:bg-muted rounded-lg transition-colors"
@@ -824,26 +753,23 @@ export default function ConversationAudit({ provedorId }) {
                       </div>
                       <div className="bg-muted/50 p-4 rounded-lg">
                         <div className="text-sm text-muted-foreground mb-1">Agente</div>
-                        <div className="flex items-center gap-2">
-                          {conversationDetails?.is_ai_closed || (!conversationDetails?.assignee && !conversationDetails?.team) ? (
-                            <>
-                              <img src="/logoia.png?v=1" alt="IA" className="w-5 h-5 rounded-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
-                              <span className="font-medium">Pela IA</span>
-                            </>
-                          ) : conversationDetails?.assignee ? (
-                            <>
-                              <User className="w-4 h-4 text-blue-600" />
-                              <span className="font-medium">
-                                {conversationDetails.assignee.first_name} {conversationDetails.assignee.last_name}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <User className="w-4 h-4 text-gray-400" />
-                              <span className="font-medium text-muted-foreground">Não atribuído</span>
-                            </>
-                          )}
-                        </div>
+                        {(() => {
+                          const row = conversations.find((c) => c.conversation_id === selectedConversation);
+                          const assignee = conversationDetails?.assignee;
+                          const closedBy = row
+                            ? getClosedBy(row)
+                            : assignee
+                              ? { type: 'agent', name: `${assignee.first_name || ''} ${assignee.last_name || ''}`.trim() || assignee.username }
+                              : conversationDetails?.is_ai_closed
+                                ? { type: 'ai', name: 'IA' }
+                                : { type: 'system', name: 'Sistema' };
+                          return (
+                            <div className="flex items-center gap-2">
+                              {renderClosedByIcon(closedBy.type, 'w-5 h-5')}
+                              <span className="font-medium">{closedBy.name}</span>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="bg-muted/50 p-4 rounded-lg">
                         <div className="text-sm text-muted-foreground mb-1">Duração</div>
@@ -898,264 +824,31 @@ export default function ConversationAudit({ provedorId }) {
                         </div>
                       ) : conversationMessages.length > 0 ? (
                         <div
-                          className="bg-background rounded-lg p-4 max-h-96 overflow-y-auto"
+                          className="rounded-lg px-4 pt-4 h-[60vh] min-h-[320px] overflow-y-auto overflow-x-hidden"
                           style={{
-                            // Mesmo tema de fundo do ChatArea (WhatsApp)
-                            minHeight: '200px',
-                            backgroundImage: `url(${chatBgPattern})`,
+                            backgroundColor: isDarkTheme ? '#0b141a' : '#ffffff',
+                            backgroundImage: `url(${isDarkTheme ? chatBgPattern : chatBgPatternLight})`,
                             backgroundRepeat: 'no-repeat',
                             backgroundSize: 'cover',
                             backgroundPosition: 'center center'
                           }}
                         >
-                          <div className="space-y-4">
-                            {conversationMessages.map((message, index) => {
-                              // Verificar tipos especiais de conteúdo
-                              const hasImage = message.message_type === 'image' || (message.attachments && message.attachments.some(att => att.file_type === 'image'));
-                              const hasVideo = message.message_type === 'video' || (message.attachments && message.attachments.some(att => att.file_type === 'video'));
-                              const hasAudio = message.message_type === 'audio' || (message.attachments && message.attachments.some(att => att.file_type === 'audio'));
-                              const hasDocument = message.message_type === 'document' || (message.attachments && message.attachments.some(att => att.file_type === 'file'));
-                              const hasQRCode = message.message_type === 'image' && message.content && message.content.includes('QR Code PIX');
-                              const hasBoleto = message.content && message.content.includes('🔗') && message.content.includes('Link do Boleto:');
-                              const hasButtons = message.additional_attributes?.has_buttons && message.additional_attributes?.button_choices;
-
-                              // Determinar se é mensagem do cliente ou do sistema (IA/agente)
-                              // Usar a mesma lógica do ChatArea: is_from_customer determina o lado e a cor
-                              const isCustomer = message.is_from_customer === true;
-
-                              // Identificar se é mensagem da IA (para exibir "Sistema" ou "IA")
-                              const isFromAI = !isCustomer && (
-                                message.sender?.sender_type === 'ai' ||
-                                message.from_ai === true ||
-                                message.additional_attributes?.from_ai === true
-                              );
-
-                              return (
-                                <div key={index} className={`flex ${isCustomer ? 'justify-start' : 'justify-end'}`}>
-                                  <div className={`max-w-xs lg:max-w-md rounded-2xl px-4 py-3 shadow-sm ${isCustomer
-                                    ? 'bg-muted text-foreground'
-                                    : 'bg-blue-600 text-white'
-                                    }`}>
-                                    <div className="text-sm font-medium mb-1">
-                                      {isCustomer
-                                        ? (conversationDetails?.contact?.name || 'Cliente')
-                                        : (isFromAI ? 'Sistema' : 'Agente')
-                                      }
-                                    </div>
-
-                                    {/* Conteúdo da mensagem com links destacados */}
-                                    {message.message_type === 'revoke' ? (
-                                      <div className="text-sm italic opacity-75">Mensagem apagada</div>
-                                    ) : (message.content || message.text || !message.file_url) && !(hasDocument && message.file_url) && (
-                                      <div className="text-sm whitespace-pre-wrap">
-                                        {renderMessageWithLinks(message.content || message.text || 'Mensagem sem conteúdo')}
-                                      </div>
-                                    )}
-
-                                    {/* Áudios */}
-                                    {hasAudio && message.file_url && (
-                                      <div className="mb-2 mt-1">
-                                        <audio controls preload="metadata" className="max-w-full" src={buildMediaUrl(message.file_url)}>
-                                          Seu navegador não suporta o elemento de áudio.
-                                        </audio>
-                                      </div>
-                                    )}
-
-                                    {/* Imagens */}
-                                    {hasImage && message.file_url && (
-                                      <div className="mb-2">
-                                        <img
-                                          src={buildMediaUrl(message.file_url)}
-                                          alt="Imagem"
-                                          className="max-w-full h-auto rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                                          style={{ maxHeight: '200px' }}
-                                        />
-                                      </div>
-                                    )}
-
-                                    {/* Vídeos */}
-                                    {hasVideo && message.file_url && (
-                                      <div className="mb-2">
-                                        <video
-                                          controls
-                                          className="max-w-full h-auto rounded-lg"
-                                          style={{ maxHeight: '200px' }}
-                                        >
-                                          <source src={buildMediaUrl(message.file_url)} type="video/mp4" />
-                                          Seu navegador não suporta o elemento de vídeo.
-                                        </video>
-                                      </div>
-                                    )}
-
-                                    {/* Documentos/PDFs */}
-                                    {hasDocument && message.file_url && (
-                                      <div className="mb-2">
-                                        <a
-                                          href={buildMediaUrl(message.file_url)}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="flex items-center space-x-2 p-2 bg-black/10 rounded-lg hover:bg-black/20 transition-colors"
-                                        >
-                                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-                                          </svg>
-                                          <span className="text-sm">{message.content || 'Documento'}</span>
-                                        </a>
-                                      </div>
-                                    )}
-
-                                    {/* QR Codes PIX */}
-                                    {hasQRCode && (
-                                      <div className="mb-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                                        <div className="text-sm font-medium text-green-900 dark:text-green-100 mb-2">
-                                          QR Code PIX
-                                        </div>
-                                        <div className="text-xs text-green-700 dark:text-green-300 mb-2">
-                                          Escaneie este QR code com o app do seu banco para pagar via PIX
-                                        </div>
-                                        {message.file_url && (
-                                          <div className="bg-white p-2 rounded border">
-                                            <img
-                                              src={buildMediaUrl(message.file_url)}
-                                              alt="QR Code PIX"
-                                              className="w-24 h-24 mx-auto"
-                                            />
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {/* Links de boleto */}
-                                    {hasBoleto && (
-                                      <div className="mb-2 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
-                                        <div className="text-sm font-medium text-orange-900 dark:text-orange-100 mb-2">
-                                          Boleto Bancário
-                                        </div>
-                                        <div className="text-xs text-orange-700 dark:text-orange-300 mb-2">
-                                          Clique no link abaixo para acessar o boleto completo
-                                        </div>
-                                        {message.content.split('\n').map((line, index) => {
-                                          if (line.includes('https://')) {
-                                            return (
-                                              <a
-                                                key={index}
-                                                href={line.trim()}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="block w-full px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm text-center"
-                                              >
-                                                Baixar Boleto PDF
-                                              </a>
-                                            );
-                                          }
-                                          return null;
-                                        })}
-                                      </div>
-                                    )}
-
-                                    {/* Botões interativos do painel de controle (has_buttons legacy) */}
-                                    {hasButtons && (
-                                      <div className="mt-3 space-y-2">
-                                        {message.additional_attributes.button_choices.map((choice, index) => {
-                                          const [nome, acao] = choice.split('|', 2);
-                                          if (acao && acao.startsWith('copy:')) {
-                                            const textoParaCopiar = acao.replace('copy:', '');
-                                            return (
-                                              <button
-                                                key={index}
-                                                onClick={(event) => {
-                                                  navigator.clipboard.writeText(textoParaCopiar);
-                                                  const btn = event.target;
-                                                  const originalText = btn.textContent;
-                                                  btn.textContent = 'Copiado!';
-                                                  btn.className = 'w-full px-4 py-2 bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 text-sm font-medium';
-                                                  setTimeout(() => {
-                                                    btn.textContent = originalText;
-                                                    btn.className = 'w-full px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 text-sm font-medium';
-                                                  }, 2000);
-                                                }}
-                                                className="w-full px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 text-sm font-medium"
-                                              >
-                                                {nome}
-                                              </button>
-                                            );
-                                          }
-                                          return null;
-                                        })}
-                                      </div>
-                                    )}
-
-                                    {/* Lista interativa — não exibir no Telegram */}
-                                    {conversationDetails?.inbox?.channel_type !== 'telegram' &&
-                                      message.additional_attributes?.interactive_rows &&
-                                      message.additional_attributes.interactive_rows.length > 0 && (
-                                      <div className="mt-3 space-y-1.5">
-                                        <div className="text-[10px] font-bold text-white/70 uppercase tracking-wider mb-2">
-                                          Opções da lista do menu
-                                        </div>
-                                        {message.additional_attributes.interactive_rows.map((row, index) => (
-                                          <div
-                                            key={row.id || index}
-                                            className="px-3 py-2 bg-white/20 border border-white/10 rounded-lg"
-                                          >
-                                            <div className="text-xs font-semibold text-white">
-                                              {row.title}
-                                            </div>
-                                            {row.description && (
-                                              <div className="text-[10px] text-white/70 mt-0.5">
-                                                {row.description}
-                                              </div>
-                                            )}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-
-                                    {/* Botões interativos — não exibir no Telegram */}
-                                    {conversationDetails?.inbox?.channel_type !== 'telegram' &&
-                                      message.additional_attributes?.interactive_buttons &&
-                                      message.additional_attributes.interactive_buttons.length > 0 && (
-                                      <div className="mt-3 space-y-1.5">
-                                        {message.additional_attributes.interactive_buttons.map((btn, index) => (
-                                          <div
-                                            key={btn.id || index}
-                                            className="px-3 py-2 bg-white/20 border border-white/10 rounded-lg text-center"
-                                          >
-                                            <span className="text-xs font-bold text-white">
-                                              {btn.title}
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-
-                                    {/* Timestamp + status (igual ao ChatArea) */}
-                                    <div className={`flex items-center justify-end mt-2 text-xs ${isCustomer ? 'text-muted-foreground' : 'text-white'}`}>
-                                      <span>
-                                        {new Date(message.created_at || message.timestamp).toLocaleString('pt-BR', {
-                                          hour: '2-digit',
-                                          minute: '2-digit',
-                                          day: '2-digit',
-                                          month: '2-digit'
-                                        })}
-                                      </span>
-                                      {!isCustomer &&
-                                        conversationDetails?.inbox?.channel_type === 'whatsapp' &&
-                                        !message.isTemporary && (
-                                          <AuditMessageStatusIcon message={message} />
-                                        )}
-                                    </div>
-
-                                    <div className="text-xs opacity-70 mt-1">
-                                      {message.created_at ?
-                                        new Date(message.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) :
-                                        'Horário não disponível'}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                          {conversationMessages.map((message, index) => (
+                            <AuditChatMessage
+                              key={message.id || index}
+                              message={message}
+                              conversationId={conversationDetails?.id}
+                              channelType={conversationDetails?.inbox?.channel_type}
+                              chatbotName={conversationDetails?.inbox?.provedor?.chatbot_name || 'Assistente virtual'}
+                              statusIcon={
+                                !message.is_from_customer &&
+                                conversationDetails?.inbox?.channel_type === 'whatsapp' &&
+                                !message.isTemporary ? (
+                                  <AuditMessageStatusIcon message={message} />
+                                ) : null
+                              }
+                            />
+                          ))}
                         </div>
                       ) : (
                         <div className="text-center py-8 text-muted-foreground">

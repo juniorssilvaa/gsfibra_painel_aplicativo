@@ -205,14 +205,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.74.0"
+                "current_version": "2.75.0"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.74.0"
+            "current_version": "2.75.0"
         }, safe=False)
 
 
@@ -5668,13 +5668,13 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                             pass
                 
                 # Buscar todas as conversas de uma vez (otimização)
-                from core.audit_contacts import conversations_from_messages, resolve_contacts
+                from core.audit_contacts import conversations_from_messages, resolve_contacts, resolve_closed_by
                 provedor_scope = {'provedor_id': f'eq.{provedor_id}'} if provedor_id else None
                 conversations_data = {}
                 if conversation_ids:
                     for conv in self._supabase_get_in(
                         f"{supabase_url}/rest/v1/conversations", headers, 'id', conversation_ids,
-                        'id,contact_id,inbox_id,created_at,updated_at,ended_at', provedor_scope,
+                        'id,contact_id,inbox_id,created_at,updated_at,ended_at,additional_attributes', provedor_scope,
                     ):
                         conversations_data[conv.get('id')] = conv
 
@@ -5753,13 +5753,21 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                     # 3. Padrão se não encontrou
                     if not channel_type:
                         channel_type = 'whatsapp'  # Padrão mais comum
-                    
+
+                    user_name = users_data.get(log.get('user_id')) if log.get('user_id') is not None else None
+                    closed_by_type, closed_by_name = resolve_closed_by(
+                        log.get('action'), details, user_name, log.get('user_id'),
+                        (conv_data or {}).get('additional_attributes'),
+                    )
+
                     formatted_log = {
                         'id': log.get('id'),
                         'action': log.get('action'),
                         'details': details,
                         'user_id': log.get('user_id'),
-                        'user': users_data.get(log.get('user_id')) if log.get('user_id') is not None else None,
+                        'user': user_name,
+                        'closed_by_type': closed_by_type,
+                        'closed_by_name': closed_by_name,
                         'provedor_id': log.get('provedor_id'),
                         'conversation_id': conv_id,
                         'contact_name': contact_data.get('name') if contact_data else (details.get('contact_name') if isinstance(details, dict) else None),
@@ -5793,12 +5801,20 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
                         ).select_related('user').order_by('-timestamp')[:max(limit_value * 2, 100)]
 
                         for log in local_auth_logs:
+                            local_details = {'details': log.details} if log.details else {}
+                            local_user = str(log.user) if log.user else None
+                            closed_by_type, closed_by_name = resolve_closed_by(
+                                log.action, local_details,
+                                local_user.split(' (')[0] if local_user else None, log.user_id,
+                            )
                             formatted_logs.append({
                                 'id': f"local-{log.id}",
                                 'action': log.action,
-                                'details': {'details': log.details} if log.details else {},
+                                'details': local_details,
                                 'user_id': log.user_id,
-                                'user': str(log.user) if log.user else None,
+                                'user': local_user,
+                                'closed_by_type': closed_by_type,
+                                'closed_by_name': closed_by_name,
                                 'provedor_id': provedor_id,
                                 'conversation_id': None,
                                 'contact_name': None,
