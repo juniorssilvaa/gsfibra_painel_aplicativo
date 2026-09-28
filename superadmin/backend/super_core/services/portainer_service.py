@@ -584,20 +584,25 @@ class PortainerService:
             )
             rabbitmq_url = ''
 
-        if not rabbitmq_url:
-            logger.info("RabbitMQ não configurado na VPS (ou inválido). Auto-descoberta via Portainer...")
-            rabbitmq_url = self._discover_rabbitmq_amqp_url()
-            if rabbitmq_url:
-                self.vps.rabbitmq_url = rabbitmq_url
+        # A stack do RabbitMQ é a fonte da verdade: credenciais lidas a cada deploy/atualização,
+        # para que uma troca de senha no broker chegue a todas as stacks. A URL salva na VPS e a
+        # já existente na stack só valem se a descoberta falhar.
+        discovered_url = self._discover_rabbitmq_amqp_url()
+        if discovered_url:
+            if discovered_url != rabbitmq_url:
+                self.vps.rabbitmq_url = discovered_url
                 self.vps.save(update_fields=['rabbitmq_url'])
-                logger.info("RabbitMQ detectado na infra e salvo em VpsServer.rabbitmq_url.")
-
-        rabbitmq_url = rabbitmq_url or 'amqp://guest:guest@rabbitmq:5672/'
+                logger.info("RabbitMQ: credenciais da stack do broker salvas em VpsServer.rabbitmq_url.")
+            rabbitmq_url = discovered_url
+        else:
+            logger.warning("RabbitMQ: descoberta via Portainer falhou; usando URL salva na VPS ou na stack.")
 
         existing_dramatiq = (existing.get('DRAMATIQ_BROKER_URL') or '').strip()
-        dramatiq_broker_url = existing_dramatiq or rabbitmq_url
-        if not dramatiq_broker_url:
-            dramatiq_broker_url = 'amqp://guest:guest@rabbitmq:5672/'
+        dramatiq_broker_url = (
+            rabbitmq_url
+            or existing_dramatiq
+            or 'amqp://guest:guest@rabbitmq:5672/'
+        )
 
         telegram_api_id = os.getenv('TELEGRAM_API_ID', '')
         telegram_api_hash = os.getenv('TELEGRAM_API_HASH', '')
