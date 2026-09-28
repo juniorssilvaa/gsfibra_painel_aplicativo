@@ -1,6 +1,20 @@
 {
-  "current_version": "2.76.1",
+  "current_version": "2.76.2",
   "versions": [
+    {
+      "version": "2.76.2",
+      "version_type": "patch",
+      "date": "2026-09-28",
+      "title": "Correção da tela de atualização exibida indevidamente",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Agendador de tarefas",
+          "title": "Correção da tela de atualização exibida indevidamente",
+          "description": "Corrigido o erro em que, em alguns casos, aparecia a tela de atualização do sistema devido a uma falha no módulo de agendamento de tarefas."
+        }
+      ]
+    },
     {
       "version": "2.76.1",
       "version_type": "patch",
