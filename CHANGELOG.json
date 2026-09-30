@@ -24,6 +24,24 @@
           "module": "Agente de IA / ERP",
           "title": "IA lista chamados abertos do cliente no ERP",
           "description": "Implantado módulo em que a IA consegue listar os chamados abertos de um cliente específico no seu ERP."
+        },
+        {
+          "type": "improvement",
+          "module": "Notificações",
+          "title": "Notificações push mais precisas",
+          "description": "As mensagens do cliente agora geram notificação apenas para o atendente responsável pela conversa. Atendimentos na fila, com a IA ou com o chatbot avisam a equipe uma única vez, e transferências feitas pela IA também avisam os admins do provedor."
+        },
+        {
+          "type": "fix",
+          "module": "Chat interno",
+          "title": "Correção nas mídias do chat interno",
+          "description": "Corrigido o carregamento de arquivos e imagens enviados no chat interno entre usuários."
+        },
+        {
+          "type": "fix",
+          "module": "Conversas",
+          "title": "Envio de áudios em mais formatos",
+          "description": "O envio de áudios agora aceita também os formatos m4a, aac e opus."
         }
       ]
     },

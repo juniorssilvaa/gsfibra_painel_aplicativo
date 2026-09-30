@@ -169,9 +169,7 @@ class PrivateMessageViewSet(viewsets.ModelViewSet):
             **file_data
         )
         
-        # Marcar como lida pelo remetente
-        message.mark_as_read()
-        
+
         # Notificar via WebSocket
         self._notify_new_message(message)
         

@@ -47,16 +47,16 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
         ]
 
     def get_file_url(self, obj):
-        from core.media_signing import sign_media_url
+        from core.media_signing import sign_private_chat_url
         if not obj.file_url:
             return None
-        return sign_media_url(obj.file_url)
+        return sign_private_chat_url(obj.file_url)
     
     def get_reply_to(self, obj):
         if not obj.reply_to:
             return None
 
-        from core.media_signing import sign_media_url
+        from core.media_signing import sign_private_chat_url
         
         # Verifica se content existe e não é None
         content = obj.reply_to.content or ''
@@ -67,7 +67,7 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
         
         reply_file = obj.reply_to.file_url
         if reply_file:
-            reply_file = sign_media_url(reply_file)
+            reply_file = sign_private_chat_url(reply_file)
 
         return {
             'id': obj.reply_to.id,

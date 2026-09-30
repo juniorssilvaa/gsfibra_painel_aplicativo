@@ -139,6 +139,24 @@ def verify_media_signature(path: str, expires: str | int | None, sig: str | None
     return hmac.compare_digest(expected, str(sig))
 
 
+def sign_private_chat_url(file_url: str) -> str:
+    """
+    Assina mídia do chat interno sempre na rota /api/media/private_chat/<arquivo>/.
+    /media/ nem sempre é roteado ao Django (proxy pode servir o front no lugar).
+    """
+    if not file_url:
+        return file_url
+    path = urlparse(file_url).path if "://" in file_url else file_url.split("?", 1)[0]
+    legacy = "/media/private_chat/"
+    if not path.startswith("/"):
+        path = f"/{path}"
+    if path.startswith(legacy):
+        name = path[len(legacy):].strip("/")
+        if name and "/" not in name:
+            return sign_media_url(f"/api/media/private_chat/{name}")
+    return sign_media_url(file_url)
+
+
 def verify_request_media_signature(request, path: str | None = None) -> bool:
     """Valida expires/sig da query do request para o path servido."""
     canonical = _canonical_path(path or request.path)

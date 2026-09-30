@@ -4542,6 +4542,8 @@ class MessageViewSet(viewsets.ModelViewSet):
                 'video/mp4', 'video/webm',
                 'audio/mpeg', 'audio/ogg', 'audio/webm', 'application/pdf'
             ]
+            if media_type in ('ptt', 'audio', 'myaudio'):
+                allowed_mimetypes += ['audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/x-aac', 'audio/opus']
             if channel_type == 'instagram':
                 allowed_mimetypes = [
                     'image/jpeg', 'image/png',
