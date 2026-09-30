@@ -3,6 +3,14 @@
 from ai.registry.tool_registry import register_tool
 from ai.tools.integrations.clientes import buscar_cliente, selecionar_contrato
 
+_PEDIDO_CLIENTE_PARAM = {
+    "type": "string",
+    "description": (
+        "Resumo curto do que o cliente quer neste atendimento, como voce entendeu da conversa. "
+        "Fica salvo na memoria (Redis) para nao perguntar de novo."
+    ),
+}
+
 
 def register():
     register_tool(
@@ -10,11 +18,9 @@ def register():
         handler=buscar_cliente,
         description=(
             "Busca cliente no ERP por CPF/CNPJ (cliente ja existente). "
-            "Use para fatura, boleto, meu plano, suporte, liberacao, chamado, "
-            "e tambem para troca de senha/nome do Wi-Fi (retorna e salva pppoe_login). "
-            "Em suporte de internet ou Wi-Fi: peca CPF/CNPJ para localizar o cadastro/conexao — "
-            "nao diga 'verificar status do contrato'. "
-            "Nao use em contratacao/venda de plano novo — transfira para COMERCIAL. "
+            "Use sempre que precisar do cadastro de quem ja e cliente (fatura, plano, suporte, liberacao, "
+            "chamado/visita, Wi-Fi — retorna e salva pppoe_login). "
+            "Nao use para quem ainda nao e cliente e quer contratar — transfira para o comercial. "
             "OBRIGATORIO apos o retorno: use APENAS mensagem_cliente_sugerida / contratos "
             "retornados pela tool (nome, id e endereco reais). "
             "Nunca invente contrato nem escreva placeholders. "
@@ -28,7 +34,10 @@ def register():
         ),
         parameters={
             "type": "object",
-            "properties": {"cpf_cnpj": {"type": "string"}},
+            "properties": {
+                "cpf_cnpj": {"type": "string"},
+                "pedido_cliente": _PEDIDO_CLIENTE_PARAM,
+            },
             "required": ["cpf_cnpj"],
         },
         tags=["cliente", "integrations", "erp"],
@@ -42,11 +51,10 @@ def register():
         handler=selecionar_contrato,
         description=(
             "Confirma os dados do cliente ou o contrato escolhido. "
-            "Use quando o cliente confirmar (sim, esta certo, pode) ou escolher o contrato "
-            "(numero da lista 1, 2, 3... ou id do contrato, ex.: 10624). "
-            "Na resposta ao cliente: use o nome do titular e diga que ele selecionou o contrato X. "
-            "Em seguida JA execute o pedido original (fatura, suporte, Wi-Fi, desbloqueio). "
-            "Se a intencao era fatura/boleto, a fatura do contrato escolhido e gerada em seguida. "
+            "Use quando voce entender, pela resposta do cliente a sua pergunta, que ele confirmou os dados "
+            "(escolha='sim') ou indicou um contrato (posicao na lista ou id). "
+            "Depois JA execute, com a ferramenta certa, o que o cliente pediu (veja pedido_cliente) "
+            "e responda com suas palavras. Nunca execute algo que ele nao pediu. "
             "Nao invente a escolha."
         ),
         parameters={
@@ -54,12 +62,16 @@ def register():
             "properties": {
                 "escolha": {
                     "type": "string",
-                    "description": "Numero da lista (1, 2, 3...) ou id do contrato escolhido.",
+                    "description": (
+                        "'sim' quando o cliente confirmou os dados; ou a posicao na lista (1, 2, 3...) "
+                        "ou o id do contrato que ele escolheu."
+                    ),
                 },
                 "contrato_id": {
                     "type": "string",
                     "description": "Id do contrato, se o cliente informou o numero do contrato.",
                 },
+                "pedido_cliente": _PEDIDO_CLIENTE_PARAM,
             },
             "required": ["escolha"],
         },

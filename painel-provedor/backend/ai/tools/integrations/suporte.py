@@ -25,6 +25,17 @@ def verificar_acesso(*, provedor, arguments, contexto, conversation_id, actions,
     )
 
 
+def consultar_chamados(*, provedor, arguments, contexto, conversation_id, actions, **_kw):
+    return call_integration(
+        actions=actions,
+        provedor=provedor,
+        name="consultar_chamados",
+        arguments=arguments,
+        contexto=contexto,
+        conversation_id=conversation_id,
+    )
+
+
 def abrir_chamado(*, provedor, arguments, contexto, conversation_id, actions, **_kw):
     return call_integration(
         actions=actions,

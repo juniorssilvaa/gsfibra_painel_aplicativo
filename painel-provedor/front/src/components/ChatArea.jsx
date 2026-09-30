@@ -2520,6 +2520,15 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
     }
   };
 
+  const handleTakeOverConversation = () => {
+    const a = conversation?.assignee;
+    const atual = a
+      ? [a.first_name, a.last_name].filter(Boolean).join(' ').trim() || a.username || 'outro atendente'
+      : 'outro atendente';
+    if (!window.confirm(`Assumir este atendimento? Ele sairá de ${atual} e ficará com você.`)) return;
+    handleAssignToMe();
+  };
+
   // Função para encerrar conversa
   const confirmCloseConversation = async (sendCSAT) => {
     if (!conversation) return;
@@ -3376,6 +3385,19 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
             )}
 
             <div className="flex items-center gap-1.5 border-l border-white/10 pl-1.5 ml-1">
+              {supervisorMode && (
+                <button
+                  type="button"
+                  onClick={handleTakeOverConversation}
+                  disabled={assigningConversation}
+                  className={`${CONVERSATION_ACTION_BTN_BASE} h-7 px-2 disabled:opacity-60`}
+                  style={conversationActionStyle('atender')}
+                  title="Atribuir este atendimento para você"
+                >
+                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-nowrap">{assigningConversation ? 'Atribuindo...' : 'Assumir'}</span>
+                </button>
+              )}
               {!supervisorMode && (
                 <button
                   type="button"
@@ -4639,9 +4661,19 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                     : 'border-red-800 bg-[#2a0c10] text-red-50'
                 }`}
               >
-                {supervisorMode
-                  ? 'Modo supervisão: Não é possível enviar mensagens neste atendimento.'
-                  : hideWaitingQueueContent
+                {supervisorMode ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Modo supervisão: este atendimento está com outro atendente.</span>
+                    <button
+                      type="button"
+                      onClick={handleTakeOverConversation}
+                      disabled={assigningConversation}
+                      className="shrink-0 rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                    >
+                      {assigningConversation ? 'Atribuindo...' : 'Assumir atendimento'}
+                    </button>
+                  </div>
+                ) : hideWaitingQueueContent
                   ? 'Atribua esta conversa a você para ver o histórico e enviar mensagens.'
                   : 'Para responder o cliente, primeiro assuma o atendimento clicando em “Atender”.'}
               </div>

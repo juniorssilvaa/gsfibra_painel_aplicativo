@@ -204,26 +204,6 @@ class AIService:
                     conv_for_cutoff = contexto.get("conversation")
                 history_items = _filter_ai_context_by_visible_cutoff(history_items, conv_for_cutoff)
 
-            from ai.tools.integrations._runtime import detect_intent_from_messages
-
-            intent_atual = detect_intent_from_messages(
-                mensagem,
-                history_items,
-                conversation_state.get("original_intent"),
-            )
-            if intent_atual in ("FATURA", "SUPORTE") and (
-                str(conversation_state.get("original_intent") or "").strip().upper() != intent_atual
-            ):
-                conversation_state["original_intent"] = intent_atual
-                conversation_state["flow"] = intent_atual
-                await redis_memory_service.update_ai_state(
-                    provedor.id,
-                    conversation_id,
-                    {"original_intent": intent_atual, "flow": intent_atual},
-                    channel,
-                    contact_phone,
-                )
-
             has_ai_interaction = any(msg.get("role") == "assistant" for msg in history_items)
 
             messages: List[Dict[str, Any]] = []
@@ -294,39 +274,6 @@ class AIService:
             except Exception:
                 logger.exception("[AI] Falha ao buscar aprendizados do provedor %s", provedor.id)
 
-            if intent_atual == "FATURA":
-                agent_mode = self._agent_mode(provedor)
-                if agent_mode == "support":
-                    chat_messages.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "Neste turno o provedor pediu FATURA/boleto/PIX da plataforma NioHub. "
-                                "NÃO use gerar_fatura nem ERP/SGP. "
-                                "Se ainda não tiver CPF/CNPJ, peça. "
-                                "Com o documento, chame buscar_faturas_asaas; depois enviar_fatura_asaas "
-                                "com o payment_id escolhido (ou a única em aberto)."
-                            ),
-                        }
-                    )
-                else:
-                    chat_messages.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "Neste turno o cliente pediu FATURA/boleto/pagamento. "
-                                "Nao trate como suporte de internet. "
-                                "Se os dados do ERP ainda nao foram confirmados, use APENAS "
-                                "mensagem_cliente_sugerida retornada por buscar_cliente "
-                                "(dados reais — nunca invente contrato/endereco) "
-                                "e peca confirmacao UMA vez; quando confirmar, chame selecionar_contrato. "
-                                "Se houver varios contratos e ainda nao escolheu, chame selecionar_contrato. "
-                                "Se o contrato ja estiver escolhido/confirmado (Redis), chame gerar_fatura "
-                                "e NUNCA peca confirmacao de cadastro de novo."
-                            ),
-                        }
-                    )
-
             if self._agent_mode(provedor) != "support" and conversation_state.get("contrato_escolhido"):
                 chat_messages.append(
                     {
@@ -362,135 +309,19 @@ class AIService:
                         "role": "system",
                         "content": (
                             "O cliente ja foi consultado no ERP e os dados ainda nao foram confirmados. "
-                            "Mostre a estrutura (titulo + detalhes 'N - Contrato (ID): ENDERECO') com naturalidade. "
-                            "Peca UMA vez se os dados estao corretos. "
+                            "Mostre os dados reais retornados (contratos e enderecos) com naturalidade "
+                            "e peca UMA vez se estao corretos. "
                             "Se houver 2+ contratos, ainda NAO pergunte qual contrato. "
-                            "Se a mensagem atual for qualquer confirmacao afirmativa "
-                            "(sim, isso, esse mesmo, ok, e, uhum, certo, etc. — "
-                            "interprete o contexto da pergunta que voce fez), "
-                            "chame selecionar_contrato com escolha='sim' AGORA. "
+                            "Interprete a resposta do cliente em relacao a pergunta que voce fez: "
+                            "se ele confirmou, chame selecionar_contrato com escolha='sim' AGORA; "
+                            "se ele ja indicou um contrato, passe esse contrato. "
                             "Nunca peca confirmacao em loop."
-                        ),
-                    }
-                )
-
-            # Foto/LED vermelho → suporte com o cliente (não abrir chamado de imediato)
-            _msg_led = (mensagem or "").lower()
-            if any(
-                k in _msg_led
-                for k in (
-                    "led vermelho",
-                    "luz vermelha",
-                    "vermelho piscando",
-                    "led red",
-                    "vermelho aceso",
-                    "led do los",
-                    "led los",
-                    "los aceso",
-                )
-            ) or (
-                "vermelho" in _msg_led
-                and any(k in _msg_led for k in ("led", "luz", "pisc", "aceso", "ligado", "los", "pon", "fibra"))
-            ):
-                chat_messages.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            "O cliente enviou foto ou mencionou LED vermelho/LOS. "
-                            "Descreva o que viu (ex.: LED de LOS/fibra aceso) e diga que isso pode ser "
-                            "problema na fibra ou no proprio equipamento. "
-                            "NAO abra chamado e NAO transfira so por causa do LED. "
-                            "Se ainda nao tiver CPF/CNPJ, peca (uma pergunta) e chame buscar_cliente. "
-                            "Se houver varios contratos, liste e aguarde a escolha. "
-                            "Depois chame verificar_manutencao; se houver manutencao, informe e nao abra chamado. "
-                            "Chame verificar_acesso e continue o suporte/diagnostico com o cliente. "
-                            "Nunca invente contrato_id (nao use exemplos como 2255)."
-                        ),
-                    }
-                )
-
-            # Cliente agradece / vai aguardar → encerrar atendimento
-            _msg_close = (mensagem or "").lower().strip()
-            _close_strong = (
-                "vou aguardar",
-                "vou esperar",
-                "pode encerrar",
-                "pode fechar",
-                "não preciso de mais",
-                "nao preciso de mais",
-                "era só isso",
-                "era so isso",
-                "tudo certo",
-                "já entendi",
-                "ja entendi",
-                "resolvido",
-            )
-            _close_thanks = ("obrigado", "obrigada", "valeu", "agradeço", "agradeco")
-            _has_question = "?" in _msg_close or any(
-                q in _msg_close
-                for q in ("qual ", "quando ", "como ", "onde ", "pode me", "me diga", "me fala")
-            )
-            _wants_close = any(k in _msg_close for k in _close_strong) or (
-                any(k in _msg_close for k in _close_thanks)
-                and not _has_question
-                and len(_msg_close) < 80
-            )
-            if _wants_close:
-                chat_messages.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            "OBRIGATORIO: o cliente indicou que entendeu / vai aguardar / agradeceu "
-                            "e nao precisa de mais nada. "
-                            "Chame a tool encerrar_atendimento agora (motivo breve). "
-                            "Na despedida final: agradeça o contato com o nome do provedor; "
-                            "se houver nome do cliente no contexto/resultado da tool, use o primeiro nome. "
-                            "Nunca responda apenas com 'Tenha um otimo dia/noite' ou similar curto."
-                        ),
-                    }
-                )
-
-            # Pergunta de horário de funcionamento → tool do painel
-            _msg_hours = (mensagem or "").lower()
-            if any(
-                k in _msg_hours
-                for k in (
-                    "horario de funcionamento",
-                    "horário de funcionamento",
-                    "horario de atendimento",
-                    "horário de atendimento",
-                    "que horas funciona",
-                    "que horas voc",
-                    "que hora funciona",
-                    "que hora abre",
-                    "que horas abre",
-                    "que horas fecha",
-                    "horario de abertura",
-                    "horário de abertura",
-                    "esta aberto",
-                    "está aberto",
-                    "voces abrem",
-                    "vocês abrem",
-                )
-            ) or (
-                ("horario" in _msg_hours or "horário" in _msg_hours)
-                and any(k in _msg_hours for k in ("funcion", "atend", "abre", "fecha", "loja"))
-            ):
-                chat_messages.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            "OBRIGATORIO: o cliente perguntou o horario de funcionamento/atendimento. "
-                            "Chame a tool consultar_horario_atendimento agora. "
-                            "Responda somente com os horarios retornados pela tool. Nunca invente."
                         ),
                     }
                 )
 
             # Pin de localização → forçar consulta_viabilidade com as coordenadas
             force_viabilidade_coords = False
-            force_selecionar_contrato = False
-            escolha_contrato_forcada = None
             _loc_lat = _loc_lng = None
             _msg_loc = mensagem or ""
             _lat_m = re.search(r"latitude\s*=\s*(-?\d+(?:[.,]\d+)?)", _msg_loc, re.I)
@@ -511,27 +342,6 @@ class AIService:
                             "OBRIGATORIO: o cliente enviou a localizacao atual com coordenadas. "
                             f"Chame consulta_viabilidade AGORA com latitude={_loc_lat} e longitude={_loc_lng}. "
                             "Nao peca endereco antes. Nao responda so em texto sem chamar a tool."
-                        ),
-                    }
-                )
-
-            # Confirmacao/escolha de contrato → forçar selecionar_contrato (evita loop de "confirma de novo")
-            from ai.tools.integrations._runtime import _mensagem_escolhe_contrato
-
-            escolha_contrato_forcada = _mensagem_escolhe_contrato(mensagem, conversation_state)
-            _has_sel_tool = any(
-                (t.get("function") or {}).get("name") == "selecionar_contrato"
-                for t in (tools or [])
-            )
-            if escolha_contrato_forcada and _has_sel_tool and not conversation_state.get("contrato_escolhido"):
-                force_selecionar_contrato = True
-                chat_messages.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            "OBRIGATORIO: o cliente acabou de confirmar/escolher o contrato. "
-                            f"Chame selecionar_contrato AGORA com escolha='{escolha_contrato_forcada}'. "
-                            "Nao peca confirmacao de novo. Ja execute o pedido original apos a tool."
                         ),
                     }
                 )
@@ -557,12 +367,6 @@ class AIService:
                             "function": {"name": "consulta_viabilidade"},
                         }
                         force_viabilidade_coords = False
-                    elif force_selecionar_contrato and _turn == 0:
-                        kwargs["tool_choice"] = {
-                            "type": "function",
-                            "function": {"name": "selecionar_contrato"},
-                        }
-                        force_selecionar_contrato = False
                     else:
                         kwargs["tool_choice"] = "auto"
 
@@ -635,13 +439,6 @@ class AIService:
                         fargs = json.loads(tc.function.arguments or "{}")
                     except json.JSONDecodeError:
                         fargs = {}
-
-                    if (
-                        fname in ("selecionar_contrato", "escolher_contrato")
-                        and escolha_contrato_forcada
-                        and not (fargs.get("escolha") or fargs.get("contrato_id") or fargs.get("contrato"))
-                    ):
-                        fargs["escolha"] = escolha_contrato_forcada
 
                     logger.info("[AI] Executando tool %s args=%s", fname, fargs)
                     res = await self.executor.execute(

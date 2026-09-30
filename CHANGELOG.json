@@ -1,6 +1,32 @@
 {
-  "current_version": "2.76.2",
+  "current_version": "2.77.0",
   "versions": [
+    {
+      "version": "2.77.0",
+      "version_type": "minor",
+      "date": "2026-09-29",
+      "title": "Admin assume atendimentos, consulta de chamados pela IA e correção no aprendizado",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Conversas",
+          "title": "Admin pode assumir atendimentos de outros usuários",
+          "description": "Agora o admin pode assumir atendimentos que estão com outro usuário do sistema, acessando a aba Em andamento."
+        },
+        {
+          "type": "fix",
+          "module": "Agente de IA / Aprendizagem",
+          "title": "Correção no módulo de aprendizagem da IA",
+          "description": "Corrigido o módulo de aprendizagem da IA."
+        },
+        {
+          "type": "feature",
+          "module": "Agente de IA / ERP",
+          "title": "IA lista chamados abertos do cliente no ERP",
+          "description": "Implantado módulo em que a IA consegue listar os chamados abertos de um cliente específico no seu ERP."
+        }
+      ]
+    },
     {
       "version": "2.76.2",
       "version_type": "patch",

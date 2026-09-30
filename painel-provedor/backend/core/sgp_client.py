@@ -88,6 +88,106 @@ def _resumo_resposta(resp, max_len=200):
     return s + "..." if len(str(resp)) > max_len else s
 
 
+OCORRENCIA_STATUS = {0: "Aberta", 1: "Encerrada", 2: "Em execução", 3: "Pendente"}
+
+_CHAVES_LISTA_CHAMADOS = (
+    "chamados", "ocorrencias", "ocorrencia", "result", "results",
+    "data", "dados", "lista", "items", "registros",
+)
+
+
+def _extrair_lista_chamados(resp):
+    """Lista de ocorrências na resposta do SGP; None se o formato não for reconhecido."""
+    if isinstance(resp, list):
+        return [i for i in resp if isinstance(i, dict)]
+    if not isinstance(resp, dict):
+        return None
+    for key in _CHAVES_LISTA_CHAMADOS:
+        val = resp.get(key)
+        if isinstance(val, list):
+            return [i for i in val if isinstance(i, dict)]
+        if isinstance(val, dict):
+            for sub in _CHAVES_LISTA_CHAMADOS:
+                if isinstance(val.get(sub), list):
+                    return [i for i in val[sub] if isinstance(i, dict)]
+    if resp.get("status") in (1, "1", True) or resp.get("success") is True:
+        return []
+    return None
+
+
+def _primeiro_valor(d, *keys):
+    for k in keys:
+        v = d.get(k)
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def _codigo_status_ocorrencia(raw):
+    if isinstance(raw, dict):
+        raw = _primeiro_valor(raw, "id", "codigo", "status") or raw.get("descricao")
+    if raw is None:
+        return None
+    txt = str(raw).strip().lower()
+    if txt.lstrip("-").isdigit():
+        return int(txt)
+    if "abert" in txt:
+        return 0
+    if "encerr" in txt or "fechad" in txt or "finaliz" in txt:
+        return 1
+    if "execu" in txt:
+        return 2
+    if "pend" in txt:
+        return 3
+    return None
+
+
+def _formatar_data_sgp(valor):
+    """'2026-09-30T08:00:00' -> '30/09/2026 08:00'; outros formatos passam como vieram."""
+    if not valor:
+        return None
+    txt = str(valor).strip()
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?", txt)
+    if not m:
+        return txt
+    ano, mes, dia, hora, minuto = m.groups()
+    data = f"{dia}/{mes}/{ano}"
+    return f"{data} {hora}:{minuto}" if hora else data
+
+
+def _normalizar_chamado(item):
+    """Formato único de ocorrência: status numérico (0-3), protocolo, tipo e datas."""
+    if not isinstance(item, dict):
+        return None
+    base = dict(item)
+    if isinstance(item.get("ocorrencia"), dict):
+        base.update(item["ocorrencia"])
+    status = _codigo_status_ocorrencia(_primeiro_valor(
+        base, "oc_status", "ocorrencia_status", "status_ocorrencia", "statusOcorrencia", "status",
+    ))
+    tipo = _primeiro_valor(
+        base, "oc_tipo_descricao", "tipo_descricao", "ocorrenciatipo_descricao",
+        "tipo", "ocorrenciatipo", "oc_tipo", "assunto",
+    )
+    if isinstance(tipo, dict):
+        tipo = _primeiro_valor(tipo, "descricao", "nome")
+    conteudo = _primeiro_valor(base, "oc_conteudo", "conteudo", "descricao", "observacao")
+    return {
+        "id": _primeiro_valor(base, "oc_id", "id", "ocorrencia_id", "codigo"),
+        "protocolo": _primeiro_valor(base, "oc_protocolo", "protocolo", "numero_protocolo", "numero"),
+        "status": status,
+        "status_descricao": OCORRENCIA_STATUS.get(status),
+        "tipo": str(tipo).strip() if tipo else None,
+        "data_cadastro": _formatar_data_sgp(_primeiro_valor(
+            base, "oc_data_cadastro", "data_cadastro", "dataCadastro", "data_abertura", "abertura", "data",
+        )),
+        "data_agendamento": _formatar_data_sgp(_primeiro_valor(
+            base, "os_data_agendamento", "data_agendamento", "dataAgendamento", "agendamento",
+        )),
+        "conteudo": str(conteudo).strip()[:200] if conteudo else None,
+    }
+
+
 class SGPClient:
     def __init__(self, base_url, token, app_name):
         self.base_url = base_url.rstrip('/')
@@ -426,6 +526,68 @@ class SGPClient:
                 ultimo_erro = str(e)
                 self.logger.warning("[SGP] listar_tipos_ocorrencia | erro=%s", e)
         raise SGPInvalidResponse(f"Não foi possível listar os tipos de ocorrência ({ultimo_erro}).")
+
+    def listar_chamados(self, contrato=None, cpf_cnpj=None, senha=None, cliente=None):
+        """
+        Lista ocorrências/OS do contrato (POST /api/central/chamado/list/).
+        Autentica com cpfcnpj + senha da central; envia token/app também.
+        Status da ocorrência: 0 Aberta, 1 Encerrada, 2 Em execução, 3 Pendente.
+        Retorna {'success': True, 'chamados': [...]} ou {'success': False, 'error': str}.
+        """
+        url = f'{self.base_url}/api/central/chamado/list/'
+        payload = {'token': self.token, 'app': self.app_name}
+        cpf_limpo = re.sub(r"\D", "", str(cpf_cnpj or ""))
+        if cpf_limpo and senha:
+            payload['cpfcnpj'] = cpf_limpo
+            payload['senha'] = str(senha)
+        contrato_limpo = re.sub(r"\D", "", str(contrato or ""))
+        cliente_limpo = re.sub(r"\D", "", str(cliente or ""))
+        if contrato_limpo:
+            payload['contrato'] = int(contrato_limpo)
+        elif cliente_limpo:
+            payload['cliente'] = int(cliente_limpo)
+        elif 'cpfcnpj' not in payload:
+            return {'success': False, 'error': 'Informe contrato, cliente ou CPF/CNPJ com senha.'}
+
+        ultimo_erro = None
+        for modo in ('json', 'form'):
+            try:
+                if modo == 'json':
+                    r = requests.post(url, json=payload, timeout=20)
+                else:
+                    r = requests.post(url, data=payload, timeout=20)
+                self.logger.info(
+                    "[SGP] listar_chamados | %s | HTTP %s | contrato=%s | com_senha=%s",
+                    modo, r.status_code, contrato_limpo or None, bool(payload.get('senha')),
+                )
+                if r.status_code != 200:
+                    ultimo_erro = f"HTTP {r.status_code}"
+                    continue
+                resp = _parse_json_response(r, logger=self.logger, context="SGP listar_chamados")
+                itens = _extrair_lista_chamados(resp)
+                if itens is None:
+                    msg = None
+                    if isinstance(resp, dict):
+                        msg = resp.get('msg') or resp.get('mensagem') or resp.get('erro') or resp.get('error')
+                    ultimo_erro = str(msg or 'resposta sem lista de chamados')
+                    self.logger.warning(
+                        "[SGP] listar_chamados | sem lista | chaves=%s | msg=%s",
+                        list(resp.keys())[:12] if isinstance(resp, dict) else type(resp).__name__,
+                        ultimo_erro,
+                    )
+                    continue
+                chamados = [c for c in (_normalizar_chamado(it) for it in itens) if c]
+                self.logger.info(
+                    "[SGP] listar_chamados | total=%s | por_status=%s | campos_item=%s",
+                    len(chamados),
+                    {s: sum(1 for c in chamados if c.get('status') == s) for s in (0, 1, 2, 3, None)},
+                    sorted(itens[0].keys())[:25] if itens and isinstance(itens[0], dict) else [],
+                )
+                return {'success': True, 'chamados': chamados}
+            except Exception as e:
+                ultimo_erro = str(e)
+                self.logger.warning("[SGP] listar_chamados | %s | erro=%s", modo, e)
+        return {'success': False, 'error': ultimo_erro or 'Falha ao listar chamados no SGP'}
 
     # ==========================================================
     # FATURA / PAGAMENTOS

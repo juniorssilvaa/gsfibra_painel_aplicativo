@@ -28,9 +28,7 @@ def build_conversation_context(
         "provedor_nome": getattr(provedor, "nome", None),
         "telefone": contact_phone,
         "canal": channel,
-        "fluxo_atual": state.get("flow") or "NONE",
         "step_atual": state.get("step") or "INICIAL",
-        "original_intent": state.get("original_intent") or "NONE",
         "dados_confirmados": bool(state.get("dados_confirmados")),
         "protocolo_atendimento": protocolo,
         "protocol_source": protocol_source,
@@ -47,8 +45,7 @@ def as_prompt_block(ctx: Dict[str, Any]) -> str:
             "# PROTOCOLO DE ATENDIMENTO\n"
             f"- Protocolo atual: {proto}\n"
             + (
-                "- OBRIGATÓRIO na primeira resposta: informe este protocolo ao cliente "
-                f'(ex.: "Seu protocolo de atendimento é {proto}").'
+                "- OBRIGATÓRIO na primeira resposta: informe este protocolo ao cliente, com suas palavras."
                 if ctx.get("informar_protocolo_primeira_resposta")
                 else "- Se o protocolo mudar (chamado SGP), informe o novo número ao cliente."
             )

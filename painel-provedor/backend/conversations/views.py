@@ -2271,6 +2271,14 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                     if conversation.status in ['closed', 'closing']:
                         return Response({'error': 'Não é possível atribuir um atendimento já encerrado.'}, status=400)
                 
+                    anterior = conversation.assignee if conversation.assignee_id not in (None, user.id) else None
+                    nome_user = user.get_full_name() or user.username
+                    if anterior:
+                        nome_anterior = anterior.get_full_name() or anterior.username
+                        texto_atribuicao = f"{nome_user} assumiu o atendimento (estava com {nome_anterior})"
+                    else:
+                        texto_atribuicao = f"Conversa atribuída para {nome_user}"
+
                 # Atribuir conversa
                     conversation.assignee = user
                     conversation.status = 'open'
@@ -2287,7 +2295,7 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                         user=user,
                         action='conversation_assigned',
                         ip_address=request.META.get('REMOTE_ADDR', '127.0.0.1'),
-                        details=f"Conversa atribuída para {user.get_full_name() or user.username}",
+                        details=texto_atribuicao,
                         provedor=conversation.inbox.provedor,
                         conversation_id=conversation.id,
                         contact_name=conversation.contact.name,
@@ -2297,13 +2305,14 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                 # Adicionar mensagem de sistema
                     Message.objects.create(
                         conversation=conversation,
-                        content=f"Conversa atribuída para {user.get_full_name() or user.username}",
+                        content=texto_atribuicao,
                         message_type='text',
                         is_from_customer=False,
                         additional_attributes={
                             'system_message': True,
                             'action': 'conversation_assigned',
-                            'assigned_to': user.id
+                            'assigned_to': user.id,
+                            'previous_assignee': anterior.id if anterior else None,
                         }
                     )
 
@@ -2337,7 +2346,7 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
                     serializer = ConversationSerializer(conversation)
                     response_data = {
                         'success': True,
-                        'message': f'Conversa atribuída para {user.get_full_name() or user.username}',
+                        'message': texto_atribuicao,
                         'conversation': serializer.data
                     }
 

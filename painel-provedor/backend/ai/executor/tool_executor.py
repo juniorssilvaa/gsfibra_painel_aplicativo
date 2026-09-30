@@ -24,6 +24,7 @@ ERP_TOOLS = {
     "verificar_manutencao",
     "verificar_acesso",
     "abrir_chamado",
+    "consultar_chamados",
     "liberar_confianca",
     "consulta_viabilidade",
 }
@@ -38,35 +39,6 @@ class ToolExecutor:
     def agent_mode(provedor) -> str:
         return (getattr(provedor, "agent_mode", None) or "isp").strip().lower()
 
-    @staticmethod
-    def is_sales_contratation_context(
-        mensagem: str, messages: Optional[List[Dict[str, Any]]] = None
-    ) -> bool:
-        existing_keywords = (
-            "fatura", "boleto", "segunda via", "sem internet", "internet lenta",
-            "meu plano", "liberar", "desbloqueio", "suspenso", "pagamento atrasado",
-            "sem sinal", "led vermelho", "chamado",
-        )
-        sales_keywords = (
-            "contratar", "contratação", "contratacao", "quero assinar",
-            "quero fechar", "vamos fechar", "como faço para contratar",
-            "como faco para contratar", "vou querer esse", "quero esse plano",
-            "quero o plano", "fechar o plano", "processo de contratação",
-            "processo de contratacao", "finalizar a contratação",
-            "finalizar a contratacao", "equipe comercial",
-            "viabilidade", "tem cobertura", "chega internet", "atende meu bairro",
-        )
-        texts: List[str] = [mensagem or ""]
-        if messages:
-            for m in messages[-10:]:
-                content = m.get("content")
-                if isinstance(content, str) and content.strip():
-                    texts.append(content)
-        blob = " ".join(texts).lower()
-        if any(k in blob for k in existing_keywords):
-            return False
-        return any(k in blob for k in sales_keywords)
-
     def filter_result_for_prompt(self, res: Dict[str, Any], fname: str) -> Dict[str, Any]:
         if not isinstance(res, dict):
             return {"success": False, "erro": "Resultado inválido"}
@@ -78,7 +50,7 @@ class ToolExecutor:
             if key in ("mensagem_formatada", "instrucao_ia", "mensagem_manutencao_raw"):
                 continue
             if isinstance(val, (dict, list)):
-                if key in ("contratos", "manutencoes", "resultados", "caixas", "imagens_enviadas", "falhas", "tags_disponiveis", "hosts_resumo", "faturas", "faturas_pagas_recentes", "clientes") and isinstance(val, list):
+                if key in ("contratos", "manutencoes", "resultados", "caixas", "imagens_enviadas", "falhas", "tags_disponiveis", "hosts_resumo", "faturas", "faturas_pagas_recentes", "clientes", "chamados_abertos") and isinstance(val, list):
                     out[key] = val[:40] if key in ("contratos", "faturas", "faturas_pagas_recentes", "clientes") else val[:8]
                 elif key in ("filtros_usados", "consulta_endereco", "consulta_coordenadas", "cliente", "provedor_painel") and isinstance(val, dict):
                     # Passa resumo estruturado; listas internas ja vem limitadas
@@ -108,7 +80,7 @@ class ToolExecutor:
                 continue
             out[key] = val
         # Garante campos da galeria/planos no prompt da IA
-        for k in ("modo", "usar_texto", "planos_texto", "nota", "enviadas", "tag", "alteracoes", "enfileirado", "wifi_ssid", "wifi_ssid_5g", "confirmacao_selecao", "precisa_confirmar_dados", "mensagem_cliente_sugerida"):
+        for k in ("modo", "usar_texto", "planos_texto", "nota", "enviadas", "tag", "alteracoes", "enfileirado", "wifi_ssid", "wifi_ssid_5g", "pedido_cliente", "precisa_confirmar_dados", "mensagem_cliente_sugerida"):
             if k in res and k not in out:
                 out[k] = res[k]
         if "success" not in out:
@@ -203,33 +175,7 @@ class ToolExecutor:
                 )
                 return res
 
-        # 4) Contexto de venda bloqueia busca de cliente ERP
-        if resolved == "buscar_cliente" and self.is_sales_contratation_context(
-            mensagem, messages
-        ):
-            res = {
-                "success": False,
-                "bloqueado_venda": True,
-                "erro": (
-                    "Consulta ao ERP bloqueada: o cliente está em fluxo de CONTRATAÇÃO/VENDA. "
-                    "NÃO consulte o ERP. Chame transferir_conversa para COMERCIAL ou VENDAS."
-                ),
-                "acao_obrigatoria": "transferir_conversa",
-                "equipe_sugerida": "COMERCIAL",
-            }
-            audit.finish(
-                name=resolved,
-                arguments=fargs,
-                result=res,
-                started_at=started,
-                conversation_id=conversation_id,
-                provedor_id=getattr(provedor, "id", None),
-                blocked=True,
-                block_reason="sales_context",
-            )
-            return res
-
-        # 5) Executa
+        # 4) Executa
         try:
             ctx = contexto
             if mensagem and isinstance(contexto, dict) and not contexto.get("mensagem"):

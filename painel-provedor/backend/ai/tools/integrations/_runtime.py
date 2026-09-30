@@ -229,17 +229,6 @@ def _avaliar_viabilidade_coordenadas(sgp_res) -> dict:
     }
 
 
-INTERNET_PROBLEM_KEYWORDS = (
-    "internet", "sem internet", "internet lenta", "internet caiu", "internet caindo",
-    "sem sinal", "sem acesso", "problema na internet", "internet não funciona", "internet nao funciona",
-    "wifi", "wi-fi", "roteador", "modem", "led vermelho", "sinal", "conexão", "conexao", "offline", "sem net",
-    "senha do wifi", "senha do wi-fi", "senha wifi", "trocar senha", "mudar senha", "alterar senha",
-    "nome da rede", "nome do wifi", "ssid", "trocar wifi", "mudar wifi", "alterar wifi",
-)
-FATURA_KEYWORDS = {
-    "fatura", "boleto", "segunda via", "2 via", "2via", "vencimento", "conta", "cobrança", "cobranca", "pix", "pagar"
-}
-
 # Base de conhecimento pedindo fatura completa (boleto + PIX), como no chatbot paymentMethod=ambos
 _KB_FATURA_AMBOS_PATTERNS = (
     "boleto e pix",
@@ -331,30 +320,6 @@ def _extract_cpf_cnpj(text: str) -> Optional[str]:
     if len(digits) in (11, 14) and digits.isdigit():
         return digits
     return None
-
-
-def _is_document_only(text: str) -> bool:
-    if not text:
-        return False
-    cpf = _extract_cpf_cnpj(text)
-    if not cpf:
-        return False
-    cleaned = re.sub(r"[\s.\-/]", "", text.strip())
-    return cleaned == cpf
-
-
-def _is_internet_intent(text: str) -> bool:
-    if not text or _is_document_only(text):
-        return False
-    t = text.lower()
-    return any(k in t for k in INTERNET_PROBLEM_KEYWORDS)
-
-
-def _is_fatura_intent(text: str) -> bool:
-    if not text:
-        return False
-    t = text.lower()
-    return any(k in t for k in FATURA_KEYWORDS)
 
 
 def _resolver_contrato_id(cid_arg, conversation_state: Optional[dict] = None) -> Dict[str, Any]:
@@ -492,6 +457,85 @@ def _aguardando_contrato_ou_confirmacao(conversation_state: Optional[dict]) -> b
     return _precisa_escolher_contrato(conversation_state) or _precisa_confirmar_dados(conversation_state)
 
 
+# Status de ocorrência SGP que contam como chamado em andamento: 0 Aberta, 3 Pendente.
+CHAMADO_STATUS_EM_ANDAMENTO = (0, 3)
+
+
+def _senha_central_contrato(conversation_state: Optional[dict], contrato_id) -> Optional[str]:
+    cid = re.sub(r"[^\d]", "", str(contrato_id or ""))
+    for c in _lista_contratos_estado(conversation_state):
+        if _contrato_id_of(c) == cid:
+            return c.get("contratoCentralSenha") or None
+    return None
+
+
+def _consultar_chamados_em_andamento(sgp, conversation_state: Optional[dict], contrato_id) -> Dict[str, Any]:
+    state = conversation_state or {}
+    try:
+        res = sgp.listar_chamados(
+            contrato=contrato_id,
+            cpf_cnpj=state.get("cpf_cnpj"),
+            senha=_senha_central_contrato(state, contrato_id),
+        )
+    except Exception as e:
+        logger.warning("[SGP] listar_chamados falhou | contrato=%s | erro=%s", contrato_id, e)
+        return {"ok": False, "erro": str(e)}
+    if not isinstance(res, dict) or not res.get("success"):
+        return {"ok": False, "erro": (res or {}).get("error") if isinstance(res, dict) else "resposta invalida"}
+    chamados = res.get("chamados") or []
+    em_andamento = [
+        {
+            "protocolo": c.get("protocolo") or c.get("id"),
+            "situacao": c.get("status_descricao"),
+            "tipo": c.get("tipo"),
+            "data_abertura": c.get("data_cadastro"),
+            "data_agendamento": c.get("data_agendamento"),
+        }
+        for c in chamados
+        if c.get("status") in CHAMADO_STATUS_EM_ANDAMENTO
+    ]
+    return {"ok": True, "em_andamento": em_andamento, "total": len(chamados)}
+
+
+def _resposta_consulta_chamados(consulta: Dict[str, Any], contrato_id) -> Dict[str, Any]:
+    if not consulta.get("ok"):
+        return {
+            "success": True,
+            "contrato_id": contrato_id,
+            "consulta_indisponivel": True,
+            "nota": (
+                "Nao foi possivel consultar os chamados no sistema (uso interno: NAO mencione isso ao cliente). "
+                "Decida pelo que o cliente quer: se ele pediu uma visita/chamado novo, abra com abrir_chamado; "
+                "se ele so queria saber de um chamado existente, encaminhe para a equipe verificar "
+                "(transferir_inteligente)."
+            ),
+        }
+    if consulta.get("em_andamento"):
+        return {
+            "success": True,
+            "contrato_id": contrato_id,
+            "tem_chamado_aberto": True,
+            "chamados_abertos": consulta["em_andamento"],
+            "nota": (
+                "O cliente JA tem chamado em andamento neste contrato (situacao Aberta ou Pendente). "
+                "Informe com suas palavras o que for relevante para ele (protocolo, situacao, agendamento). "
+                "NAO abra outro chamado."
+            ),
+        }
+    return {
+        "success": True,
+        "contrato_id": contrato_id,
+        "tem_chamado_aberto": False,
+        "chamados_abertos": [],
+        "nota": (
+            "Nenhum chamado Aberto ou Pendente neste contrato (nunca mencione chamados encerrados). "
+            "Decida pelo que o cliente quer: se ele pediu visita tecnica/chamado, abra com abrir_chamado "
+            "(no conteudo, o pedido e a data/periodo que ele informou) e informe o protocolo; "
+            "se ele so queria saber de um chamado, informe que nao ha nenhum em aberto e veja se ele quer abrir."
+        ),
+    }
+
+
 def _escolha_e_confirmacao(escolha) -> bool:
     """
     Interpreta afirmação do cliente no contexto de confirmação.
@@ -544,32 +588,6 @@ def _escolha_e_confirmacao(escolha) -> bool:
     return False
 
 
-def _mensagem_escolhe_contrato(mensagem, conversation_state: Optional[dict]) -> Optional[str]:
-    """Se a mensagem do cliente confirma ou escolhe contrato, retorna o valor para selecionar_contrato."""
-    state = conversation_state or {}
-    if state.get("contrato_escolhido"):
-        return None
-    contratos = _lista_contratos_estado(state)
-    raw = str(mensagem or "").strip()
-    if not raw:
-        return None
-
-    # Cliente ja apontou o contrato (1, 2, id...) — vale em qualquer etapa pendente.
-    matched = _match_contrato_escolha(raw, contratos) if contratos else None
-    if matched and not _escolha_e_confirmacao(raw):
-        return _contrato_id_of(matched) or raw
-
-    if _precisa_confirmar_dados(state) and _escolha_e_confirmacao(raw):
-        return "sim"
-
-    if _precisa_escolher_contrato(state) and matched:
-        return _contrato_id_of(matched) or raw
-
-    if _precisa_escolher_contrato(state) and _escolha_e_confirmacao(raw) and len(contratos) == 1:
-        return "sim"
-    return None
-
-
 def _persistir_dados_confirmados(
     provedor,
     conversation_id,
@@ -600,14 +618,6 @@ def _persistir_dados_confirmados(
     if isinstance(conversation_state, dict):
         conversation_state.update(updates)
     return updates
-
-
-def _frase_contrato_selecionado(nome: str, contrato: Optional[dict]) -> str:
-    cid = _contrato_id_of(contrato)
-    pessoa = (nome or "").strip() or "Cliente"
-    if cid:
-        return f"{pessoa}, você selecionou o contrato {cid}"
-    return f"{pessoa}, contrato confirmado"
 
 
 def _resposta_precisa_confirmar_dados(contratos: list, nome: str = "") -> dict:
@@ -720,84 +730,25 @@ def _persistir_contrato_escolhido(
     return updates
 
 
-def _history_has_internet_intent(history_items) -> bool:
-    for msg_data in history_items or []:
-        if msg_data.get("role") != "user":
-            continue
-        if _is_internet_intent(msg_data.get("content") or ""):
-            return True
-    return False
+def _salvar_pedido_cliente(provedor, conversation_id, channel, phone, conversation_state: dict, pedido) -> None:
+    """Guarda no Redis o que o cliente quer, como a própria IA entendeu da conversa."""
+    pedido = str(pedido or "").strip()[:300]
+    if not pedido or pedido == str(conversation_state.get("pedido_cliente") or ""):
+        return
+    if conversation_id:
+        redis_memory_service.update_ai_state_sync(
+            provedor.id, conversation_id, {"pedido_cliente": pedido}, channel, phone
+        )
+    conversation_state["pedido_cliente"] = pedido
 
 
-def _history_has_fatura_intent(history_items) -> bool:
-    for msg_data in history_items or []:
-        if msg_data.get("role") != "user":
-            continue
-        content = msg_data.get("content") or ""
-        if _is_document_only(content):
-            continue
-        if _is_fatura_intent(content):
-            return True
-    return False
-
-
-def _intent_mais_recente(texts) -> str:
-    """A mensagem mais nova manda: fatura prevalece sobre suporte antigo."""
-    for t in texts or []:
-        if not t or _is_document_only(t):
-            continue
-        if _is_fatura_intent(t):
-            return "FATURA"
-        if _is_internet_intent(t):
-            return "SUPORTE"
-    return ""
-
-
-def detect_intent_from_messages(
-    mensagem: str = "",
-    history_items=None,
-    stored_intent: str = "",
-) -> str:
-    texts = []
-    if mensagem and str(mensagem).strip():
-        texts.append(str(mensagem).strip())
-    for item in reversed(history_items or []):
-        if item.get("role") != "user":
-            continue
-        content = (item.get("content") or "").strip()
-        if content:
-            texts.append(content)
-    recente = _intent_mais_recente(texts)
-    if recente:
-        return recente
-    stored = (stored_intent or "").strip().upper()
-    return stored if stored in ("FATURA", "SUPORTE") else "NONE"
-
-
-def _intent_atual_do_contexto(contexto, conversation_state, conversation_id, channel, phone, provedor) -> str:
-    mensagem = ""
-    ctx = contexto or {}
-    for key in ("mensagem", "last_user_message", "user_message"):
-        val = ctx.get(key)
-        if isinstance(val, str) and val.strip():
-            mensagem = val.strip()
-            break
-    if not mensagem:
-        mensagem = str(conversation_state.get("last_user_message") or "").strip()
-    history_items = []
-    try:
-        if provedor and conversation_id:
-            mem = redis_memory_service.get_ai_memory_sync(
-                provedor.id, conversation_id, channel, phone
-            )
-            history_items = (mem or {}).get("context") or []
-    except Exception:
-        history_items = []
-    return detect_intent_from_messages(
-        mensagem,
-        history_items,
-        conversation_state.get("original_intent"),
-    )
+def _salvar_chamados_no_estado(provedor, conversation_id, channel, phone, conversation_state: dict, dados: dict) -> None:
+    if conversation_id:
+        try:
+            redis_memory_service.update_ai_state_sync(provedor.id, conversation_id, dados, channel, phone)
+        except Exception:
+            logger.debug("[AIACTIONS] Falha ao salvar chamados no Redis", exc_info=True)
+    conversation_state.update(dados)
 
 
 def _debug_log(message: str, data: Dict[str, Any], *, location: str, hypothesis_id: str, run_id: str = "run1") -> None:
@@ -989,9 +940,8 @@ class AIActionsHandler:
                                 if nome_cliente
                                 else ""
                             )
-                            + f"Agradeça o contato com {nome_provedor} "
-                            f"(ex.: \"Obrigado por entrar em contato com a {nome_provedor}\"). "
-                            f"Encerre com '{info_hora.get('despedida')}' (ou equivalente do horario). "
+                            + f"Agradeça o contato em nome de {nome_provedor}, com suas palavras. "
+                            f"A despedida deve combinar com o horario ({info_hora.get('despedida')}). "
                             "Nao responda apenas com a despedida curta."
                         ),
                     }
@@ -1040,23 +990,10 @@ class AIActionsHandler:
             if conversation_id:
                 conversation_state = redis_memory_service.get_ai_state_sync(provedor.id, conversation_id, channel, phone)
 
-            intent_atual = _intent_atual_do_contexto(
-                contexto, conversation_state, conversation_id, channel, phone, provedor
+            _salvar_pedido_cliente(
+                provedor, conversation_id, channel, phone, conversation_state,
+                function_args.pop("pedido_cliente", None),
             )
-            if (
-                intent_atual in ("FATURA", "SUPORTE")
-                and conversation_id
-                and str(conversation_state.get("original_intent") or "").strip().upper() != intent_atual
-            ):
-                redis_memory_service.update_ai_state_sync(
-                    provedor.id,
-                    conversation_id,
-                    {"original_intent": intent_atual, "flow": intent_atual},
-                    channel,
-                    phone,
-                )
-                conversation_state["original_intent"] = intent_atual
-                conversation_state["flow"] = intent_atual
 
             # Cálculo de hash para idempotência
             args_hash = hashlib.sha256(json.dumps(function_args, sort_keys=True, default=str).encode("utf-8")).hexdigest()
@@ -1115,6 +1052,7 @@ class AIActionsHandler:
                 "verificar_manutencao",
                 "verificar_acesso",
                 "abrir_chamado",
+                "consultar_chamados",
                 "liberar_confianca",
             ) and _aguardando_contrato_ou_confirmacao(conversation_state):
                 contratos_pendentes = _lista_contratos_estado(conversation_state)
@@ -1280,20 +1218,6 @@ class AIActionsHandler:
                         else c.get('contratoStatusDisplay', '').strip().lower() in ['suspenso', 'suspensa']
                     )
 
-                    # Intenção do turno atual (fatura prevalece sobre SUPORTE antigo).
-                    original_intent = _intent_atual_do_contexto(
-                        contexto, conversation_state, conversation_id, channel, phone, provedor
-                    )
-                    if original_intent not in ('FATURA', 'SUPORTE'):
-                            original_intent = 'NONE'
-
-                    if is_suspenso:
-                        actual_flow = 'SUSPENSO'
-                    elif original_intent == 'SUPORTE':
-                        actual_flow = 'SUPORTE'
-                    else:
-                        actual_flow = 'FATURA'
-
                     login_salvo = None if multiplos else _extract_pppoe_login(c)
                     updates = {
                         'cpf_cnpj': cpf_cnpj,
@@ -1308,10 +1232,6 @@ class AIActionsHandler:
                         'dados_confirmados': False,
                         'precisa_escolher_contrato': False,
                         'precisa_confirmar_dados': True,
-                        'original_intent': original_intent if original_intent in ('FATURA', 'SUPORTE') else conversation_state.get('original_intent'),
-                        'flow': actual_flow if not multiplos else (
-                            'SUPORTE' if original_intent == 'SUPORTE' else 'FATURA'
-                        ),
                         'step': step,
                         'contratos': contratos,
                     }
@@ -1464,81 +1384,16 @@ class AIActionsHandler:
                 )
                 cid = persistido.get("contrato_id")
                 nome = conversation_state.get("nome_cliente") or ""
-                frase = _frase_contrato_selecionado(nome, selecionado)
                 endereco = _endereco_contrato(selecionado)
-                intent = _intent_atual_do_contexto(
-                    contexto, conversation_state, conversation_id, channel, phone, provedor
-                )
+                pedido = conversation_state.get("pedido_cliente") or None
                 logger.warning(
-                    "[SGP] selecionar_contrato | conv=%s | contrato=%s | intent=%s",
-                    conversation_id, cid, intent,
+                    "[SGP] selecionar_contrato | conv=%s | contrato=%s | pedido_cliente=%s",
+                    conversation_id, cid, (pedido or "")[:80],
                 )
-
-                nota_confirmacao = (
-                    f"OBRIGATORIO na resposta ao cliente: diga com suas palavras, usando o nome do titular, "
-                    f"que ele selecionou o contrato — no estilo '{frase}'"
-                    + (f" ({endereco})" if endereco else "")
-                    + ". Depois ja informe o resultado da acao executada. "
-                )
-
-                if intent == "FATURA":
-                    fatura_res = self.execute_integration_function(
-                        provedor,
-                        "gerar_fatura",
-                        {
-                            "cpf_cnpj": conversation_state.get("cpf_cnpj"),
-                            "contrato_id": cid,
-                        },
-                        contexto,
-                    )
-                    if isinstance(fatura_res, dict):
-                        fatura_res = dict(fatura_res)
-                        fatura_res["nome"] = nome or fatura_res.get("nome")
-                        fatura_res["contrato_id"] = cid
-                        fatura_res["contrato_escolhido"] = True
-                        fatura_res["confirmacao_selecao"] = frase
-                        fatura_res["nota"] = nota_confirmacao + (fatura_res.get("nota") or "")
-                    return fatura_res
-
-                if intent == "SUPORTE":
-                    manut_res = {}
-                    if not persistido.get("is_suspenso"):
-                        manut_res = self.execute_integration_function(
-                            provedor,
-                            "verificar_manutencao",
-                            {"cpf_cnpj": conversation_state.get("cpf_cnpj")},
-                            contexto,
-                        ) or {}
-                    if isinstance(manut_res, dict) and manut_res.get("tem_manutencao"):
-                        manut_res = dict(manut_res)
-                        manut_res["nome"] = nome
-                        manut_res["contrato_id"] = cid
-                        manut_res["contrato_escolhido"] = True
-                        manut_res["confirmacao_selecao"] = frase
-                        manut_res["nota"] = nota_confirmacao + (manut_res.get("nota") or "")
-                        return manut_res
-                    acesso_res = self.execute_integration_function(
-                        provedor,
-                        "verificar_acesso",
-                        {"contrato": cid},
-                        contexto,
-                    )
-                    if isinstance(acesso_res, dict):
-                        acesso_res = dict(acesso_res)
-                        acesso_res["nome"] = nome
-                        acesso_res["contrato_id"] = cid
-                        acesso_res["contrato_escolhido"] = True
-                        acesso_res["confirmacao_selecao"] = frase
-                        acesso_res["tem_manutencao"] = bool(
-                            isinstance(manut_res, dict) and manut_res.get("tem_manutencao")
-                        )
-                        acesso_res["nota"] = nota_confirmacao + (acesso_res.get("nota") or "")
-                    return acesso_res
 
                 res = {
                     "success": True,
                     "contrato_escolhido": True,
-                    "confirmacao_selecao": frase,
                     "nome": nome or None,
                     "contrato_id": cid,
                     "status": persistido.get("contrato_status_display"),
@@ -1546,14 +1401,16 @@ class AIActionsHandler:
                     "endereco": endereco or None,
                     "is_suspenso": persistido.get("is_suspenso"),
                     "pppoe_login": persistido.get("pppoe_login"),
-                    "original_intent": intent or None,
+                    "pedido_cliente": pedido,
                     "nota": (
-                        nota_confirmacao
-                        + "JA execute o que o cliente pediu neste mesmo turno "
-                        "(gerar_fatura se for cobranca, verificar_acesso se for internet, "
-                        "alterar_wifi_acs se for Wi-Fi, liberar_confianca se for desbloqueio)."
+                        "Contrato confirmado e salvo no Redis; nao peca confirmacao de novo. "
+                        "Agora, pelo que voce entendeu da conversa (pedido_cliente e historico), "
+                        "ja chame neste mesmo turno a ferramenta que atende o que o cliente pediu "
+                        "e responda com suas proprias palavras, sem frases prontas. "
+                        "Nao execute nada que o cliente nao pediu (ex.: nunca envie fatura sem ele pedir). "
+                        "Se ainda nao estiver claro o que ele quer, pergunte."
                     ),
-                    }
+                }
 
             elif function_name == "verificar_manutencao":
                 cpf_cnpj = function_args.get('cpf_cnpj', '')
@@ -1733,26 +1590,6 @@ class AIActionsHandler:
                     }
 
             elif function_name == "gerar_fatura":
-                intent = _intent_atual_do_contexto(
-                    contexto, conversation_state, conversation_id, channel, phone, provedor
-                )
-                if intent == 'SUPORTE':
-                    logger.warning(
-                        "[AIACTIONS] gerar_fatura_completa bloqueada | original_intent=SUPORTE | conv=%s",
-                        conversation_id,
-                    )
-                    return {
-                        "success": False,
-                        "erro": (
-                            "Cliente está em suporte de internet. NÃO envie fatura. "
-                            "Chame verificar_acesso_sgp e continue o diagnóstico."
-                        ),
-                        "instrucao_ia": (
-                            "O contexto original é problema de internet. "
-                            "Chame verificar_acesso_sgp agora e faça a tratativa de suporte."
-                        ),
-                    }
-
                 # Priorizar input sobre contexto para evitar dados stale
                 cpf = function_args.get('cpf_cnpj') or conversation_state.get('cpf_cnpj')
                 # Padrao PIX; KB do provedor ou parametro da tool podem pedir boleto/ambos
@@ -1829,25 +1666,12 @@ class AIActionsHandler:
                             channel,
                             phone,
                         )
-                    if tipo_pagamento == "ambos":
-                        nota_envio = (
-                            "Fatura completa (boleto + PIX) ja foi enviada AGORA nesta conversa. "
-                            "Confirme de forma natural (ex.: 'Prontinho, enviei sua fatura com PIX e boleto'). "
-                            "NAO diga 'pelo canal informado', 'recebera em breve' nem mencione canal. "
-                            "Pergunte se pode ajudar em algo mais."
-                        )
-                    elif tipo_pagamento == "boleto":
-                        nota_envio = (
-                            "Fatura com boleto ja foi enviada AGORA nesta conversa. "
-                            "Confirme de forma natural e pergunte se pode ajudar em algo mais."
-                        )
-                    else:
-                        nota_envio = (
-                            "Fatura com PIX ja foi enviada AGORA nesta conversa. "
-                            "Confirme de forma natural (ex.: 'Prontinho, acabei de enviar sua fatura'). "
-                            "NAO diga 'pelo canal informado', 'recebera em breve' nem mencione canal. "
-                            "Pergunte se pode ajudar em algo mais."
-                        )
+                    forma = {"ambos": "boleto + PIX", "boleto": "boleto"}.get(tipo_pagamento, "PIX")
+                    nota_envio = (
+                        f"Fatura ({forma}) ja foi enviada AGORA nesta conversa. "
+                        "Confirme ao cliente com suas proprias palavras, sem frase pronta, "
+                        "sem dizer que vai chegar depois ou por outro canal."
+                    )
                     res = {
                         "success": True,
                         "fatura_enviada": True,
@@ -1859,6 +1683,34 @@ class AIActionsHandler:
                     }
                 else:
                     res = {"success": False, "erro": "Falha no envio."}
+
+            elif function_name == "consultar_chamados":
+                if not conversation_state.get("cliente_consultado") and not conversation_state.get("contrato_id"):
+                    return {
+                        "success": False,
+                        "erro": (
+                            "Cliente ainda nao foi localizado. "
+                            "Peca CPF/CNPJ, chame buscar_cliente e confirme o contrato antes."
+                        ),
+                    }
+                resolved = _resolver_contrato_id(function_args.get('contrato'), conversation_state)
+                if not resolved.get("ok"):
+                    return {"success": False, "erro": resolved.get("erro")}
+                cid = resolved["contrato_id"]
+                consulta = _consultar_chamados_em_andamento(sgp, conversation_state, cid)
+                logger.info(
+                    "[SGP] consultar_chamados | conv=%s | contrato=%s | ok=%s | em_andamento=%s",
+                    conversation_id, cid, consulta.get("ok"), len(consulta.get("em_andamento") or []),
+                )
+                if consulta.get("ok"):
+                    _salvar_chamados_no_estado(
+                        provedor, conversation_id, channel, phone, conversation_state,
+                        {
+                            "chamados_consultados_contrato": str(cid),
+                            "chamados_em_andamento": consulta.get("em_andamento") or [],
+                        },
+                    )
+                res = _resposta_consulta_chamados(consulta, cid)
 
             elif function_name == "abrir_chamado":
                 cont = function_args.get('conteudo')
@@ -1896,6 +1748,24 @@ class AIActionsHandler:
 
                 if conversation_state.get('is_suspenso'):
                     return {"success": False, "erro": "Contrato suspenso.", "contrato_suspenso": True}
+
+                consulta = _consultar_chamados_em_andamento(sgp, conversation_state, cid)
+                if consulta.get("ok") and consulta.get("em_andamento"):
+                    logger.warning(
+                        "[SGP] abrir_chamado recusado: contrato=%s ja tem %s chamado(s) aberto/pendente | conv=%s",
+                        cid, len(consulta["em_andamento"]), conversation_id,
+                    )
+                    return {
+                        "success": False,
+                        "chamado_ja_aberto": True,
+                        "contrato_id": cid,
+                        "chamados_abertos": consulta["em_andamento"],
+                        "nota": (
+                            "NAO foi aberto novo chamado: o cliente ja tem chamado Aberto/Pendente neste contrato. "
+                            "Informe com suas palavras o protocolo, a situacao e o agendamento (se houver). "
+                            "NAO diga que abriu chamado agora."
+                        ),
+                    }
 
                 # Criar chamado no SGP com ID real do contrato
                 sgp_res = sgp.criar_chamado(contrato=str(cid), conteudo=cont, ocorrenciatipo=1)
@@ -2006,6 +1876,17 @@ class AIActionsHandler:
                             transfer_res.get('success'),
                         )
 
+                    _salvar_chamados_no_estado(
+                        provedor, conversation_id, channel, phone, conversation_state,
+                        {
+                            "chamado_aberto_protocolo": str(protocolo or ""),
+                            "chamados_consultados_contrato": str(cid),
+                            "chamados_em_andamento": [
+                                {"protocolo": protocolo, "situacao": "Aberta", "tipo": None,
+                                 "data_abertura": None, "data_agendamento": None}
+                            ],
+                        },
+                    )
                     res = {
                         "success": True,
                         "protocolo": protocolo,

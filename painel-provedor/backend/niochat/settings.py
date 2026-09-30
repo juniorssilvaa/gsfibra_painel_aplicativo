@@ -44,11 +44,11 @@ from django.core.exceptions import ImproperlyConfigured
 # BASE
 # ============================================
 
-__version__ = "2.76.2"
-__version_info__ = (2, 76, 2)
+__version__ = "2.77.0"
+__version_info__ = (2, 77, 0)
 
 # Compatibilidade legado
-VERSION = "2.76.2"
+VERSION = "2.77.0"
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Sempre usar config que prioriza variáveis de ambiente sobre arquivo .env

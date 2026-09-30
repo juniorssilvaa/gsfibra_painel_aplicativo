@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 def build_customer_context(conversation_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     state = conversation_state or {}
     return {
+        "pedido_cliente": state.get("pedido_cliente"),
         "cpf_cnpj": state.get("cpf_cnpj"),
         "nome_cliente": state.get("nome_cliente"),
         "contrato_id": state.get("contrato_id"),
@@ -23,6 +24,9 @@ def build_customer_context(conversation_state: Optional[Dict[str, Any]] = None) 
         "contrato_status": state.get("contrato_status_display"),
         "motivo_status": state.get("motivo_status"),
         "fatura_enviada": state.get("fatura_enviada"),
+        "chamados_consultados_contrato": state.get("chamados_consultados_contrato"),
+        "chamados_em_andamento": state.get("chamados_em_andamento"),
+        "chamado_aberto_protocolo": state.get("chamado_aberto_protocolo"),
         "cidade": state.get("cidade") or state.get("endereco_cidade"),
         "tags": state.get("tags") or [],
     }
@@ -33,7 +37,18 @@ def as_prompt_block(ctx: Dict[str, Any]) -> str:
     if not any(v not in (None, "", [], False) for k, v in ctx.items() if k != "tags"):
         if not ctx.get("tags"):
             return ""
-    block = "# CONTEXTO DO CLIENTE\n" + json.dumps(ctx, indent=2, ensure_ascii=False, default=str)
+    block = "# CONTEXTO DO CLIENTE (memoria Redis desta conversa)\n" + json.dumps(
+        ctx, indent=2, ensure_ascii=False, default=str
+    )
+    block += (
+        "\n# COMO USAR A MEMORIA\n"
+        "Tudo acima ja foi perguntado, respondido ou consultado nesta conversa. "
+        "Nao pergunte de novo nem refaca consultas cujo resultado ja esta aqui, "
+        "a menos que o cliente mude de assunto, de contrato ou peca para verificar novamente. "
+        "pedido_cliente e o que voce mesmo entendeu antes; confira com a mensagem atual se o cliente "
+        "continua no mesmo pedido ou mudou, e ao chamar buscar_cliente/selecionar_contrato "
+        "envie pedido_cliente atualizado."
+    )
     if ctx.get("contrato_escolhido"):
         block += (
             "\n# REGRA DE MEMORIA (Redis)\n"
@@ -53,8 +68,9 @@ def as_prompt_block(ctx: Dict[str, Any]) -> str:
     elif ctx.get("precisa_confirmar_dados"):
         block += (
             "\n# REGRA DE MEMORIA (Redis)\n"
-            "precisa_confirmar_dados=true: mostre a lista de contratos e peca UMA vez se os dados estao corretos. "
+            "precisa_confirmar_dados=true: mostre os contratos e peca UMA vez se os dados estao corretos. "
             "Com 2+ contratos, ainda NAO pergunte qual contrato. "
-            "Se a mensagem atual for confirmacao (sim/esta certo), chame selecionar_contrato imediatamente."
+            "Interprete a resposta do cliente em relacao a sua pergunta: se ele confirmou, "
+            "chame selecionar_contrato imediatamente."
         )
     return block
