@@ -16,14 +16,21 @@ CACHE_TTL = 60
 
 
 def _notify_agent_push_for_customer_message(msg, conversation):
-    """Envia push FCM ao(s) atendente(s) quando o cliente manda mensagem.
+    """Envia push FCM quando o cliente manda mensagem — só para o atendente da conversa.
 
-    - Com assignee: avisa o atendente da conversa
-    - Em espera (waiting_for_agent): avisa atendentes do provedor/equipe
-    - Com a IA / chatbot (sem assignee e fora da fila): avisa atendentes do provedor
+    Sem assignee (fila de espera, IA ou chatbot) não há push por mensagem: a equipe
+    é avisada uma única vez quando o atendimento entra na fila
+    (notify_agents_waiting_alert).
     """
     from core.agent_push import notify_agents_push
-    from core.agent_alert_notify import _resolve_push_user_ids
+
+    assignee_id = getattr(conversation, 'assignee_id', None)
+    if not assignee_id:
+        logger.info(
+            "[MessageSignal] Push ignorado conv=%s (sem atendente atribuído)",
+            getattr(conversation, 'id', None),
+        )
+        return
 
     contact = getattr(conversation, 'contact', None)
     nome = (getattr(contact, 'name', None) or 'Cliente').strip() or 'Cliente'
@@ -33,65 +40,17 @@ def _notify_agent_push_for_customer_message(msg, conversation):
     elif len(preview) > 120:
         preview = preview[:117] + '…'
 
-    assignee = getattr(conversation, 'assignee', None)
-    assignee_id = getattr(conversation, 'assignee_id', None) or (
-        getattr(assignee, 'id', None) if assignee else None
-    )
-
-    provedor = getattr(getattr(conversation, 'inbox', None), 'provedor', None)
-    team = getattr(conversation, 'team', None)
-    waiting = bool(getattr(conversation, 'waiting_for_agent', False))
-
-    user_ids = []
-    event_type = 'new_message'
-    title = nome
-
-    if assignee_id:
-        user_ids = [int(assignee_id)]
-        event_type = 'new_message'
-    elif provedor is not None and waiting:
-        user_ids = _resolve_push_user_ids(
-            provedor,
-            target_user=None,
-            team=team,
-            exclude_user_id=None,
-        )
-        event_type = 'waiting'
-        title = f'Espera · {nome}'
-    elif provedor is not None:
-        # Com a IA / chatbot (sem atendente humano)
-        user_ids = _resolve_push_user_ids(
-            provedor,
-            target_user=None,
-            team=None,
-            exclude_user_id=None,
-        )
-        event_type = 'automation'
-        bot_mode = (getattr(provedor, 'bot_mode', None) or 'ia').strip().lower()
-        prefix = 'Chatbot' if bot_mode == 'chatbot' else 'IA'
-        title = f'{prefix} · {nome}'
-
-    if not user_ids:
-        logger.info(
-            "[MessageSignal] Push ignorado conv=%s assignee=%s waiting=%s (sem destinatários)",
-            getattr(conversation, 'id', None),
-            assignee_id,
-            waiting,
-        )
-        return
-
     result = notify_agents_push(
-        user_ids=user_ids,
-        title=title,
+        user_ids=[int(assignee_id)],
+        title=nome,
         body=preview,
         conversation_id=getattr(conversation, 'id', None),
-        event_type=event_type,
+        event_type='new_message',
     )
     logger.info(
-        "[MessageSignal] Push FCM conv=%s type=%s users=%s result=%s",
+        "[MessageSignal] Push FCM conv=%s assignee=%s result=%s",
         getattr(conversation, 'id', None),
-        event_type,
-        len(user_ids),
+        assignee_id,
         result,
     )
 

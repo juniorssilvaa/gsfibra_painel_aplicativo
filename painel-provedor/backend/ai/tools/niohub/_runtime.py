@@ -689,6 +689,7 @@ class DatabaseTools:
                     conversa,
                     team=team_obj,
                     motivo=motivo or "",
+                    include_admins=team_obj is not None,
                 )
                 resultado['agent_notify'] = agent_notify
             except Exception as agent_notify_err:

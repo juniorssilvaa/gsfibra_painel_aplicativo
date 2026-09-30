@@ -212,40 +212,57 @@ def _resolve_push_user_ids(
     target_user=None,
     team=None,
     exclude_user_id: Optional[int] = None,
+    include_admins: bool = False,
 ) -> List[int]:
-    """IDs de atendentes que devem receber push no app (não exige telefone)."""
+    """IDs de atendentes que devem receber push no app (não exige telefone).
+
+    Admins do provedor só entram com include_admins (transferência da IA para equipe);
+    fora isso recebem apenas como membro da equipe ou destinatário direto.
+    """
     from django.contrib.auth import get_user_model
     from django.db.models import Q
     from conversations.models import TeamMember
 
     User = get_user_model()
-    candidates = []
 
-    def _provider_agents():
-        return list(
+    admin_ids = set(
+        User.objects.filter(
+            Q(provedores_admin=provedor) | Q(provedor=provedor, user_type="admin"),
+            is_active=True,
+        )
+        .exclude(user_type="superadmin")
+        .values_list("id", flat=True)
+    )
+
+    def _provider_agents() -> List[int]:
+        ids = (
             User.objects.filter(
                 Q(provedor=provedor) | Q(provedores_admin=provedor),
                 is_active=True,
             )
             .exclude(user_type="superadmin")
             .distinct()
-            .only("id")
+            .values_list("id", flat=True)
         )
+        return [uid for uid in ids if uid not in admin_ids]
 
     if target_user is not None:
-        candidates = [target_user]
+        candidate_ids = [getattr(target_user, "id", None)]
     elif team is not None:
         member_ids = TeamMember.objects.filter(team=team).values_list("user_id", flat=True)
-        candidates = list(User.objects.filter(id__in=member_ids, is_active=True).only("id"))
-        if not candidates:
-            candidates = _provider_agents()
+        candidate_ids = list(
+            User.objects.filter(id__in=member_ids, is_active=True).values_list("id", flat=True)
+        )
+        if not candidate_ids:
+            candidate_ids = _provider_agents()
+        if include_admins:
+            candidate_ids = [*candidate_ids, *sorted(admin_ids)]
     else:
-        candidates = _provider_agents()
+        candidate_ids = _provider_agents()
 
-    ids = []
-    for u in candidates:
-        uid = getattr(u, "id", None)
-        if not uid:
+    ids: List[int] = []
+    for uid in candidate_ids:
+        if not uid or uid in ids:
             continue
         if exclude_user_id and uid == exclude_user_id:
             continue
@@ -261,6 +278,7 @@ def notify_agents_waiting_alert(
     team=None,
     motivo: str = "",
     exclude_user_id: Optional[int] = None,
+    include_admins: bool = False,
 ) -> dict[str, Any]:
     """
     Avisa atendentes: WhatsApp (se telefone) + push FCM no app CHAT-NIOHUB.
@@ -268,6 +286,7 @@ def notify_agents_waiting_alert(
     - target_user: transferência direta para o atendente
     - team: transferência para equipe (membros)
     - sem target/team: fila geral do provedor
+    - include_admins: push também para os admins do provedor (transferência da IA)
     """
     if not provedor or not conversa:
         return {"sent": False, "reason": "sem_provedor_ou_conversa", "notified": 0}
@@ -293,6 +312,7 @@ def notify_agents_waiting_alert(
             target_user=target_user,
             team=team,
             exclude_user_id=exclude_user_id,
+            include_admins=include_admins,
         )
         if push_ids:
             push_result = notify_agents_push(
