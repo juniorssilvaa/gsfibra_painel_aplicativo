@@ -43,6 +43,28 @@ from core.models import Provedor
 logger = logging.getLogger(__name__)
 
 
+def _repete_dados_contrato(texto: str, conversation_state: Dict[str, Any]) -> bool:
+    """True se a resposta mostra de novo o id ou o logradouro de algum contrato já apresentado."""
+    if not texto:
+        return False
+    texto_digitos = re.sub(r"[^\d]", " ", texto)
+    texto_lower = texto.lower()
+    for contrato in conversation_state.get("contratos") or []:
+        if not isinstance(contrato, dict):
+            continue
+        cid = re.sub(
+            r"[^\d]",
+            "",
+            str(contrato.get("contratoId") or contrato.get("contrato_id") or contrato.get("contrato") or ""),
+        )
+        if len(cid) >= 3 and re.search(rf"(?<!\d){cid}(?!\d)", texto_digitos):
+            return True
+        logradouro = str(contrato.get("endereco_logradouro") or "").strip().lower()
+        if len(logradouro) >= 8 and logradouro in texto_lower:
+            return True
+    return False
+
+
 def _filter_ai_context_by_visible_cutoff(history_items, conversation):
     if not conversation or not history_items:
         return history_items
@@ -290,36 +312,48 @@ class AIService:
             elif self._agent_mode(provedor) != "support" and conversation_state.get(
                 "precisa_escolher_contrato"
             ) and not conversation_state.get("contrato_escolhido"):
-                chat_messages.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            "Os dados do cadastro JA foram confirmados (dados_confirmados). "
-                            "NAO peca confirmar nome/endereco de novo. "
-                            "Pergunte com naturalidade para qual contrato e este atendimento "
-                            "(numero da lista ou id). "
-                            "Se o cliente acabou de escolher, chame selecionar_contrato AGORA e ja execute o pedido."
-                        ),
-                    }
-                )
+                if conversation_state.get("confirmacao_pedida"):
+                    conteudo_escolha = (
+                        "Voce JA perguntou para qual contrato e o atendimento e a lista ja foi mostrada. "
+                        "A mensagem atual do cliente e a resposta a essa pergunta. "
+                        "NAO liste os contratos de novo. "
+                        "Se ele indicou um contrato (numero da lista, id ou endereco), chame selecionar_contrato AGORA "
+                        "e ja execute o pedido. Se ele disse outra coisa, responda ao que ele disse."
+                    )
+                else:
+                    conteudo_escolha = (
+                        "Os dados do cadastro JA foram confirmados (dados_confirmados). "
+                        "NAO peca confirmar nome/endereco de novo. "
+                        "Pergunte com naturalidade para qual contrato e este atendimento "
+                        "(numero da lista ou id). "
+                        "Se o cliente acabou de escolher, chame selecionar_contrato AGORA e ja execute o pedido."
+                    )
+                chat_messages.append({"role": "system", "content": conteudo_escolha})
             elif self._agent_mode(provedor) != "support" and conversation_state.get(
                 "precisa_confirmar_dados"
             ) and not conversation_state.get("contrato_escolhido"):
-                chat_messages.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            "O cliente ja foi consultado no ERP e os dados ainda nao foram confirmados. "
-                            "Mostre os dados reais retornados (contratos e enderecos) com naturalidade "
-                            "e peca UMA vez se estao corretos. "
-                            "Se houver 2+ contratos, ainda NAO pergunte qual contrato. "
-                            "Interprete a resposta do cliente em relacao a pergunta que voce fez: "
-                            "se ele confirmou, chame selecionar_contrato com escolha='sim' AGORA; "
-                            "se ele ja indicou um contrato, passe esse contrato. "
-                            "Nunca peca confirmacao em loop."
-                        ),
-                    }
-                )
+                if conversation_state.get("confirmacao_pedida"):
+                    conteudo_confirmacao = (
+                        "Voce JA mostrou os dados do cadastro/contrato e JA perguntou se estao corretos. "
+                        "A mensagem atual do cliente e a resposta a essa pergunta. "
+                        "NAO mostre os dados de novo e NAO pergunte de novo. "
+                        "Se ele confirmou, chame selecionar_contrato AGORA com escolha='sim' "
+                        "(ou o contrato que ele indicou) e ja execute o pedido dele. "
+                        "Se ele disse que os dados estao errados, peca o CPF/CNPJ correto. "
+                        "Se ele falou de outro assunto, responda ao que ele disse."
+                    )
+                else:
+                    conteudo_confirmacao = (
+                        "O cliente ja foi consultado no ERP e os dados ainda nao foram confirmados. "
+                        "Mostre os dados reais retornados (contratos e enderecos) com naturalidade "
+                        "e peca UMA vez se estao corretos. "
+                        "Se houver 2+ contratos, ainda NAO pergunte qual contrato. "
+                        "Interprete a resposta do cliente em relacao a pergunta que voce fez: "
+                        "se ele confirmou, chame selecionar_contrato com escolha='sim' AGORA; "
+                        "se ele ja indicou um contrato, passe esse contrato. "
+                        "Nunca peca confirmacao em loop."
+                    )
+                chat_messages.append({"role": "system", "content": conteudo_confirmacao})
 
             # Pin de localização → forçar consulta_viabilidade com as coordenadas
             force_viabilidade_coords = False
@@ -353,6 +387,19 @@ class AIService:
             import time as _time
             wall_started = _time.perf_counter()
 
+            pergunta_contrato_pendente = (
+                self._agent_mode(provedor) != "support"
+                and bool(conversation_state.get("confirmacao_pedida"))
+                and not conversation_state.get("contrato_escolhido")
+                and bool(
+                    conversation_state.get("precisa_confirmar_dados")
+                    or conversation_state.get("precisa_escolher_contrato")
+                )
+                and "selecionar_contrato" in tool_names
+            )
+            repeticoes_pergunta_contrato = 0
+            force_selecionar_contrato = False
+
             for _turn in range(5):
                 kwargs = {
                     "model": model,
@@ -368,6 +415,12 @@ class AIService:
                             "function": {"name": "consulta_viabilidade"},
                         }
                         force_viabilidade_coords = False
+                    elif force_selecionar_contrato:
+                        kwargs["tool_choice"] = {
+                            "type": "function",
+                            "function": {"name": "selecionar_contrato"},
+                        }
+                        force_selecionar_contrato = False
                     else:
                         kwargs["tool_choice"] = "auto"
 
@@ -410,6 +463,44 @@ class AIService:
                         tool_calls=None,
                         text_reply=final_response_text,
                     )
+                    if (
+                        pergunta_contrato_pendente
+                        and _turn < 4
+                        and not conversation_state.get("contrato_escolhido")
+                        and _repete_dados_contrato(final_response_text, conversation_state)
+                    ):
+                        repeticoes_pergunta_contrato += 1
+                        logger.warning(
+                            "[AI] Pergunta de contrato repetida | conv=%s | tentativa=%s",
+                            conversation_id, repeticoes_pergunta_contrato,
+                        )
+                        if repeticoes_pergunta_contrato == 1:
+                            chat_messages.append(
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "Voce esta repetindo os dados do contrato que JA mostrou, e o cliente JA respondeu "
+                                        "a sua pergunta com a mensagem atual. NAO repita a pergunta. "
+                                        "Decida pela resposta dele: se confirmou ou indicou um contrato, chame "
+                                        "selecionar_contrato agora; se negou, peca o dado correto; "
+                                        "se falou de outro assunto, responda a esse assunto."
+                                    ),
+                                }
+                            )
+                            continue
+                        if repeticoes_pergunta_contrato == 2:
+                            chat_messages.append(
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "Chame selecionar_contrato agora. Em escolha, coloque o que o cliente respondeu "
+                                        "a sua pergunta, como voce entendeu: 'sim' se ele confirmou, o numero/id do "
+                                        "contrato se ele indicou um, ou 'nao' se ele negou."
+                                    ),
+                                }
+                            )
+                            force_selecionar_contrato = True
+                            continue
                     break
 
                 log_llm_decision(turn=_turn + 1, tool_calls=tool_calls)
@@ -517,14 +608,29 @@ class AIService:
                 phone=contact_phone,
             )
             final_response_text = self.formatter.aplicar_regra_emojis(final_response_text, provedor)
+            estado_final_updates = {
+                "last_ia_response": final_response_text,
+                "last_ia_action": results_history[-1]["name"] if results_history else None,
+                "tool_audit": audit.summary(),
+            }
+            if self._agent_mode(provedor) != "support" and final_response_text:
+                try:
+                    mem_final = await redis_memory_service.get_ai_memory(
+                        provedor.id, conversation_id, channel, contact_phone
+                    )
+                    estado_final = mem_final.get("state") or {}
+                    aguardando = not estado_final.get("contrato_escolhido") and bool(
+                        estado_final.get("precisa_confirmar_dados")
+                        or estado_final.get("precisa_escolher_contrato")
+                    )
+                    if aguardando:
+                        estado_final_updates["confirmacao_pedida"] = True
+                except Exception:
+                    logger.debug("[AI] Falha ao marcar confirmacao_pedida", exc_info=True)
             await redis_memory_service.update_ai_state(
                 provedor.id,
                 conversation_id,
-                {
-                    "last_ia_response": final_response_text,
-                    "last_ia_action": results_history[-1]["name"] if results_history else None,
-                    "tool_audit": audit.summary(),
-                },
+                estado_final_updates,
                 channel,
                 contact_phone,
             )

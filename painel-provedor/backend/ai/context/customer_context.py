@@ -18,6 +18,7 @@ def build_customer_context(conversation_state: Optional[Dict[str, Any]] = None) 
         "dados_confirmados": bool(state.get("dados_confirmados")),
         "precisa_escolher_contrato": bool(state.get("precisa_escolher_contrato")),
         "precisa_confirmar_dados": bool(state.get("precisa_confirmar_dados")),
+        "confirmacao_pedida": bool(state.get("confirmacao_pedida")),
         "quantidade_contratos": len(state.get("contratos") or []) or None,
         "pppoe_login": state.get("pppoe_login") or state.get("servico_login"),
         "plano": state.get("servico_plano"),
@@ -65,6 +66,13 @@ def as_prompt_block(ctx: Dict[str, Any]) -> str:
             "NAO peca confirmar nome/endereco de novo. "
             "Pergunte com naturalidade para qual contrato e o atendimento. "
             "Quando o cliente escolher, chame selecionar_contrato."
+        )
+    elif ctx.get("precisa_confirmar_dados") and ctx.get("confirmacao_pedida"):
+        block += (
+            "\n# REGRA DE MEMORIA (Redis)\n"
+            "confirmacao_pedida=true: voce JA mostrou os dados e JA perguntou se estao corretos. "
+            "A mensagem atual do cliente e a resposta. NAO mostre os dados nem pergunte de novo. "
+            "Se ele confirmou, chame selecionar_contrato imediatamente."
         )
     elif ctx.get("precisa_confirmar_dados"):
         block += (

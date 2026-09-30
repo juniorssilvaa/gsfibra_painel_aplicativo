@@ -605,11 +605,13 @@ def _persistir_dados_confirmados(
             "precisa_escolher_contrato": True,
             "contrato_escolhido": False,
             "step": "AGUARDANDO_ESCOLHA_CONTRATO",
+            "confirmacao_pedida": False,
         }
     else:
         updates = {
             "dados_confirmados": True,
             "precisa_confirmar_dados": False,
+            "confirmacao_pedida": False,
         }
     if conversation_id:
         redis_memory_service.update_ai_state_sync(
@@ -653,6 +655,8 @@ def _match_contrato_escolha(escolha, contratos: list) -> Optional[dict]:
     digits = re.sub(r"[^\d]", "", raw)
     if not digits:
         raw_l = raw.lower()
+        if len(raw_l) < 4:
+            return None
         for c in contratos:
             end = _endereco_contrato(c).lower()
             if end and raw_l in end:
@@ -712,6 +716,7 @@ def _persistir_contrato_escolhido(
         "dados_confirmados": True,
         "precisa_escolher_contrato": False,
         "precisa_confirmar_dados": False,
+        "confirmacao_pedida": False,
         "step": "CONTRATO_SELECIONADO",
         "servico_plano": contrato.get("servico_plano") or contrato.get("planointernet"),
         "contrato_status_display": contrato.get("contratoStatusDisplay"),
@@ -1207,6 +1212,44 @@ class AIActionsHandler:
                         contratos[0].get('contratoId') if contratos else 'N/A',
                     )
 
+                    state_atual = conversation_state if isinstance(conversation_state, dict) else {}
+                    cpf_confirmado = re.sub(r"[^\d]", "", str(state_atual.get("cpf_cnpj") or ""))
+                    contrato_confirmado = None
+                    if state_atual.get("contrato_escolhido") and cpf_confirmado == re.sub(r"[^\d]", "", cpf_cnpj):
+                        cid_confirmado = re.sub(r"[^\d]", "", str(state_atual.get("contrato_id") or ""))
+                        contrato_confirmado = next(
+                            (item for item in contratos if cid_confirmado and _contrato_id_of(item) == cid_confirmado),
+                            None,
+                        )
+                    if contrato_confirmado:
+                        if conversation_id:
+                            redis_memory_service.update_ai_state_sync(
+                                provedor.id, conversation_id, {'contratos': contratos}, channel, phone
+                            )
+                        state_atual['contratos'] = contratos
+                        logger.warning(
+                            "[SGP] buscar_cliente | conv=%s | CPF ja confirmado, mantendo contrato=%s",
+                            conversation_id, _contrato_id_of(contrato_confirmado),
+                        )
+                        return {
+                            "success": True,
+                            "cliente_encontrado": True,
+                            "nome": nome,
+                            "dados_confirmados": True,
+                            "contrato_escolhido": True,
+                            "precisa_confirmar_dados": False,
+                            "contrato_id": _contrato_id_of(contrato_confirmado),
+                            "contrato_status_display": contrato_confirmado.get('contratoStatusDisplay'),
+                            "quantidade_contratos": len(contratos),
+                            "contratos": [_resumo_contrato(item) for item in contratos],
+                            "nota": (
+                                "Este CPF e este contrato JA foram confirmados pelo cliente nesta conversa. "
+                                "NAO mostre os dados para confirmar de novo. "
+                                "Siga com o pedido do cliente usando contrato_id. "
+                                "So troque de contrato se o cliente pedir outro."
+                            ),
+                        }
+
                     msg = self._formatar_contratos_padrao(contratos, nome)
                     multiplos = len(contratos) > 1
                     c = contratos[0]
@@ -1232,6 +1275,7 @@ class AIActionsHandler:
                         'dados_confirmados': False,
                         'precisa_escolher_contrato': False,
                         'precisa_confirmar_dados': True,
+                        'confirmacao_pedida': False,
                         'step': step,
                         'contratos': contratos,
                     }
