@@ -1667,16 +1667,21 @@ class AIActionsHandler:
                             phone,
                         )
                     forma = {"ambos": "boleto + PIX", "boleto": "boleto"}.get(tipo_pagamento, "PIX")
+                    primeiro_nome = (str(conversation_state.get("nome_cliente") or "").split() or [None])[0]
                     nota_envio = (
-                        f"Fatura ({forma}) ja foi enviada AGORA nesta conversa. "
-                        "Confirme ao cliente com suas proprias palavras, sem frase pronta, "
-                        "sem dizer que vai chegar depois ou por outro canal."
+                        f"A fatura ({forma}) JA esta na conversa, na mensagem logo acima da sua resposta. "
+                        "Escreva uma resposta curta, com suas proprias palavras e variando o jeito de falar, que: "
+                        "chame o cliente pelo primeiro nome (se houver), diga que a fatura esta na mensagem acima, "
+                        "informe o valor e o vencimento, e se coloque a disposicao. "
+                        "Nao repita o conteudo da fatura, nao diga que foi 'gerada com sucesso' "
+                        "e nao diga que ele ainda vai receber (ja foi enviada)."
                     )
                     res = {
                         "success": True,
                         "fatura_enviada": True,
                         "tipo_pagamento": tipo_pagamento,
                         "contrato_id": contrato_id,
+                        "nome_cliente": primeiro_nome.title() if primeiro_nome else None,
                         "valor": dados.get("valor"),
                         "vencimento": dados.get("vencimento"),
                         "nota": nota_envio,

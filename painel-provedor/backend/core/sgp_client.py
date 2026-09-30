@@ -609,7 +609,14 @@ class SGPClient:
             if cpf_cnpj:
                 data['cpfcnpj'] = str(cpf_cnpj)
             
-            self.logger.warning("[SGP][DEBUG] Enviando POST para /api/ura/fatura2via/ | Payload: %s", data)
+            self.logger.info(
+                "[SGP] Enviando POST para /api/ura/fatura2via/ | Payload: %s",
+                {
+                    **data,
+                    'token': '***',
+                    **({'cpfcnpj': _mascarar_cpf_cnpj(data['cpfcnpj'])} if 'cpfcnpj' in data else {}),
+                },
+            )
                 
             r = requests.post(
                 f'{self.base_url}/api/ura/fatura2via/',

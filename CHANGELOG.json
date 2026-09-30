@@ -1,6 +1,20 @@
 {
-  "current_version": "2.77.0",
+  "current_version": "2.77.1",
   "versions": [
+    {
+      "version": "2.77.1",
+      "version_type": "patch",
+      "date": "2026-09-30",
+      "title": "Melhorias no módulo da IA",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Agente de IA",
+          "title": "Melhorias no módulo da IA",
+          "description": "Melhorias no módulo da IA."
+        }
+      ]
+    },
     {
       "version": "2.77.0",
       "version_type": "minor",

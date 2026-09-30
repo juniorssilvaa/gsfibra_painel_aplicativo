@@ -24,6 +24,7 @@ from ai.definitions.tool_definitions import build_tools_for_provedor
 from ai.executor.tool_executor import ToolExecutor
 from ai.learnings import learnings_system_message
 from ai.memory import normalize_phone_number, redis_memory_service
+from core.redis_memory_service import CONTEXT_MAX_MESSAGES
 from ai.prompt_base import build_system_prompt
 from ai.providers.config import (
     AI_PROVIDERS,
@@ -192,7 +193,7 @@ class AIService:
                 provedor.id, conversation_id, channel, contact_phone
             )
             conversation_state = mem["state"]
-            history_items = (mem.get("context") or [])[-15:]
+            history_items = (mem.get("context") or [])[-CONTEXT_MAX_MESSAGES:]
 
             conv_for_cutoff = None
             if contexto and contexto.get("conversation"):

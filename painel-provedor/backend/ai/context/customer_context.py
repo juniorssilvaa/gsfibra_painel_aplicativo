@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 def build_customer_context(conversation_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     state = conversation_state or {}
     return {
+        "primeira_mensagem_cliente": state.get("primeira_mensagem_cliente"),
         "pedido_cliente": state.get("pedido_cliente"),
         "cpf_cnpj": state.get("cpf_cnpj"),
         "nome_cliente": state.get("nome_cliente"),

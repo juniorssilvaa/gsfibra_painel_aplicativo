@@ -9,7 +9,9 @@ def register():
         name="gerar_fatura",
         handler=gerar_fatura,
         description=(
-            "Gera e envia a fatura ao cliente do CONTRATO ja escolhido. "
+            "Gera e envia UMA fatura ao cliente do CONTRATO ja escolhido: a vencida ou, se nao houver, "
+            "a proxima em aberto. Nao lista faturas nem informa quantas existem; se o cliente pedir "
+            "lista/quantidade, diga que nao consegue listar e que pode enviar a fatura vencida ou em aberto. "
             "Padrao: PIX. "
             "Se a base de conhecimento do provedor pedir fatura completa / boleto e PIX / ambas as formas, "
             "chame com tipo_pagamento=ambos (envia boleto + PIX como no chatbot). "

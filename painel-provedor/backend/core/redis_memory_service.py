@@ -17,7 +17,7 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 # Limite de mensagens no contexto (últimas N)
-CONTEXT_MAX_MESSAGES = 15
+CONTEXT_MAX_MESSAGES = 50
 
 def normalize_phone_number(phone: str) -> str:
     """Normaliza número de telefone para formato padrão E.164 (apenas números)."""
@@ -163,8 +163,14 @@ class RedisConversationMemoryService:
         self._set_memory_sync(provedor_id, conversation_id, channel, phone, mem["state"], mem["context"])
 
     # --- CONTEXTO (CONTEXT) ---
+    @staticmethod
+    def _guardar_primeira_mensagem(state: Dict[str, Any], role: str, content: str) -> None:
+        if role == "user" and content and not state.get("primeira_mensagem_cliente"):
+            state["primeira_mensagem_cliente"] = str(content)[:500]
+
     async def add_ai_context(self, provedor_id: int, conversation_id: int, role: str, content: str, channel: str, phone: str):
         mem = await self.get_ai_memory(provedor_id, conversation_id, channel, phone)
+        self._guardar_primeira_mensagem(mem["state"], role, content)
         msg = {"role": role, "content": content, "timestamp": self._now_iso()}
         mem["context"].append(msg)
         mem["context"] = mem["context"][-CONTEXT_MAX_MESSAGES:]
@@ -203,6 +209,7 @@ class RedisConversationMemoryService:
     def add_message_to_conversation_sync(self, provedor_id: int, conversation_id: int, sender: str, content: str, channel: str, phone: str, **kwargs):
         role = "user" if sender == "customer" else "assistant"
         mem = self.get_ai_memory_sync(provedor_id, conversation_id, channel, phone)
+        self._guardar_primeira_mensagem(mem["state"], role, content)
         msg = {"role": role, "content": content, "timestamp": self._now_iso()}
         mem["context"].append(msg)
         mem["context"] = mem["context"][-CONTEXT_MAX_MESSAGES:]

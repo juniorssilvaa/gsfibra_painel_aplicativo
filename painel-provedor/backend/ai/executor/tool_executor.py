@@ -151,6 +151,24 @@ class ToolExecutor:
             )
             return res
 
+        # 2b) Tools do modo suporte só existem para provedor em modo suporte
+        if "support" in (spec.tags or set()) and self.agent_mode(provedor) != "support":
+            res = {
+                "success": False,
+                "erro": "Ferramenta indisponível para este atendimento.",
+            }
+            audit.finish(
+                name=resolved,
+                arguments=fargs,
+                result=res,
+                started_at=started,
+                conversation_id=conversation_id,
+                provedor_id=getattr(provedor, "id", None),
+                blocked=True,
+                block_reason="support_only_tool",
+            )
+            return res
+
         # 3) ERP do provedor suporta a tool?
         if spec.require_erp or spec.source == "integrations":
             erp = detect_erp(provedor)

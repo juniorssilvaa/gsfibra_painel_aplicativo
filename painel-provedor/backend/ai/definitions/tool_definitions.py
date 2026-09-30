@@ -57,6 +57,12 @@ def build_tools_for_provedor(provedor) -> List[Dict[str, Any]]:
         include_niohub=True,
         erp=erp,
     )
+    support_only = {
+        spec.name for spec in tool_registry.list_specs() if "support" in (spec.tags or set())
+    }
+    schemas = [
+        s for s in schemas if (s.get("function") or {}).get("name") not in support_only
+    ]
 
     # Toggle: se a consulta de viabilidade estiver desativada pelo provedor,
     # a tool nem é oferecida à IA — assim ela nunca chama nem comenta sobre isso
