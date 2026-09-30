@@ -18,8 +18,7 @@ def stamp_automation_closure_trace(conversation, source: str = 'unknown') -> Non
         attrs = dict(conversation.additional_attributes or {})
         attrs['resolucao_automacao'] = True
         attrs['closure_source'] = source
-        if not attrs.get('encerrado_por'):
-            attrs['encerrado_por'] = 'ai'
+        attrs['encerrado_por'] = 'ai'
         conversation.additional_attributes = attrs
         conversation.save(update_fields=['additional_attributes'])
     except Exception as e:
@@ -84,10 +83,12 @@ class ClosingService:
         
         try:
             attrs = dict(conversation.additional_attributes or {})
-            if attrs.get('resolucao_automacao') or str(attrs.get('closure_source', '')).startswith(
-                ('chatbot', 'ia_')
-            ):
-                attrs['encerrado_por'] = attrs.get('encerrado_por') or 'ai'
+            encerrado_por_automacao = bool(
+                attrs.get('resolucao_automacao')
+                or str(attrs.get('closure_source', '')).startswith(('chatbot', 'ia_'))
+            )
+            if encerrado_por_automacao:
+                attrs['encerrado_por'] = 'ai'
                 attrs['resolucao_automacao'] = True
                 conversation.additional_attributes = attrs
 
@@ -95,6 +96,16 @@ class ClosingService:
             conversation.assignee = None  # Garantir que não fique "atribuída" ao reabrir na próxima mensagem
             conversation.save(update_fields=['status', 'assignee', 'additional_attributes'])
             logger.info(f"Encerramento finalizado para conversa {conversation.id}")
+
+            if encerrado_por_automacao:
+                try:
+                    from conversations.closure_audit import record_automation_closure
+
+                    record_automation_closure(conversation)
+                except Exception as audit_error:
+                    logger.warning(
+                        f"Falha ao registrar auditoria do encerramento da conversa {conversation.id}: {audit_error}"
+                    )
             
             # Criar CSAT agora que a conversa está definitivamente fechada
             csat_defer_migration = False

@@ -80,16 +80,11 @@ def log_conversation_closure(request, conversation, action_type, resolution_type
     Função utilitária para registrar auditoria de conversas encerradas
     """
     try:
-        # Verificar se já existe um AuditLog para esta conversa com esta ação para evitar duplicação
-        existing_log = AuditLog.objects.filter(
-            conversation_id=conversation.id,
-            action=action_type
-        ).first()
-        
-        # Só criar se não existir
-        if existing_log:
-            logger.info(f"AuditLog já existe para conversa {conversation.id} com ação {action_type}, evitando duplicação")
-            return existing_log
+        from conversations.closure_audit import closure_logged_recently
+
+        if closure_logged_recently(conversation.id, action_type):
+            logger.info(f"AuditLog recente já existe para conversa {conversation.id} com ação {action_type}, evitando duplicação")
+            return None
         
         # Calcular duração da conversa
         duration = None
@@ -2226,6 +2221,110 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': f'Erro interno ao processar transferência: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['post'], url_path='return_to_bot')
+    def return_to_bot(self, request, pk=None):
+        """Devolve a conversa para a automação do provedor (IA ou chatbot)."""
+        try:
+            conversation = self.get_object()
+        except Exception:
+            return Response({'error': 'Conversa não encontrada'}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if not self._can_manage_conversation(user, conversation):
+            return Response({'error': 'Sem permissão para alterar esta conversa'}, status=status.HTTP_403_FORBIDDEN)
+        if conversation.status in ('closed', 'closing'):
+            return Response(
+                {'error': 'Conversa encerrada não pode voltar para a automação'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        inbox = getattr(conversation, 'inbox', None)
+        provedor = getattr(inbox, 'provedor', None)
+        try:
+            canal = inbox.get_canal_instance() if inbox and hasattr(inbox, 'get_canal_instance') else None
+        except Exception:
+            canal = None
+        if canal is not None and getattr(canal, 'ia_ativa', True) is False:
+            return Response(
+                {'error': 'A automação está desativada neste canal'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        bot_mode = (getattr(provedor, 'bot_mode', None) or 'ia').strip().lower()
+        bot_label = 'o chatbot' if bot_mode == 'chatbot' else 'a IA'
+
+        from conversations.message_visibility import mark_conversation_new_bot_session
+
+        mark_conversation_new_bot_session(conversation)
+        conversation.additional_attributes.pop('assigned_at', None)
+        conversation.status = 'pending' if bot_mode == 'chatbot' else 'snoozed'
+        conversation.assignee = None
+        conversation.waiting_for_agent = False
+        conversation.team = None
+        conversation.closing_requested_at = None
+        conversation.updated_at = timezone.now()
+        conversation.save(update_fields=[
+            'status', 'team', 'assignee', 'waiting_for_agent',
+            'additional_attributes', 'closing_requested_at', 'updated_at',
+        ])
+
+        if provedor:
+            try:
+                from asgiref.sync import async_to_sync
+                from core.redis_memory_service import redis_memory_service
+
+                phone = getattr(getattr(conversation, 'contact', None), 'phone', None) or 'unknown'
+                channel = inbox.channel_type if inbox else 'whatsapp'
+                async_to_sync(redis_memory_service.clear_memory)(
+                    provedor.id, conversation.id, channel, phone
+                )
+            except Exception as redis_err:
+                logger.warning('[ReturnToBot] Falha ao limpar memória conv=%s: %s', conversation.id, redis_err)
+
+        try:
+            Message.objects.create(
+                conversation=conversation,
+                content=f"Conversa devolvida para {bot_label} por {user.get_full_name() or user.username}.",
+                message_type='text',
+                is_from_customer=False,
+                additional_attributes={
+                    'system_message': True,
+                    'action': 'returned_to_bot',
+                    'returned_by': user.id,
+                    'bot_mode': bot_mode,
+                },
+            )
+        except Exception as msg_err:
+            logger.warning('[ReturnToBot] Erro ao criar mensagem de sistema conv=%s: %s', conversation.id, msg_err)
+
+        if provedor:
+            try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+
+                async_to_sync(get_channel_layer().group_send)(
+                    f'painel_{provedor.id}',
+                    {
+                        'type': 'conversation_status_changed',
+                        'conversation': {
+                            'id': conversation.id,
+                            'status': conversation.status,
+                            'assignee': None,
+                            'updated_at': conversation.updated_at.isoformat(),
+                        },
+                        'message': f'Conversa {conversation.id} devolvida para {bot_label} por {user.username}',
+                        'timestamp': timezone.now().isoformat(),
+                    },
+                )
+            except Exception:
+                pass
+
+        return Response({
+            'success': True,
+            'bot_mode': bot_mode,
+            'conversation': ConversationSerializer(conversation).data,
+        })
+
     @action(detail=True, methods=['post'])
     def assign(self, request, pk=None):
         """Atribuir conversa para o usuário atual. Otimizado para concorrência."""
@@ -2518,14 +2617,9 @@ class ConversationViewSet(ConversationVoiceCallsMixin, viewsets.ModelViewSet):
             from core.models import AuditLog
             provedor = conversation.inbox.provedor
             
-            # Verificar se já existe um AuditLog para esta conversa com esta ação
-            existing_log = AuditLog.objects.filter(
-                conversation_id=conversation.id,
-                action='conversation_closed_manual'
-            ).first()
-            
-            # Só criar se não existir
-            if not existing_log:
+            from conversations.closure_audit import closure_logged_recently
+
+            if not closure_logged_recently(conversation.id, 'conversation_closed_manual'):
                 details_text = f"Conversa encerrada manualmente por {user.get_full_name() or user.username} com {conversation.contact.name} via {conversation.inbox.channel_type}"
                 if resolution_type:
                     details_text += f" | Tipo de resolução: {resolution_type}"

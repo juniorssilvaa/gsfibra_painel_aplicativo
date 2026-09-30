@@ -718,7 +718,9 @@ const UserManagement = ({ provedorId: provedorIdProp }) => {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {user.last_login ? new Date(user.last_login).toLocaleDateString('pt-BR') : '-'}
+                        {user.last_login
+                          ? new Date(user.last_login).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+                          : '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
                         <button

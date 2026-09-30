@@ -394,6 +394,7 @@ class ChatMigrationService:
                 attrs[key] = value
         if metadata.get('encerrado_por') == 'agent':
             attrs['resolucao_automacao'] = False
+            attrs.pop('closure_source', None)
         elif metadata.get('encerrado_por') == 'ai' or metadata.get('resolucao_automacao') is True:
             attrs['resolucao_automacao'] = True
         elif metadata.get('resolucao_automacao') is False:

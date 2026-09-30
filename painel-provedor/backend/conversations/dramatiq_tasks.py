@@ -613,14 +613,9 @@ def encerrar_conversa_timeout(conversation_id: int, ultima_mensagem_ia_id: int =
             
             # Criar AuditLog (verificar se já existe para evitar duplicação)
             try:
-                # Verificar se já existe um AuditLog para esta conversa com esta ação
-                existing_log = AuditLog.objects.filter(
-                    conversation_id=conversation.id,
-                    action='conversation_closed_timeout'
-                ).first()
-                
-                # Só criar se não existir
-                if not existing_log:
+                from conversations.closure_audit import closure_logged_recently
+
+                if not closure_logged_recently(conversation.id, 'conversation_closed_timeout'):
                     details_text = (
                         f"Conversa encerrada automaticamente por timeout de 3 minutos "
                         f"com {conversation.contact.name} via {conversation.inbox.channel_type}"

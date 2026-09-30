@@ -1,6 +1,20 @@
 {
-  "current_version": "2.77.1",
+  "current_version": "2.77.2",
   "versions": [
+    {
+      "version": "2.77.2",
+      "version_type": "patch",
+      "date": "2026-09-30",
+      "title": "Ajustes internos para o aplicativo mobile de gestão de atendimento",
+      "changes": [
+        {
+          "type": "improvement",
+          "module": "Aplicativo Mobile",
+          "title": "Ajustes internos para o aplicativo mobile",
+          "description": "Ajustes internos para funcionamento do aplicativo mobile para gestão de atendimento."
+        }
+      ]
+    },
     {
       "version": "2.77.1",
       "version_type": "patch",

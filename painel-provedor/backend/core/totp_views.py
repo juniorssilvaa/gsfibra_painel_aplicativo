@@ -141,6 +141,9 @@ class TwoFactorVerifyLoginView(APIView):
         from core.token_rotation import rotate_user_token
         token = rotate_user_token(user)
 
+        from django.contrib.auth.models import update_last_login
+        update_last_login(None, user)
+
         provedor_id = getattr(user, 'provedor_id', None)
         if provedor_id:
             try:

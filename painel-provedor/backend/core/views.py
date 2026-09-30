@@ -205,14 +205,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.77.1"
+                "current_version": "2.77.2"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.77.1"
+            "current_version": "2.77.2"
         }, safe=False)
 
 
@@ -2838,6 +2838,9 @@ class LoginView(APIView):
         # Rotacionar token (invalida sessões anteriores com o mesmo token)
         from core.token_rotation import rotate_user_token
         token = rotate_user_token(user)
+
+        from django.contrib.auth.models import update_last_login
+        update_last_login(None, user)
         
         # Obter provedor_id do usuário
         provedor_id = None
@@ -8370,8 +8373,12 @@ class RespostaRapidaViewSet(viewsets.ModelViewSet):
         queryset = RespostaRapida.objects.all()
 
         if user.user_type != 'superadmin':
-            provedores = Provedor.objects.filter(admins=user)
-            queryset = queryset.filter(provedor__in=provedores)
+            from django.db.models import Q
+            filtro = Q(provedor__admins=user)
+            # Atendentes só leem as respostas do próprio provedor; editar continua restrito aos admins
+            if self.request.method in permissions.SAFE_METHODS and getattr(user, 'provedor_id', None):
+                filtro |= Q(provedor_id=user.provedor_id)
+            queryset = queryset.filter(filtro).distinct()
 
         provedor_id = self.request.query_params.get('provedor')
         if provedor_id:

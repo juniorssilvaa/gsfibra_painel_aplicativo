@@ -50,7 +50,9 @@ def mark_conversation_new_bot_session(conversation):
     attrs = dict(conversation.additional_attributes or {})
     attrs["agent_chat_visible_from"] = timezone.now().isoformat()
     attrs.pop("chatbot_memory", None)
-    for stale in ("assigned_team", "assigned_user", "transfer_decision", "pending_transfer"):
+    from conversations.closure_audit import CLOSURE_MARKERS
+
+    for stale in ("assigned_team", "assigned_user", "transfer_decision", "pending_transfer", *CLOSURE_MARKERS):
         attrs.pop(stale, None)
     conversation.additional_attributes = attrs
 
