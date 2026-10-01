@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { Settings } from 'lucide-react';
+import { AlertTriangle, Loader2, Settings } from 'lucide-react';
 
 const POLL_OK_MS = 15000;
 const POLL_MAINTENANCE_MS = 5000;
-// Falhas seguidas do backend (502/503/504/sem resposta) antes de assumir atualização em andamento
-const FAILURES_TO_ENTER = 2;
+// Backend respondendo 502/503/504 seguidamente por esse tempo: mostra o erro real (não é atualização).
+// Oscilação curta de rede/servidor não gera aviso.
+const FAILURES_TO_REPORT = 3;
+const FAILURE_WINDOW_MS = 20000;
+const GATEWAY_STATUS_TEXT = { 502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout' };
 const SKIP_FLAG = '__maintenanceProbe';
 // Se o frontend continuar com o mesmo build (atualização só de backend), recarrega após esse tempo
 const SAME_BUILD_GRACE_MS = 60000;
@@ -17,9 +20,10 @@ export const BEFORE_UPDATE_RELOAD_EVENT = 'niohub:before-update-reload';
 
 const isGatewayFailure = (error) => {
   if (axios.isCancel?.(error) || error?.code === 'ERR_CANCELED') return false;
+  // Sem resposta (timeout, Wi-Fi oscilando, PC saindo da suspensão) é rede do cliente, não deploy:
+  // durante a atualização o proxy responde 502/503/504.
   const status = error?.response?.status;
-  if (status) return status === 502 || status === 503 || status === 504;
-  return true;
+  return status === 502 || status === 503 || status === 504;
 };
 
 const ENTRY_SCRIPT_RE = /<script[^>]*type="module"[^>]*src="([^"]+)"/i;
@@ -137,10 +141,47 @@ export function MaintenanceScreen() {
   );
 }
 
+/** Troca de build detectada (arquivos da versão anterior sumiram): só recarrega. */
+export function ReloadingScreen() {
+  return (
+    <div
+      className="fixed inset-0 z-[2147483000] flex items-center justify-center bg-[#F5F6F8] px-6"
+      role="status"
+      aria-live="polite"
+      aria-label="Recarregando o sistema"
+    >
+      <div className="max-w-md text-center">
+        <Loader2 className="mx-auto mb-6 h-8 w-8 text-[#1A73E8] animate-spin" strokeWidth={2.2} />
+        <p className="text-[15px] leading-relaxed text-[#57606A]">Recarregando o sistema…</p>
+      </div>
+    </div>
+  );
+}
+
+function ServerErrorBanner({ status }) {
+  const statusText = GATEWAY_STATUS_TEXT[status] || '';
+  return (
+    <div
+      className="fixed inset-x-0 top-0 z-[2147482000] flex items-center justify-center gap-2 bg-red-600 px-4 py-2 text-center text-sm font-medium text-white shadow"
+      role="alert"
+      aria-live="assertive"
+    >
+      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+      <span>
+        Servidor indisponível no momento (erro {status}{statusText ? ` – ${statusText}` : ''}).
+        Tentando reconectar automaticamente…
+      </span>
+    </div>
+  );
+}
+
 export default function MaintenanceGate() {
+  // Tela de atualização: só com manutenção ligada pelo Superadmin (/api/health/ → maintenance.active)
   const [active, setActive] = useState(false);
+  const [serverErrorStatus, setServerErrorStatus] = useState(null);
   const activeRef = useRef(false);
   const failuresRef = useRef(0);
+  const firstFailureAtRef = useRef(0);
   const checkingRef = useRef(false);
   const timerRef = useRef(null);
   const sameBuildSinceRef = useRef(null);
@@ -175,6 +216,8 @@ export default function MaintenanceGate() {
         [SKIP_FLAG]: true,
       });
       failuresRef.current = 0;
+      firstFailureAtRef.current = 0;
+      setServerErrorStatus(null);
       if (res.data?.maintenance?.active) {
         enter();
       } else if (activeRef.current) {
@@ -184,7 +227,13 @@ export default function MaintenanceGate() {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       if (!isGatewayFailure(error)) return;
       failuresRef.current += 1;
-      if (failuresRef.current >= FAILURES_TO_ENTER) enter();
+      if (failuresRef.current === 1) firstFailureAtRef.current = Date.now();
+      if (
+        failuresRef.current >= FAILURES_TO_REPORT
+        && Date.now() - firstFailureAtRef.current >= FAILURE_WINDOW_MS
+      ) {
+        setServerErrorStatus(error.response.status);
+      }
     } finally {
       checkingRef.current = false;
     }
@@ -198,7 +247,7 @@ export default function MaintenanceGate() {
         if (cancelled) return;
         await check();
         if (!cancelled) schedule();
-      }, activeRef.current ? POLL_MAINTENANCE_MS : POLL_OK_MS);
+      }, activeRef.current || failuresRef.current > 0 ? POLL_MAINTENANCE_MS : POLL_OK_MS);
     };
 
     void check().then(() => { if (!cancelled) schedule(); });
@@ -219,7 +268,7 @@ export default function MaintenanceGate() {
     );
 
     const onPreloadError = () => {
-      if (recoverFromStaleBuild()) enter();
+      recoverFromStaleBuild();
     };
     window.addEventListener('vite:preloadError', onPreloadError);
 
@@ -229,9 +278,9 @@ export default function MaintenanceGate() {
       axios.interceptors.response.eject(interceptor);
       window.removeEventListener('vite:preloadError', onPreloadError);
     };
-  }, [check, enter]);
+  }, [check]);
 
-  if (!active) return null;
-
-  return <MaintenanceScreen />;
+  if (active) return <MaintenanceScreen />;
+  if (serverErrorStatus) return <ServerErrorBanner status={serverErrorStatus} />;
+  return null;
 }

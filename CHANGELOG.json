@@ -12,6 +12,12 @@
           "module": "Aplicativo Mobile",
           "title": "Ajustes internos para o aplicativo mobile",
           "description": "Ajustes internos para funcionamento do aplicativo mobile para gestão de atendimento."
+        },
+        {
+          "type": "fix",
+          "module": "Sistema",
+          "title": "Tela de atualização apenas em atualizações reais",
+          "description": "A tela de atualização agora aparece somente quando o sistema está sendo atualizado. Oscilações de internet não exibem mais a tela, e quando o servidor fica indisponível é exibido o erro real no topo, sem bloquear o atendimento."
         }
       ]
     },

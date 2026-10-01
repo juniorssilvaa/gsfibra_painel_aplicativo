@@ -161,7 +161,11 @@ def send_push_to_users(
             ),
             apns=messaging.APNSConfig(
                 payload=messaging.APNSPayload(
-                    aps=messaging.Aps(sound='default', badge=1),
+                    aps=messaging.Aps(
+                        alert=messaging.ApsAlert(title=title, body=body),
+                        sound='default',
+                        badge=1,
+                    ),
                 ),
             ),
         )

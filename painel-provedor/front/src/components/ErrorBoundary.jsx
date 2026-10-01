@@ -1,5 +1,5 @@
 import React from 'react';
-import { MaintenanceScreen, isStaleChunkError, recoverFromStaleBuild } from './MaintenanceGate';
+import { ReloadingScreen, isStaleChunkError, recoverFromStaleBuild } from './MaintenanceGate';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -13,7 +13,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // Build novo publicado durante a sessão: tela de atualização + reload automático
+    // Arquivos da versão anterior indisponíveis: recarrega assim que o front responder
     const staleBuild = isStaleChunkError(error) && recoverFromStaleBuild();
     this.setState({
       error: error,
@@ -24,7 +24,7 @@ class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError && this.state.staleBuild) {
-      return <MaintenanceScreen />;
+      return <ReloadingScreen />;
     }
 
     if (this.state.hasError) {
