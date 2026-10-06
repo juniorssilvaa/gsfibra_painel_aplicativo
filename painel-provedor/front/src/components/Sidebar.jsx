@@ -25,10 +25,12 @@ import {
   Image as ImageIcon,
   Globe, // Ícone para Canais
   SlidersHorizontal, // Regras de atendimento
+  Sparkles, // Estúdio de Marketing
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { useLanguage } from '../contexts/LanguageContext';
 import FlowIcon from './icons/FlowIcon';
+import useAgentMode from '../hooks/useAgentMode';
 
 // Context para compartilhar estado do sidebar
 const SidebarContext = createContext({
@@ -66,6 +68,7 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
     return saved === 'true';
   });
   const { t } = useLanguage();
+  const agentMode = useAgentMode();
 
   // Salvar estado no localStorage e notificar componente pai
   useEffect(() => {
@@ -113,6 +116,9 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
       { id: 'csat', icon: Smile, label: t('csat'), path: `/app/accounts/${resolvedProvedorId}/csat` },
       { id: 'respostas-rapidas', icon: Zap, label: 'Respostas Rápidas', path: `/app/accounts/${resolvedProvedorId}/respostas-rapidas` },
       { id: 'galeria', icon: ImageIcon, label: 'Galeria', path: `/app/accounts/${resolvedProvedorId}/galeria` },
+      ...(agentMode === 'support'
+        ? [{ id: 'marketing', icon: Sparkles, label: 'Estúdio de Marketing', path: `/app/accounts/${resolvedProvedorId}/marketing`, isNew: true }]
+        : []),
       { id: 'canais', icon: Globe, label: 'Canais', path: `/app/accounts/${resolvedProvedorId}/canais` },
     ];
 
@@ -138,7 +144,7 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
       items = allMenuItems.filter(item => item.id === 'dashboard');
     }
     return items;
-  }, [userRole, userPermissions, resolvedProvedorId, t, onRemindersClick, isChatPage]);
+  }, [userRole, userPermissions, resolvedProvedorId, t, onRemindersClick, isChatPage, agentMode]);
 
   // Itens fixos - Memoizado
   const fixedItems = React.useMemo(() => {

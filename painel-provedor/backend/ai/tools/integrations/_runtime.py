@@ -334,8 +334,24 @@ def _resolver_contrato_id(cid_arg, conversation_state: Optional[dict] = None) ->
     def _is_doc(digits: str) -> bool:
         return bool(digits) and len(digits) in (11, 14)
 
+    # Com a lista do cliente no estado, só vale contrato dele: posição da lista vira o id real
+    # e qualquer outro número (ex.: "1" passado como id) é descartado.
+    ids_cliente = [cid for cid in (_contrato_id_of(c) for c in _lista_contratos_estado(state)) if cid]
+    if raw and not _is_doc(raw) and ids_cliente and raw not in ids_cliente:
+        idx = int(raw) if raw.isdigit() else 0
+        raw = ids_cliente[idx - 1] if 1 <= idx <= len(ids_cliente) else ""
+
     # Estado tem ID de contrato válido
     if state_cid and not _is_doc(state_cid):
+        if state.get("contrato_escolhido") and raw and not _is_doc(raw) and raw != state_cid:
+            return {
+                "ok": False,
+                "erro": (
+                    f"O cliente escolheu o contrato {state_cid} nesta conversa. "
+                    "Se ele pediu outro contrato, chame selecionar_contrato com o contrato que ele indicou "
+                    "e depois repita esta acao; senao, repita sem informar contrato."
+                ),
+            }
         if not raw or _is_doc(raw) or raw == state_cid:
             return {
                 "ok": True,
@@ -1006,13 +1022,12 @@ class AIActionsHandler:
             # Verificação de idempotência específica para SGP (especialmente fatura)
             if function_name == "gerar_fatura" and conversation_state.get("fatura_enviada"):
                 sent_cid = str(conversation_state.get("fatura_enviada_contrato_id") or "")
-                req_cid = str(
-                    function_args.get("contrato_id")
-                    or function_args.get("contrato")
-                    or conversation_state.get("contrato_id")
-                    or ""
+                req_resolved = _resolver_contrato_id(
+                    function_args.get("contrato_id") or function_args.get("contrato"),
+                    conversation_state,
                 )
-                if not sent_cid or not req_cid or sent_cid == req_cid:
+                req_cid = str(req_resolved.get("contrato_id") or "")
+                if req_resolved.get("ok") and (not sent_cid or not req_cid or sent_cid == req_cid):
                     return {
                         "success": True,
                         "cached": True,
@@ -1640,11 +1655,17 @@ class AIActionsHandler:
                 tipo_pagamento = _resolve_tipo_pagamento_fatura(provedor, function_args)
                 
                 # Se mudou o CPF, ignoramos o contrato antigo do contexto
-                input_cpf = function_args.get('cpf_cnpj')
-                if input_cpf and str(input_cpf).strip() != str(conversation_state.get('cpf_cnpj')).strip():
+                input_cpf = re.sub(r"[^\d]", "", str(function_args.get('cpf_cnpj') or ""))
+                if input_cpf and input_cpf != re.sub(r"[^\d]", "", str(conversation_state.get('cpf_cnpj') or "")):
                     contrato_id = function_args.get('contrato_id')
                 else:
-                    contrato_id = function_args.get('contrato_id') or conversation_state.get('contrato_id')
+                    resolved = _resolver_contrato_id(
+                        function_args.get('contrato_id') or function_args.get('contrato'),
+                        conversation_state,
+                    )
+                    if not resolved.get("ok"):
+                        return {"success": False, "erro": resolved.get("erro")}
+                    contrato_id = resolved["contrato_id"]
 
                 logger.info(f"[AIACTIONS] gerar_fatura_completa | CPF={cpf} | Contrato={contrato_id} | Tipo={tipo_pagamento}")
 

@@ -42,6 +42,23 @@ from core.models import Provedor
 
 logger = logging.getLogger(__name__)
 
+ESPERA_CHECK_PROMPT = (
+    "Você revisa respostas de um agente virtual de atendimento. O agente só consegue agir enquanto escreve "
+    "a resposta; depois de enviá-la, só volta a agir quando o cliente mandar outra mensagem.\n"
+    "Pergunta: a resposta do agente deixa o cliente esperando por algo que o próprio agente disse que vai "
+    "fazer, verificar, consultar, enviar ou retornar depois, sem entregar isso agora?\n"
+    "NÃO conta: pedir um dado ao cliente, fazer uma pergunta, informar um resultado, ou dizer que algo foi "
+    "feito quando a ferramenta correspondente aparece como executada.\n"
+    "Responda só SIM ou NAO."
+)
+
+ESPERA_CORRECAO_MSG = (
+    "Sua resposta acima NAO foi enviada ao cliente: ela promete verificar ou fazer algo depois, mas voce nao "
+    "tem 'depois' (so volta a agir quando o cliente escrever de novo). Faca agora, nesta resposta: chame a "
+    "ferramenta que resolve o pedido e responda com o resultado; se faltar um dado do cliente, peca o dado; "
+    "se nenhuma ferramenta resolve, diga com clareza o que voce pode fazer. Nao diga 'um momento' nem 'vou verificar'."
+)
+
 
 def _repete_dados_contrato(texto: str, conversation_state: Dict[str, Any]) -> bool:
     """True se a resposta mostra de novo o id ou o logradouro de algum contrato já apresentado."""
@@ -140,6 +157,37 @@ class AIService:
 
     def _build_tools(self, provedor: Provedor) -> List[Dict[str, Any]]:
         return build_tools_for_provedor(provedor)
+
+    async def _deixa_cliente_esperando(
+        self, client, model: str, mensagem: str, resposta: str, tools_executadas: List[str]
+    ) -> bool:
+        """A própria IA avalia se a resposta promete uma ação que não vai acontecer."""
+        if not resposta:
+            return False
+        executadas = ", ".join(tools_executadas) or "nenhuma"
+        try:
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
+                model=model,
+                messages=[
+                    {"role": "system", "content": ESPERA_CHECK_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Mensagem do cliente: {mensagem[:1000]}\n"
+                            f"Ferramentas executadas nesta resposta: {executadas}\n"
+                            f"Resposta do agente: {resposta[:1500]}"
+                        ),
+                    },
+                ],
+                temperature=0,
+                max_tokens=3,
+            )
+            veredito = (response.choices[0].message.content or "").strip().upper()
+            return veredito.startswith("SIM")
+        except Exception:
+            logger.debug("[AI] Falha na checagem de resposta em espera", exc_info=True)
+            return False
 
     async def generate_response(
         self,
@@ -399,6 +447,7 @@ class AIService:
             )
             repeticoes_pergunta_contrato = 0
             force_selecionar_contrato = False
+            espera_checada = False
 
             for _turn in range(5):
                 kwargs = {
@@ -501,6 +550,24 @@ class AIService:
                             )
                             force_selecionar_contrato = True
                             continue
+                    if (
+                        tools
+                        and not espera_checada
+                        and _turn < 4
+                        and await self._deixa_cliente_esperando(
+                            client, model, mensagem, final_response_text,
+                            [h["name"] for h in results_history],
+                        )
+                    ):
+                        espera_checada = True
+                        logger.warning(
+                            "[AI] Resposta deixaria o cliente esperando sem acao | conv=%s | resposta=%s",
+                            conversation_id, final_response_text[:120],
+                        )
+                        chat_messages.append({"role": "assistant", "content": final_response_text})
+                        chat_messages.append({"role": "system", "content": ESPERA_CORRECAO_MSG})
+                        final_response_text = ""
+                        continue
                     break
 
                 log_llm_decision(turn=_turn + 1, tool_calls=tool_calls)
@@ -787,24 +854,20 @@ class AIService:
                     if "gpt-4o" in model or "gpt-4.1" in model or "o1" in model
                     else "gpt-4o-mini"
                 )
+            from ai.media_inbound import CATEGORIAS_DEFINICAO, split_categoria
+
             prompt = (
                 "Analise a imagem enviada pelo cliente de um provedor de internet. "
-                "Descreva o que vê de forma objetiva em português.\n\n"
-                "CLASSIFICAÇÃO OBRIGATÓRIA (primeira linha):\n"
-                "- Só diga exatamente \"A imagem enviada é um comprovante de pagamento.\" "
-                "se for CLARO que é comprovante bancário/PIX/TED/DOC/boleto pago/recibo de "
-                "transferência (tela do banco, valor, data, destinatário/origem ou código da operação).\n"
-                "- Caso contrário, comece exatamente com: "
-                "\"A imagem enviada NÃO é um comprovante de pagamento.\"\n"
-                "NÃO classifique como comprovante: menu do WhatsApp ou de app, print de chat, "
-                "tela de opções (Enviar documento, Adicionar contato, Meta AI), foto de modem/"
-                "roteador/LED, selfie, documento de identidade sozinho, fatura em aberto sem "
-                "prova de pagamento, print genérico de interface.\n"
-                "Se for comprovante, após a frase inicial liste valor, data/hora, destino/origem "
-                "e instituição quando visíveis. "
+                "Descreva de forma objetiva, em português, o que a imagem mostra e os textos/"
+                "números relevantes que estiverem legíveis.\n"
+                "Se for pagamento ou cobrança, cite valor, data/hora, instituição e "
+                "destinatário/origem quando visíveis. "
                 "Se for modem/roteador, identifique os LEDs visíveis (Power, LOS/PON/fibra, LAN, Wi-Fi) "
                 "e a cor de cada um. Se houver LED vermelho, diga qual parece ser "
-                "(muitas vezes é o LOS/fibra). Não conclua sozinho que precisa de técnico."
+                "(muitas vezes é o LOS/fibra). Não conclua sozinho que precisa de técnico.\n"
+                "Na descrição, não diga se a imagem é ou não é comprovante.\n\n"
+                "Na ÚLTIMA linha escreva exatamente \"CATEGORIA: <categoria>\", com uma destas:\n"
+                f"{CATEGORIAS_DEFINICAO}"
             )
             response = client.chat.completions.create(
                 model=vision_model,
@@ -823,10 +886,11 @@ class AIService:
                 temperature=0.3,
                 max_tokens=500,
             )
-            answer = (response.choices[0].message.content or "").strip()
+            answer, categoria = split_categoria(response.choices[0].message.content or "")
             return {
                 "success": True,
                 "resposta": answer or "Recebi a imagem.",
+                "categoria": categoria,
                 "transferir_suporte": False,
             }
         except Exception as e:

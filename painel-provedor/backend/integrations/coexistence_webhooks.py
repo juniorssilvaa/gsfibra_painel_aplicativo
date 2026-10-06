@@ -1450,6 +1450,11 @@ def process_incoming_messages(waba_id: str, value: dict):
                 else:
                     content = "Cliente enviou uma localização sem coordenadas válidas."
                     logger.warning("[WhatsAppWebhook] Mensagem location sem latitude/longitude")
+            elif message_type == "contacts":
+                from integrations.shared_contact import shared_contact_text
+
+                content = shared_contact_text({"contacts": msg.get("contacts") or []})
+                additional_attrs["is_shared_contact"] = True
             
             logger.info(f"[WhatsAppWebhook] RAW MSG: {json.dumps(msg)}")
             logger.info(f"[WhatsAppWebhook] Mensagem processada: type={message_type}, content='{content}', button_id={additional_attrs.get('button_id')}")
@@ -1461,6 +1466,20 @@ def process_incoming_messages(waba_id: str, value: dict):
             
             if existing_message:
                 continue
+
+            if msg.get("referral"):
+                from conversations.ad_referral import record_ad_referral
+
+                ad_referral = record_ad_referral(
+                    provedor=provedor,
+                    contact=contact,
+                    conversation=conversation,
+                    message_external_id=message_id,
+                    referral=msg.get("referral"),
+                    new_contact=created,
+                )
+                if ad_referral:
+                    additional_attrs["ad_referral_id"] = ad_referral.id
             
             try:
                 # Converter timestamp Unix para datetime com timezone do Django (America/Belem)
@@ -1954,7 +1973,7 @@ def process_incoming_messages(waba_id: str, value: dict):
                 and (bot_mode or '').strip().lower() == 'ia'  # só se superadmin habilitou modo IA
                 and content
                 and message_obj.is_from_customer
-                and message_type in ("text", "location", "audio", "ptt", "image", "video", "document")
+                and message_type in ("text", "location", "contacts", "audio", "ptt", "image", "video", "document")
                 and canal_ia_ativa  # Apenas se a IA estiver ativa no canal
                 and getattr(provedor, 'is_active', True)  # Apenas se o provedor estiver ativo
             )

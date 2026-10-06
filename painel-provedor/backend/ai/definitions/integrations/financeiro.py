@@ -25,7 +25,10 @@ def register():
                 "cpf_cnpj": {"type": "string"},
                 "contrato_id": {
                     "type": "string",
-                    "description": "Id do contrato escolhido (obrigatorio se houver varios).",
+                    "description": (
+                        "Id do contrato que o cliente escolheu (o contrato_id retornado por selecionar_contrato), "
+                        "nunca a posicao na lista. Se ja houver contrato escolhido, pode omitir."
+                    ),
                 },
                 "tipo_pagamento": {
                     "type": "string",

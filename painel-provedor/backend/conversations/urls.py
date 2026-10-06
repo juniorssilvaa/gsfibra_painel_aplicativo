@@ -41,6 +41,7 @@ from .recovery_views import (
     get_recovery_settings,
     update_recovery_settings
 )
+from .ad_referral_views import ad_referrals_report
 from .ai_learning_views import (
     ai_learning_export,
     ai_learning_item_detail,
@@ -131,6 +132,7 @@ urlpatterns = [
     path('ai-learning/items/', ai_learning_items, name='ai-learning-items'),
     path('ai-learning/items/<int:pk>/', ai_learning_item_detail, name='ai-learning-item-detail'),
     path('ai-learning/export/', ai_learning_export, name='ai-learning-export'),
+    path('ad-referrals/report/', ad_referrals_report, name='ad-referrals-report'),
 
 ]
 

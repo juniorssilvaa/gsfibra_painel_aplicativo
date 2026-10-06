@@ -692,11 +692,7 @@ def _parse_due_offsets(raw: str) -> List[int]:
 
 
 def _effective_offsets(config) -> List[int]:
-    s = (getattr(config, "billing_reminder_due_offsets", None) or "").strip()
-    if s:
-        return _parse_due_offsets(s)
-    legacy = max(1, int(getattr(config, "billing_days_before_due", None) or 3))
-    return [-legacy]
+    return _parse_due_offsets(getattr(config, "billing_reminder_due_offsets", None) or "")
 
 
 def _billing_config_weekday(now) -> str:
@@ -845,12 +841,9 @@ def run_billing_send_cycle(force: bool = False) -> Dict:
         logger.warning("[BillingSend] Token do Asaas não configurado — só enviará cobranças Inter, se houver.")
 
     # Determinar offsets (ex: -1 = um dia antes, 0 = dia do vencimento, 2 = dois dias atrasado)
-    offsets_raw = str(payload.get("billing_reminder_due_offsets") or "").strip()
-    if offsets_raw:
-        offsets = _parse_due_offsets(offsets_raw)
-    else:
-        legacy_days = int(payload.get("billing_days_before_due") or 3)
-        offsets = [-legacy_days]
+    offsets = _parse_due_offsets(str(payload.get("billing_reminder_due_offsets") or ""))
+    if not offsets:
+        logger.warning("[BillingSend] Campo 'Em quais situações enviar a cobrança' vazio — nada a enviar.")
 
     today_d = now.date()
 

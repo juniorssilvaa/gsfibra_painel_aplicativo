@@ -499,6 +499,16 @@ class DatabaseTools:
         except Exception as e:
             return {"success": False, "erro": str(e)}
 
+    @staticmethod
+    def _cliente_enviou_comprovante(conversa) -> bool:
+        """True se uma das últimas mensagens do cliente foi classificada como comprovante."""
+        ultimas = (
+            conversa.messages.filter(is_from_customer=True)
+            .order_by('-created_at')
+            .values_list('additional_attributes', flat=True)[:3]
+        )
+        return any(isinstance(a, dict) and a.get('payment_receipt_detected') for a in ultimas)
+
     def executar_transferencia_conversa(self, conversation_id: int, equipe_nome: str, motivo: str) -> Dict[str, Any]:
         """
         Tool: executar_transferencia_conversa
@@ -587,12 +597,7 @@ class DatabaseTools:
                 # Verificar horário de atendimento
                 horario_info = self._verificar_horario_atendimento()
 
-                motivo_l = (motivo or '').lower()
-                equipe_l = (equipe_nome or '').lower()
-                is_comprovante_transfer = (
-                    any(x in motivo_l for x in ('comprovante', 'pagamento', 'baixa', 'recibo', 'pix'))
-                    or 'financ' in equipe_l
-                )
+                is_comprovante_transfer = self._cliente_enviou_comprovante(conversa)
                 inform_hours_comprovante = bool(
                     getattr(self.provedor, 'ai_inform_hours_after_comprovante_transfer', False)
                 )

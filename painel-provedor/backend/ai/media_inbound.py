@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
+import re
+import tempfile
 from typing import Any, Dict, Optional, Tuple
 
 from django.conf import settings
@@ -45,66 +47,35 @@ _MIME_BY_EXT = {
     '.pdf': 'application/pdf',
 }
 
-# Sinais fortes de comprovante / pagamento (PT-BR + bancos comuns)
-_PAYMENT_HINTS = (
-    'comprovante de pagamento',
-    'comprovante',
-    'pagseguro',
-    'mercado pago',
-    'mercadopago',
-    'chave pix',
-    'transferência',
-    'transferencia',
-    'ted',
-    'recibo',
-    'boleto pago',
-    'depósito',
-    'deposito',
-    'valor r$',
-    'valor:',
-    'nubank',
-    'itau',
-    'itaú',
-    'bradesco',
-    'santander',
-    'caixa econômica',
-    'caixa economica',
-    'banco do brasil',
-    'sicoob',
-    'sicredi',
-    'c6 bank',
-    'picpay',
-    'stone',
-    'asaas',
-    'id da transação',
-    'id da transacao',
-    'autenticação',
-    'autenticacao',
-    'e2e',
-    'end to end',
+CATEGORIA_COMPROVANTE = 'comprovante_pagamento'
+CATEGORIA_FATURA = 'fatura_boleto'
+CATEGORIA_OUTRO = 'outro'
+CATEGORIAS = (CATEGORIA_COMPROVANTE, CATEGORIA_FATURA, CATEGORIA_OUTRO)
+
+CATEGORIAS_DEFINICAO = (
+    f'- {CATEGORIA_COMPROVANTE}: prova de um pagamento JÁ REALIZADO (tela ou recibo de PIX, '
+    'TED, transferência, depósito ou boleto pago, mostrando que o pagamento foi concluído).\n'
+    f'- {CATEGORIA_FATURA}: cobrança AINDA A PAGAR (fatura, boleto, código de barras ou '
+    'QR Code/copia e cola PIX para pagar), sem confirmação de pagamento.\n'
+    f'- {CATEGORIA_OUTRO}: qualquer outra coisa (foto, equipamento, print de tela ou de '
+    'conversa, documento pessoal, contrato etc.).'
 )
 
-_PAYMENT_POSITIVE_PHRASE = 'é um comprovante de pagamento'
-_PAYMENT_NEGATIVE_PHRASE = 'não é um comprovante de pagamento'
-_PAYMENT_NEGATIVE_PHRASE_ASCII = 'nao e um comprovante de pagamento'
+_CATEGORIA_LINE_RE = re.compile(r'^[\s*_`>-]*categoria\s*[:=]\s*[*_`]*\s*([a-z_]+)', re.IGNORECASE)
 
-# Print de UI / chat / menu — NÃO é comprovante (evitar termos genéricos como "screenshot")
-_NOT_RECEIPT_HINTS = (
-    'não é um comprovante',
-    'nao e um comprovante',
-    'nao é um comprovante',
-    'menu do whatsapp',
-    'menu do aplicativo',
-    'adicionar contato',
-    'enviar documento',
-    'perguntar à meta ai',
-    'perguntar a meta ai',
-    'tela de opções',
-    'tela de opcoes',
-    'print de conversa',
-    'captura de tela do whatsapp',
-    'opções do whatsapp',
-    'opcoes do whatsapp',
+CATEGORIA_NOTA = {
+    CATEGORIA_COMPROVANTE: '[Classificação do arquivo: comprovante de pagamento já realizado]',
+    CATEGORIA_FATURA: '[Classificação do arquivo: fatura/boleto de cobrança]',
+}
+
+ARQUIVO_COMUM_NOTA = (
+    '[Responda sobre o que o arquivo mostra. '
+    'Se não estiver claro o que o cliente quer com ele, pergunte como pode ajudar.]'
+)
+
+ARQUIVO_ILEGIVEL_NOTA = (
+    '[Arquivo não interpretado] Não presuma o que é (nem que é comprovante). '
+    'Entenda pelo contexto da conversa; se não estiver claro, pergunte ao cliente do que se trata.'
 )
 
 COMPROVANTE_DIRECTIVE = (
@@ -135,13 +106,6 @@ COMPROVANTE_DIRECTIVE_NO_HOURS = (
     'as regras do provedor pedirem para comprovante.'
 )
 
-NOT_COMPROVANTE_IMAGE_NOTE = (
-    '[IMAGEM ANALISADA — NÃO É COMPROVANTE DE PAGAMENTO] '
-    'Responda só com base na descrição da imagem. '
-    'Não trate como comprovante nem encaminhe baixa de pagamento.'
-)
-
-
 def provider_informs_hours_after_comprovante(provedor) -> bool:
     """True se o provedor optou por informar horário após transferir comprovante."""
     return bool(getattr(provedor, 'ai_inform_hours_after_comprovante_transfer', False))
@@ -151,16 +115,6 @@ def comprovante_directive_for_provedor(provedor) -> str:
     if provider_informs_hours_after_comprovante(provedor):
         return COMPROVANTE_DIRECTIVE
     return COMPROVANTE_DIRECTIVE_NO_HOURS
-
-
-UNREADABLE_DOC_DIRECTIVE = (
-    '[OBRIGATÓRIO — DOCUMENTO ILEGÍVEL] '
-    'Não foi possível ler ou interpretar o arquivo enviado. '
-    'Se as regras do provedor pedirem transferência nesses casos, chame IMEDIATAMENTE '
-    'transferir_conversa para FINANCEIRO. Na resposta ao cliente: NÃO anuncie a '
-    'transferência para o setor; confirme de forma simples o encaminhamento para '
-    'inclusão no sistema / tratamento do documento.'
-)
 
 
 def provider_kb_requires_comprovante_transfer(provedor) -> bool:
@@ -189,53 +143,60 @@ def provider_kb_requires_comprovante_transfer(provedor) -> bool:
     )
 
 
-def looks_like_payment_receipt(text: str) -> bool:
-    """Heurística: texto de visão/PDF/legenda parece comprovante de pagamento real."""
-    raw = (text or '').strip().lower()
-    if not raw:
-        return False
-
-    if vision_says_not_payment_receipt(raw):
-        return False
-
-    if vision_says_payment_receipt(raw):
-        return True
-
-    hits = sum(1 for h in _PAYMENT_HINTS if h in raw)
-    has_pix = 'pix' in raw
-    has_transfer = 'transfer' in raw
-    has_valor = 'r$' in raw or 'valor' in raw
-    has_comprovante = 'comprovante' in raw
-
-    # Exige combinação forte — evita falso positivo em menus/prints
-    if has_comprovante and (has_pix or has_transfer or has_valor) and hits >= 2:
-        return True
-    if has_pix and has_valor and hits >= 3:
-        return True
-    if has_transfer and has_valor and hits >= 3:
-        return True
-    return False
+def _normalize_categoria(value: str) -> str:
+    raw = (value or '').strip().lower()
+    for cat in CATEGORIAS:
+        if cat in raw:
+            return cat
+    return CATEGORIA_OUTRO
 
 
-def vision_says_payment_receipt(description: str) -> bool:
-    """True só se a visão afirmou explicitamente que é comprovante."""
-    raw = (description or '').strip().lower()
-    if not raw:
-        return False
-    if vision_says_not_payment_receipt(raw):
-        return False
-    return _PAYMENT_POSITIVE_PHRASE in raw
+def split_categoria(text: str) -> Tuple[str, str]:
+    """Separa a linha 'CATEGORIA: x' (gerada pela IA) da descrição. Sem linha → outro."""
+    categoria = CATEGORIA_OUTRO
+    kept = []
+    for line in (text or '').splitlines():
+        match = _CATEGORIA_LINE_RE.match(line)
+        if match:
+            categoria = _normalize_categoria(match.group(1))
+            continue
+        kept.append(line)
+    return '\n'.join(kept).strip(), categoria
 
 
-def vision_says_not_payment_receipt(description: str) -> bool:
-    raw = (description or '').strip().lower()
-    if not raw:
-        return False
-    return (
-        _PAYMENT_NEGATIVE_PHRASE in raw
-        or _PAYMENT_NEGATIVE_PHRASE_ASCII in raw
-        or any(n in raw for n in _NOT_RECEIPT_HINTS)
-    )
+def classify_document_text(provedor, text: str) -> str:
+    """A IA do provedor classifica o texto de um documento em uma das CATEGORIAS."""
+    content = (text or '').strip()
+    if not content:
+        return CATEGORIA_OUTRO
+    try:
+        from ai.providers.config import get_provedor_openai_model
+        from ai.service import openai_service
+
+        client = openai_service._client_for(provedor)
+        if not client:
+            return CATEGORIA_OUTRO
+        response = client.chat.completions.create(
+            model=get_provedor_openai_model(provedor),
+            messages=[
+                {
+                    'role': 'user',
+                    'content': (
+                        'Um cliente de um provedor de internet enviou um documento. '
+                        'Classifique o documento pelo conteúdo abaixo em UMA categoria:\n'
+                        f'{CATEGORIAS_DEFINICAO}\n'
+                        'Responda apenas com o nome da categoria.\n\n'
+                        f'Conteúdo:\n{content[:6000]}'
+                    ),
+                }
+            ],
+            temperature=0,
+            max_tokens=10,
+        )
+        return _normalize_categoria(response.choices[0].message.content or '')
+    except Exception:
+        logger.exception('[media_inbound] Falha ao classificar documento')
+        return CATEGORIA_OUTRO
 
 
 def resolve_media_file_path(file_url: Optional[str], conversation_id: Optional[int] = None) -> Optional[str]:
@@ -300,21 +261,42 @@ def transcribe_audio_file(provedor, file_path: str) -> Optional[str]:
         return None
 
 
-def describe_image_file(provedor, file_path: str) -> Optional[str]:
-    """Descreve a imagem com o mesmo modelo/chave da IA (visão)."""
+def describe_image_file(provedor, file_path: str) -> Tuple[Optional[str], str]:
+    """Descreve a imagem com o mesmo modelo/chave da IA (visão). Retorna (descrição, categoria)."""
     if not file_path or not os.path.isfile(file_path):
-        return None
+        return None, CATEGORIA_OUTRO
     try:
         from ai.service import openai_service
 
         result = openai_service.analyze_image_with_ai(file_path, provedor)
         if result.get('success'):
             text = (result.get('resposta') or '').strip()
-            return text or None
+            return text or None, result.get('categoria') or CATEGORIA_OUTRO
         logger.warning('[media_inbound] Visão falhou: %s', result.get('erro'))
-        return None
+        return None, CATEGORIA_OUTRO
     except Exception:
         logger.exception('[media_inbound] Falha ao analisar imagem %s', file_path)
+        return None, CATEGORIA_OUTRO
+
+
+def _render_pdf_first_page(file_path: str) -> Optional[str]:
+    """PDF escaneado (sem texto) → PNG temporário da 1ª página para a visão."""
+    try:
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(file_path)
+        try:
+            if len(pdf) == 0:
+                return None
+            image = pdf[0].render(scale=2).to_pil()
+        finally:
+            pdf.close()
+        fd, out_path = tempfile.mkstemp(suffix='.png')
+        os.close(fd)
+        image.save(out_path, format='PNG')
+        return out_path
+    except Exception:
+        logger.exception('[media_inbound] Falha ao renderizar PDF %s', file_path)
         return None
 
 
@@ -368,11 +350,19 @@ def enrich_inbound_media_for_ai(
         parts.append(caption_clean)
 
     name_hint = (file_name or '').strip()
-    if name_hint and looks_like_payment_receipt(name_hint):
-        parts.append(f'Nome do arquivo: {name_hint}')
+
+    def _apply_categoria(categoria: str, reason: str) -> None:
+        extra['media_category'] = categoria
+        extra['payment_receipt_detected'] = categoria == CATEGORIA_COMPROVANTE
+        nota = CATEGORIA_NOTA.get(categoria)
+        if nota:
+            parts.append(nota)
+        if categoria == CATEGORIA_COMPROVANTE:
+            _mark_receipt(reason)
+        else:
+            parts.append(ARQUIVO_COMUM_NOTA)
 
     def _mark_receipt(reason: str = '') -> None:
-        extra['payment_receipt_detected'] = True
         if reason:
             extra['payment_receipt_reason'] = reason
         if kb_force:
@@ -393,17 +383,11 @@ def enrich_inbound_media_for_ai(
             )
 
     def _mark_unreadable() -> None:
-        if kb_force:
-            _append_directive(parts, extra, UNREADABLE_DOC_DIRECTIVE, 'comprovante_kb_directive')
-            extra['unreadable_media'] = True
-        else:
-            extra['unreadable_media'] = True
+        extra['unreadable_media'] = True
+        parts.append(ARQUIVO_ILEGIVEL_NOTA)
 
     if not file_path:
         text = '\n'.join(parts) if parts else None
-        if text and looks_like_payment_receipt(text):
-            _mark_receipt('caption_or_name')
-            text = '\n'.join(parts).strip()
         return text, extra
 
     if mt in AUDIO_TYPES or mt in VIDEO_TYPES:
@@ -422,48 +406,22 @@ def enrich_inbound_media_for_ai(
         else:
             extra['transcription_error'] = True
     elif mt in IMAGE_TYPES:
-        description = describe_image_file(provedor, file_path)
+        description, categoria = describe_image_file(provedor, file_path)
         if description:
             extra['image_description'] = description
             extra['image_description_source'] = 'provider_ai_key'
             parts.append(f'Cliente enviou uma imagem. Descrição: {description}')
             logger.info(
-                '[media_inbound] Visão ok provedor=%s chars=%s',
+                '[media_inbound] Visão ok provedor=%s chars=%s categoria=%s',
                 getattr(provedor, 'id', None),
                 len(description),
+                categoria,
             )
-            # Imagem: só força comprovante se a visão confirmar OU (legenda explícita + visão não negar)
-            if vision_says_payment_receipt(description):
-                _mark_receipt('image_vision_positive')
-            elif vision_says_not_payment_receipt(description):
-                parts.append(NOT_COMPROVANTE_IMAGE_NOTE)
-                extra['payment_receipt_detected'] = False
-                extra['not_payment_receipt'] = True
-                logger.info(
-                    '[media_inbound] Imagem NÃO é comprovante (visão) provedor=%s',
-                    getattr(provedor, 'id', None),
-                )
-            elif looks_like_payment_receipt(caption_clean) and looks_like_payment_receipt(description):
-                _mark_receipt('image_caption_and_description')
-            else:
-                # Sem confirmação — não injeta diretiva de comprovante
-                parts.append(NOT_COMPROVANTE_IMAGE_NOTE)
-                extra['payment_receipt_detected'] = False
-                extra['not_payment_receipt'] = True
+            _apply_categoria(categoria, 'image_vision')
         else:
             extra['image_description_error'] = True
             parts.append('Cliente enviou uma imagem, mas não foi possível interpretá-la.')
-            blob = f'{caption_clean} {name_hint}'.strip()
-            # Sem visão: só marca se a legenda/nome deixar explícito (ex.: "comprovante pix")
-            if looks_like_payment_receipt(blob) and (
-                'comprovante' in blob.lower() or 'pix' in blob.lower()
-            ):
-                _mark_receipt('image_unreadable_hint')
-            else:
-                parts.append(
-                    '[IMAGEM SEM ANÁLISE] Não assuma que é comprovante de pagamento. '
-                    'Peça esclarecimento ou trate pelo contexto da conversa.'
-                )
+            _mark_unreadable()
     elif mt in DOCUMENT_TYPES:
         ext = os.path.splitext(file_path or '')[1].lower()
         is_pdf = ext == '.pdf' or (name_hint or '').lower().endswith('.pdf')
@@ -484,23 +442,28 @@ def enrich_inbound_media_for_ai(
                     getattr(provedor, 'id', None),
                     len(pdf_text),
                 )
-                blob = f'{pdf_text} {caption_clean} {name_hint}'
-                if looks_like_payment_receipt(blob):
-                    _mark_receipt('pdf_text')
+                _apply_categoria(classify_document_text(provedor, pdf_text), 'pdf_text')
             else:
-                extra['pdf_text_error'] = True
-                parts.append('Não foi possível extrair texto legível do PDF.')
-                blob = f'{caption_clean} {name_hint}'
-                if looks_like_payment_receipt(blob):
-                    _mark_receipt('pdf_unreadable_hint')
+                page_image = _render_pdf_first_page(file_path)
+                description, categoria = (None, CATEGORIA_OUTRO)
+                if page_image:
+                    try:
+                        description, categoria = describe_image_file(provedor, page_image)
+                    finally:
+                        try:
+                            os.remove(page_image)
+                        except OSError:
+                            pass
+                if description:
+                    extra['pdf_page_description'] = description
+                    parts.append(f'Conteúdo do PDF (imagem da 1ª página): {description}')
+                    _apply_categoria(categoria, 'pdf_page_vision')
                 else:
+                    extra['pdf_text_error'] = True
+                    parts.append('Não foi possível ler o conteúdo do PDF.')
                     _mark_unreadable()
         else:
-            blob = f'{caption_clean} {name_hint}'
-            if looks_like_payment_receipt(blob):
-                _mark_receipt('document_name')
-            else:
-                _mark_unreadable()
+            _mark_unreadable()
 
     text = '\n'.join(parts).strip() if parts else None
     return text, extra

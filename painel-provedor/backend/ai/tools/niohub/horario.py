@@ -142,8 +142,10 @@ def obter_horario_atendimento(provedor) -> Dict[str, Any]:
         "horarios_texto": texto,
         "nota": (
             "Use APENAS estes horarios do painel. Nao invente. "
+            "Este e o horario da equipe humana: nao impede voce de atender pedidos "
+            "(fatura, segunda via, suporte etc.), que sao feitos a qualquer hora. "
             "Se dentro_horario=false, informe o cliente com o motivo "
-            "(feriado, se houver) e quando sera atendido (proximo_horario). "
+            "(feriado, se houver) e quando sera atendido por humano (proximo_horario). "
             "Informe o cliente com suas palavras (pode resumir dias iguais)."
         ),
     }

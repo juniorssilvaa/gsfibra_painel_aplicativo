@@ -17,8 +17,11 @@ def build_full_context_blocks(
     from ai.context import conversation_context, customer_context, provider_context
     from conversations.protocol_service import get_conversation_protocol, get_protocol_source
 
+    from conversations.ad_referral import ad_origin_for_prompt
+
     protocolo = None
     protocol_source = None
+    origem_anuncio = None
     conv = conversation
     if conv is None and conversation_id:
         try:
@@ -33,6 +36,7 @@ def build_full_context_blocks(
             protocol_source = get_protocol_source(conv)
         except Exception:
             pass
+        origem_anuncio = ad_origin_for_prompt(conv)
 
     conv_ctx = build_conversation_context(
         provedor=provedor,
@@ -44,6 +48,7 @@ def build_full_context_blocks(
         protocolo=protocolo,
         protocol_source=protocol_source,
         informar_protocolo_primeira_resposta=not has_ai_interaction and bool(protocolo),
+        origem_anuncio=origem_anuncio,
     )
     cust = build_customer_context(conversation_state)
     hints = build_provider_runtime_hints(provedor)

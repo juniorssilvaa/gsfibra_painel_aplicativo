@@ -18,6 +18,7 @@ const UserManagement = lazy(() => import('../components/UserManagement'));
 const TeamsPage = lazy(() => import('../components/TeamsPage'));
 const ConversationAudit = lazy(() => import('../components/ConversationAudit'));
 const AIPerformancePage = lazy(() => import('../components/AIPerformancePage'));
+const MarketingStudioPage = lazy(() => import('../components/MarketingStudioPage'));
 const SuggestionsPage = lazy(() => import('../components/SuggestionsPage'));
 const CompanyManagement = lazy(() => import('../components/CompanyManagement'));
 const CSATDashboard = lazy(() => import('../components/CSATDashboard'));
@@ -152,7 +153,7 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
 
   // Proteção de rotas baseada no papel do usuário
   const isAdminRoute = (path) => {
-    const adminRoutes = ['dashboard', 'users', 'equipes', 'audit', 'companies', 'integracoes', 'dados-provedor', 'horario-provedor', 'regras-atendimento'];
+    const adminRoutes = ['dashboard', 'users', 'equipes', 'audit', 'companies', 'integracoes', 'dados-provedor', 'horario-provedor', 'regras-atendimento', 'marketing'];
     return adminRoutes.some(route => path.includes(route));
   };
 
@@ -205,6 +206,7 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
                 <Route path="equipes" element={<TeamsPage />} />
                 <Route path="audit" element={<ConversationAudit provedorId={resolvedProvedorId} />} />
                 <Route path="recovery" element={<AIPerformancePage provedorId={resolvedProvedorId} />} />
+                <Route path="marketing" element={<MarketingStudioPage provedorId={resolvedProvedorId} />} />
                 <Route path="suggestions" element={<SuggestionsPage provedorId={resolvedProvedorId} />} />
                 <Route path="companies" element={<CompanyManagement provedorId={resolvedProvedorId} />} />
                 <Route path="csat" element={<CSATHome provedorId={resolvedProvedorId} />} />

@@ -441,6 +441,20 @@ class FaturaService:
                 
             faturas = resultado.get('links', [])
             if not isinstance(faturas, list): faturas = []
+
+            cid_pedido = ''.join(filter(str.isdigit, str(contrato_id or '')))
+            if cid_pedido:
+                def _contrato_da_fatura(f):
+                    raw = f.get('contrato') or f.get('contratoId') or f.get('contrato_id') or ''
+                    return ''.join(filter(str.isdigit, str(raw)))
+
+                if any(_contrato_da_fatura(f) for f in faturas if isinstance(f, dict)):
+                    total = len(faturas)
+                    faturas = [f for f in faturas if isinstance(f, dict) and _contrato_da_fatura(f) == cid_pedido]
+                    if len(faturas) != total:
+                        logger.warning(
+                            f"[FATURA] SGP devolveu faturas de outros contratos; mantidas {len(faturas)} de {total} do contrato {cid_pedido}"
+                        )
             
             # Ordenar faturas por data de vencimento (mais antiga primeiro)
             try:

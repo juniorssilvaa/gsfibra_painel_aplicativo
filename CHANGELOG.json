@@ -1,6 +1,20 @@
 {
-  "current_version": "2.77.2",
+  "current_version": "2.77.3",
   "versions": [
+    {
+      "version": "2.77.3",
+      "version_type": "patch",
+      "date": "2026-10-06",
+      "title": "Correções no módulo da IA",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "IA",
+          "title": "Análise de imagens e PDFs com mais precisão",
+          "description": "IA passa a analisar as imagens e PDFs enviados pelo cliente com mais precisão."
+        }
+      ]
+    },
     {
       "version": "2.77.2",
       "version_type": "patch",

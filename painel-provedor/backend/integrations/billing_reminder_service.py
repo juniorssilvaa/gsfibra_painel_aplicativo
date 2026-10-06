@@ -83,11 +83,7 @@ def _parse_due_offsets_str(raw: str) -> List[int]:
 
 
 def _effective_due_offsets(config: SystemConfig) -> List[int]:
-    s = (getattr(config, "billing_reminder_due_offsets", None) or "").strip()
-    if s:
-        return _parse_due_offsets_str(s)
-    legacy = max(1, int(getattr(config, "billing_days_before_due", None) or 3))
-    return [-legacy]
+    return _parse_due_offsets_str(getattr(config, "billing_reminder_due_offsets", None) or "")
 
 
 def _parse_payment_due_date(due: str) -> Optional[date]:

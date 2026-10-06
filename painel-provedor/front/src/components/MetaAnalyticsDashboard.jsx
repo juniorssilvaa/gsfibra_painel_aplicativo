@@ -15,6 +15,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import MetricCard from './dashboard/MetricCard';
 import ConversationsPieChart from './dashboard/ConversationsPieChart';
+import AdReferralsReport from './AdReferralsReport';
 import { applyPieColors, ALL_DASHBOARD_PIE_COLORS } from '../utils/dashboardChartColors';
 
 const PERIODS = [
@@ -496,6 +497,8 @@ export default function MetaAnalyticsDashboard() {
             ) : null}
           </>
         )}
+
+        <AdReferralsReport provedorId={provedorId} days={days} />
       </div>
     </div>
   );

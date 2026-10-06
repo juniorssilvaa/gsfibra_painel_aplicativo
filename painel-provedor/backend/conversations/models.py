@@ -860,3 +860,38 @@ class AILearning(models.Model):
 
     def __str__(self):
         return f"AILearning {self.id} [{self.status}] {self.situation[:40]}"
+
+
+class AdReferral(models.Model):
+    """
+    Entrada de cliente vinda de anúncio Click-to-WhatsApp (objeto `referral` do webhook da Cloud API).
+    Uma linha por entrada: a mesma conversa é reaberta com o mesmo ID, então a origem não pode
+    ficar só na conversa. Conversa/contato usam SET_NULL porque a conversa local é migrada e apagada.
+    `ctwa_clid` só chega na primeira mensagem e é exigido pela Conversions API (até 7 dias do clique).
+    """
+    provedor = models.ForeignKey(Provedor, on_delete=models.CASCADE, related_name='ad_referrals')
+    contact = models.ForeignKey(Contact, on_delete=models.SET_NULL, null=True, blank=True, related_name='ad_referrals')
+    conversation = models.ForeignKey(
+        Conversation, on_delete=models.SET_NULL, null=True, blank=True, related_name='ad_referrals'
+    )
+    message_external_id = models.CharField(max_length=255, unique=True)
+    source_type = models.CharField(max_length=20, blank=True, default='')
+    source_id = models.CharField(max_length=64, blank=True, default='')
+    source_url = models.TextField(blank=True, default='')
+    headline = models.CharField(max_length=500, blank=True, default='')
+    body = models.TextField(blank=True, default='')
+    media_type = models.CharField(max_length=20, blank=True, default='')
+    thumbnail_url = models.TextField(blank=True, default='')
+    ctwa_clid = models.CharField(max_length=512, blank=True, default='')
+    new_contact = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ad_referrals'
+        indexes = [
+            models.Index(fields=['provedor', 'created_at'], name='ad_ref_prov_created_idx'),
+            models.Index(fields=['provedor', 'source_id'], name='ad_ref_prov_source_idx'),
+        ]
+
+    def __str__(self):
+        return f"AdReferral {self.id} [{self.source_type}:{self.source_id}]"

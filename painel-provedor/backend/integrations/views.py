@@ -753,6 +753,19 @@ def webhook_evolution_uazapi(request):
         # Detectar tipo de mensagem
         message_type = msg_data.get('type') or msg_data.get('messageType') or 'text'
         media_type = msg_data.get('mediaType') or msg_data.get('media_type')
+
+        if 'contact' in str(message_type).lower() or (
+            isinstance(content, dict) and ('vcard' in content or 'contacts' in content)
+        ):
+            from integrations.shared_contact import shared_contact_text
+
+            shared = shared_contact_text(
+                content if isinstance(content, dict) else msg_data,
+                fallback_name=content if isinstance(content, str) else '',
+            )
+            if shared:
+                content = shared
+                additional_attrs['is_shared_contact'] = True
         
         # Verificar se é uma mensagem de áudio baseada no conteúdo
         is_audio_message = False

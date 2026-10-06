@@ -19,9 +19,10 @@ def build_conversation_context(
     protocolo: Optional[str] = None,
     protocol_source: Optional[str] = None,
     informar_protocolo_primeira_resposta: bool = False,
+    origem_anuncio: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     state = conversation_state or {}
-    return {
+    ctx = {
         "ai_conversation_id": ai_conversation_id,
         "conversation_id": conversation_id,
         "provedor_id": getattr(provedor, "id", None),
@@ -35,10 +36,21 @@ def build_conversation_context(
         "informar_protocolo_primeira_resposta": informar_protocolo_primeira_resposta,
         "timestamp": timezone.now().isoformat(),
     }
+    if origem_anuncio:
+        ctx["origem_anuncio"] = origem_anuncio
+    return ctx
 
 
 def as_prompt_block(ctx: Dict[str, Any]) -> str:
     lines = ["# CONTEXTO DA CONVERSA", json.dumps(ctx, indent=2, ensure_ascii=False, default=str)]
+    if ctx.get("origem_anuncio"):
+        lines.append(
+            "# ORIGEM DO CLIENTE\n"
+            "- O cliente iniciou esta conversa clicando no anúncio/publicação descrito em origem_anuncio. "
+            "Use o título e o texto como contexto do interesse dele.\n"
+            "- Preços, planos e condições só podem vir das tools e dos planos cadastrados; "
+            "não prometa nada que esteja apenas no anúncio."
+        )
     proto = ctx.get("protocolo_atendimento")
     if proto:
         lines.append(

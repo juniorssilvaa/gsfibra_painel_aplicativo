@@ -355,7 +355,7 @@ export default function SuperadminConfig() {
                       dia do vencimento (e também vale para “vencida hoje” quando o Asaas já marcar como vencida). Para
                       faturas <strong className="text-foreground">já vencidas</strong>, use números positivos:{' '}
                       <strong className="text-foreground">2</strong> manda quando fizer dois dias que a fatura passou do
-                      vencimento. Se deixar em branco, vale a opção “dias antes (modo antigo)” logo abaixo.
+                      vencimento. Se ficar em branco, nenhuma cobrança automática é enviada.
                     </p>
                   </div>
                   <div>
@@ -396,23 +396,6 @@ export default function SuperadminConfig() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block font-medium mb-2 text-foreground">
-                      Dias antes do vencimento (modo antigo)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="30"
-                      name="billing_days_before_due"
-                      value={config?.billing_days_before_due ?? 3}
-                      onChange={handleChange}
-                      className="w-full px-4 py-3 rounded-lg bg-background border border-border text-foreground focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Só é usado se o campo “Em quais situações enviar” estiver vazio.
-                    </p>
-                  </div>
                   <div>
                     <label className="block font-medium mb-2 text-foreground">
                       Intervalo entre envios (segundos)

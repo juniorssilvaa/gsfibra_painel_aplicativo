@@ -12,7 +12,10 @@ def register():
     register_tool(
         name="transferir_conversa",
         handler=transferir_conversa,
-        description="Transfere a conversa para uma equipe do NioHub.",
+        description=(
+            "Transfere a conversa para uma equipe humana. Use só se o cliente pediu atendente, "
+            "se a base de conhecimento mandar, se uma ferramenta pedir ou se voce tentou e nao consegue resolver."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -30,7 +33,11 @@ def register():
     register_tool(
         name="transferir_inteligente",
         handler=transferir_inteligente,
-        description="Analisa a conversa e transfere automaticamente para a equipe mais adequada.",
+        description=(
+            "Analisa a conversa e transfere para a equipe humana mais adequada. Use só se o cliente pediu atendente, "
+            "se a base de conhecimento mandar, se uma ferramenta pedir ou se voce tentou e nao consegue resolver. "
+            "Mensagem vaga, cumprimento ou pedido de contato nao sao motivo: pergunte como pode ajudar."
+        ),
         parameters={
             "type": "object",
             "properties": {"conversation_id": {"type": "integer"}},
