@@ -642,7 +642,7 @@ def dispatch(request, pk):
     if err:
         return err
     with transaction.atomic():
-        c = Campaign.objects.select_for_update().select_related('canal', 'provedor').filter(
+        c = Campaign.objects.select_for_update(of=('self',)).select_related('canal', 'provedor').filter(
             pk=pk, provedor_id=provedor_id
         ).first()
         if c is None:
