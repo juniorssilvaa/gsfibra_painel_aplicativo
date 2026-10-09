@@ -44,11 +44,11 @@ from django.core.exceptions import ImproperlyConfigured
 # BASE
 # ============================================
 
-__version__ = "2.77.3"
-__version_info__ = (2, 77, 1)
+__version__ = "2.78.0"
+__version_info__ = (2, 78, 0)
 
 # Compatibilidade legado
-VERSION = "2.77.3"
+VERSION = "2.78.0"
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Sempre usar config que prioriza variáveis de ambiente sobre arquivo .env
@@ -110,6 +110,7 @@ INSTALLED_APPS = [
     'core',
     'conversations.apps.ConversationsConfig',  # Usar AppConfig para garantir importação de dramatiq_tasks
     'marketing.apps.MarketingConfig',
+    'campaigns.apps.CampaignsConfig',
     'integrations.apps.IntegrationsConfig',  # Usar AppConfig para garantir importação de dramatiq_tasks
 ]
 

@@ -95,6 +95,7 @@ urlpatterns = [
     path('', include('conversations.urls')),
     path('', include('integrations.urls')),
     path('marketing/', include('marketing.urls')),
+    path('campanhas/', include('campaigns.urls')),
     
     # Incluir URLs do WhatsApp (UazAPI)
     path('whatsapp/', include('core.whatsapp_urls')),

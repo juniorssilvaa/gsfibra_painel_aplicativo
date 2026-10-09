@@ -4,6 +4,7 @@ Tarefas periódicas leves no mesmo processo do ASGI (Daphne).
 Dispara a cada ~60s:
 - encerramento de conversas em "closing" (mesma lógica do actor Dramatiq);
 - ciclo de cobrança superadmin (mesma lógica do actor Dramatiq);
+- campanhas de disparo: inicia as agendadas e retoma as interrompidas;
 - bloqueio automático de provedores por fatura Asaas (cerca de a cada 10 minutos);
 - análise de aprendizado da IA das encerradas há pelo menos 3 minutos (verificação a cada minuto);
 - rotina noturna: encerradas de dias anteriores vão ao Supabase (core.nightly_migration).
@@ -81,6 +82,15 @@ def _periodic_loop() -> None:
                 logger.warning("[ASGI periodic] billing: %s", result)
         except Exception:
             logger.exception("[ASGI periodic] erro em billing")
+
+        try:
+            from campaigns.service import tick_campaigns
+
+            started = tick_campaigns()
+            if started:
+                logger.info("[ASGI periodic] campanhas em execução iniciadas/retomadas: %s", started)
+        except Exception:
+            logger.exception("[ASGI periodic] erro nas campanhas")
 
         try:
             from conversations.chatbot_timeout_service import run_chatbot_inactivity_scan

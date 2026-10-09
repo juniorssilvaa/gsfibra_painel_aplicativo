@@ -19,6 +19,7 @@ const TeamsPage = lazy(() => import('../components/TeamsPage'));
 const ConversationAudit = lazy(() => import('../components/ConversationAudit'));
 const AIPerformancePage = lazy(() => import('../components/AIPerformancePage'));
 const MarketingStudioPage = lazy(() => import('../components/MarketingStudioPage'));
+const CampaignsPage = lazy(() => import('../components/CampaignsPage'));
 const SuggestionsPage = lazy(() => import('../components/SuggestionsPage'));
 const CompanyManagement = lazy(() => import('../components/CompanyManagement'));
 const CSATDashboard = lazy(() => import('../components/CSATDashboard'));
@@ -153,7 +154,7 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
 
   // Proteção de rotas baseada no papel do usuário
   const isAdminRoute = (path) => {
-    const adminRoutes = ['dashboard', 'users', 'equipes', 'audit', 'companies', 'integracoes', 'dados-provedor', 'horario-provedor', 'regras-atendimento', 'marketing'];
+    const adminRoutes = ['dashboard', 'users', 'equipes', 'audit', 'companies', 'integracoes', 'dados-provedor', 'horario-provedor', 'regras-atendimento', 'marketing', 'campanhas'];
     return adminRoutes.some(route => path.includes(route));
   };
 
@@ -239,6 +240,7 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
                 <Route path="canais" element={<ChannelsPage />} />
                 <Route path="canais/configurar" element={<ChannelConfigPage />} />
                 <Route path="canais/templates" element={<MessageTemplatesPage provedorId={resolvedProvedorId} />} />
+                <Route path="campanhas" element={<CampaignsPage provedorId={resolvedProvedorId} />} />
                 <Route path="perfil" element={<ProfilePage provedorId={resolvedProvedorId} />} />
                 <Route path="aparencia" element={<AppearancePage provedorId={resolvedProvedorId} />} />
                 <Route path="dados-provedor" element={<ProviderDataForm provedorId={resolvedProvedorId} />} />

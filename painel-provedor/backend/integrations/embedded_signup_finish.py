@@ -11,11 +11,17 @@ from integrations.meta_oauth import PHONE_NUMBERS_API_VERSION, GRAPH_API_VERSION
 
 logger = logging.getLogger(__name__)
 
-def exchange_code_for_token(code: str) -> Optional[str]:
+def exchange_code_for_token_detailed(code: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Troca o Authorization Code pelo Access Token da Meta.
-    Válido por 30 segundos conforme documentação.
+    O code é de uso único e expira em poucos minutos.
+
+    Retorna (token, erro). Em falha, `erro` traz o motivo real devolvido pela Meta
+    (nunca inclui segredos nem o code).
     """
+    if not META_APP_SECRET:
+        logger.error("[EmbeddedSignup] FACEBOOK_APP_SECRET não configurado no .env: troca do code é impossível.")
+        return None, "FACEBOOK_APP_SECRET não configurado no servidor"
     try:
         # Endpoint oficial de troca de token para Embedded Signup
         url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/oauth/access_token"
@@ -25,14 +31,33 @@ def exchange_code_for_token(code: str) -> Optional[str]:
             'code': code
         }
         response = requests.get(url, params=params, timeout=30)
-        
+
         if response.status_code == 200:
             token = response.json().get('access_token')
-            return token
-        else:
-            return None
+            if token:
+                return token, None
+            logger.error("[EmbeddedSignup] Meta respondeu 200 sem access_token.")
+            return None, "A Meta não devolveu o token de acesso"
+
+        try:
+            meta_error = (response.json() or {}).get('error') or {}
+        except ValueError:
+            meta_error = {}
+        detail = meta_error.get('message') or f"HTTP {response.status_code}"
+        logger.error(
+            "[EmbeddedSignup] Troca de code falhou: HTTP %s, code=%s, subcode=%s, msg=%s",
+            response.status_code, meta_error.get('code'), meta_error.get('error_subcode'), detail,
+        )
+        return None, detail
     except Exception as e:
-        return None
+        logger.error("[EmbeddedSignup] Exceção na troca de code: %s", e)
+        return None, f"Erro de conexão com a Meta: {e}"
+
+
+def exchange_code_for_token(code: str) -> Optional[str]:
+    """Versão simples (compatibilidade): devolve só o token ou None."""
+    token, _ = exchange_code_for_token_detailed(code)
+    return token
 
 def fetch_phone_numbers_from_waba(waba_id: str, access_token: str) -> Optional[Dict]:
     """Busca dados da conta e telefone usando o token obtido."""
@@ -163,9 +188,9 @@ def process_embedded_signup_finish(
         
         # 1. TROCA DE TOKEN (Obrigatório se code estiver presente)
         if code:
-            access_token = exchange_code_for_token(code)
+            access_token, exchange_error = exchange_code_for_token_detailed(code)
             if not access_token:
-                return False, None, "Falha na troca de token com a Meta (Code expirado ou inválido)"
+                return False, None, f"Falha na troca de token com a Meta: {exchange_error}"
 
         # 2. Localizar ou criar o canal
         if channel_id:

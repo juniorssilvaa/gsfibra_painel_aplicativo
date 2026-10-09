@@ -1,6 +1,20 @@
 {
-  "current_version": "2.77.3",
+  "current_version": "2.78.0",
   "versions": [
+    {
+      "version": "2.78.0",
+      "version_type": "minor",
+      "date": "2026-10-08",
+      "title": "Envio de campanhas",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Campanhas",
+          "title": "Agora é possível realizar envio de campanhas",
+          "description": "Nova tela de Campanhas para enviar mensagens em massa pelos canais WhatsApp Oficial (modelos de mensagem aprovados), WhatsApp QR code e Telegram. Escolha os contatos no sistema e/ou importe uma lista de contatos em CSV, marque quem vai receber e envie na hora ou agende dia e horário. Acompanhe o progresso de cada envio."
+        }
+      ]
+    },
     {
       "version": "2.77.3",
       "version_type": "patch",

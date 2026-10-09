@@ -26,6 +26,7 @@ import {
   Globe, // Ícone para Canais
   SlidersHorizontal, // Regras de atendimento
   Sparkles, // Estúdio de Marketing
+  Megaphone, // Campanhas
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -120,6 +121,7 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
         ? [{ id: 'marketing', icon: Sparkles, label: 'Estúdio de Marketing', path: `/app/accounts/${resolvedProvedorId}/marketing`, isNew: true }]
         : []),
       { id: 'canais', icon: Globe, label: 'Canais', path: `/app/accounts/${resolvedProvedorId}/canais` },
+      { id: 'campanhas', icon: Megaphone, label: 'Campanhas', path: `/app/accounts/${resolvedProvedorId}/campanhas`, isNew: true },
     ];
 
     let items = [];
