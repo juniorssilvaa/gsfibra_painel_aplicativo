@@ -12,6 +12,12 @@
           "module": "Sistema",
           "title": "Correção interna",
           "description": "Correção interna."
+        },
+        {
+          "type": "fix",
+          "module": "Consulta de viabilidade",
+          "title": "Correção no módulo de consulta de viabilidade",
+          "description": "A IA agora consegue extrair o CEP em meio a mensagens de texto, mesmo quando o cliente envia o endereço completo ou em várias mensagens, e consultar a cobertura corretamente."
         }
       ]
     },

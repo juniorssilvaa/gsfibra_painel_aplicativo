@@ -18,6 +18,7 @@ from asgiref.sync import async_to_sync, sync_to_async
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from ai.address_extract import coordenadas_de_link_maps, extrair_cep, extrair_coordenadas
 from ai.audit import ToolCallLog, log_llm_decision, log_turn_end, log_turn_start, log_usage
 from ai.context import build_full_context_blocks
 from ai.definitions.tool_definitions import build_tools_for_provedor
@@ -405,18 +406,17 @@ class AIService:
 
             # Pin de localização → forçar consulta_viabilidade com as coordenadas
             force_viabilidade_coords = False
-            _loc_lat = _loc_lng = None
             _msg_loc = mensagem or ""
-            _lat_m = re.search(r"latitude\s*=\s*(-?\d+(?:[.,]\d+)?)", _msg_loc, re.I)
-            _lng_m = re.search(r"longitude\s*=\s*(-?\d+(?:[.,]\d+)?)", _msg_loc, re.I)
-            if _lat_m and _lng_m:
-                _loc_lat = _lat_m.group(1).replace(",", ".")
-                _loc_lng = _lng_m.group(1).replace(",", ".")
+            _coords_msg = extrair_coordenadas(_msg_loc) or await sync_to_async(
+                coordenadas_de_link_maps, thread_sensitive=False
+            )(_msg_loc)
+            _cep_msg = extrair_cep(_msg_loc)
             _has_viab_tool = any(
                 (t.get("function") or {}).get("name") == "consulta_viabilidade"
                 for t in (tools or [])
             )
-            if _loc_lat and _loc_lng and _has_viab_tool:
+            if _coords_msg and _has_viab_tool:
+                _loc_lat, _loc_lng = _coords_msg
                 force_viabilidade_coords = True
                 chat_messages.append(
                     {
@@ -425,6 +425,19 @@ class AIService:
                             "OBRIGATORIO: o cliente enviou a localizacao atual com coordenadas. "
                             f"Chame consulta_viabilidade AGORA com latitude={_loc_lat} e longitude={_loc_lng}. "
                             "Nao peca endereco antes. Nao responda so em texto sem chamar a tool."
+                        ),
+                    }
+                )
+            elif _cep_msg and _has_viab_tool:
+                _cep_fmt = f"{_cep_msg[:5]}-{_cep_msg[5:]}"
+                chat_messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            f"A mensagem atual do cliente contem o CEP {_cep_fmt}, mesmo no meio de outro texto. "
+                            "Se a conversa envolve cobertura, instalacao ou contratacao, chame consulta_viabilidade "
+                            f"com cep={_cep_fmt}, o numero do imovel (se houver) e o nome da rua sem numero/complemento. "
+                            "Nao peca o CEP de novo."
                         ),
                     }
                 )

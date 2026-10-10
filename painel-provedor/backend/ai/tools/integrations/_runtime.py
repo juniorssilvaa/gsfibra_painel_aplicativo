@@ -19,6 +19,13 @@ from core.fatura_service import FaturaService
 from core.redis_memory_service import redis_memory_service
 from conversations.closing_service import closing_service, stamp_automation_closure_trace
 from core.chat_migration_service import chat_migration_service
+from ai.address_extract import (
+    coordenadas_de_link_maps,
+    extrair_cep,
+    extrair_coordenadas,
+    limpar_logradouro,
+    numero_imovel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +74,9 @@ def _parse_coordenadas(function_args: dict) -> Optional[tuple]:
     raw = str(raw).strip()
     if not raw:
         return None
+    achado = extrair_coordenadas(raw)
+    if achado:
+        return achado
 
     # Aceita "lat,lng" / "lat lng" / "lat;lng"
     cleaned = raw.replace(";", ",").replace("|", ",")
@@ -75,8 +85,31 @@ def _parse_coordenadas(function_args: dict) -> Optional[tuple]:
     else:
         parts = [p.strip() for p in cleaned.split() if p.strip()]
     if len(parts) >= 2:
-        return parts[0].replace(",", "."), parts[1].replace(",", ".")
+        try:
+            float(parts[0])
+            float(parts[1])
+        except ValueError:
+            return None
+        return parts[0], parts[1]
     return None
+
+
+def _textos_recentes_cliente(conv, limite: int = 6) -> list:
+    """Últimas mensagens de texto do cliente na conversa (mais recente primeiro)."""
+    if conv is None:
+        return []
+    try:
+        from conversations.models import Message
+
+        qs = (
+            Message.objects.filter(conversation=conv, is_from_customer=True)
+            .order_by("-created_at")
+            .values_list("content", flat=True)[:limite]
+        )
+        return [t for t in qs if t]
+    except Exception as e:
+        logger.warning("[SGP] consulta_viabilidade: falha ao ler mensagens do cliente: %s", e)
+        return []
 
 
 def _bool_flag_viabilidade(val):
@@ -2014,26 +2047,18 @@ class AIActionsHandler:
                 except ValueError:
                     raio_m = None
 
-                nota_indisponivel = (
-                            "INSTRUCAO CRITICA - NAO REPITA NADA DISTO AO CLIENTE: esta funcionalidade "
-                            "nao esta disponivel agora por motivo interno. O cliente NUNCA deve saber "
-                            "disso. PROIBIDO mencionar ao cliente, mesmo parafraseando: 'nao configurada', "
-                            "'sistema', 'ERP', 'ferramenta', 'nao esta ativo', 'nao disponivel', "
-                            "'sem cobertura', 'sem viabilidade' ou qualquer variacao dessas ideias. "
-                            "NAO chame esta tool de novo nesta conversa. Aja como se esta tool nem "
-                            "existisse: continue o atendimento normalmente, colete endereco completo "
-                            "(rua, numero, bairro, cidade, CEP) e um ponto de referencia, responda "
-                            "duvidas sobre planos normalmente e, se o cliente quiser contratar, "
-                            "transfira para a equipe comercial verificar a viabilidade manualmente "
-                            "(sem citar o motivo). Sua proxima resposta ao cliente deve soar 100% "
-                            "natural, como se nada de especial tivesse acontecido."
-                )
                 nota_pedir_opcoes = (
-                    "Peca ao cliente UMA destas opcoes na mesma mensagem: "
-                    "(1) enviar a localizacao atual pelo WhatsApp (pin), OU "
-                    "(2) escrever o nome da rua/avenida e/ou o CEP "
-                    "(pelo menos um dos dois e obrigatorio na busca por escrito). "
-                    "Numero, bairro e cidade sao opcionais. Depois chame a tool de novo."
+                    "Rua, bairro e numero da casa sozinhos nao permitem confirmar a cobertura com seguranca. "
+                    "Agradeca e peca com gentileza, na mesma mensagem, UMA destas opcoes: "
+                    "(1) a localizacao atual pelo WhatsApp (pin), "
+                    "(2) o CEP do endereco, ou "
+                    "(3) o link da localizacao no Google Maps. "
+                    "Nao diga que nao ha cobertura. Depois chame a tool de novo."
+                )
+                nota_pedir_cep = (
+                    "Peca com gentileza o CEP do endereco para confirmar a cobertura, sem mencionar "
+                    "sistema, ferramenta ou o motivo. Nao diga que nao ha cobertura. "
+                    "Depois chame a tool de novo com o cep."
                 )
 
                 logradouro = (function_args.get("logradouro") or "").strip()
@@ -2050,6 +2075,8 @@ class AIActionsHandler:
                     numero_final = numero_unico
                 if numero_inicial and not numero_final:
                     numero_final = numero_inicial
+                numero_inicial = numero_imovel(numero_inicial)
+                numero_final = numero_imovel(numero_final) or numero_inicial
 
                 coords = _parse_coordenadas(function_args)
                 # Fallback: coordenadas salvas no estado (ex.: pin de localização do WhatsApp)
@@ -2066,53 +2093,98 @@ class AIActionsHandler:
                             {"coordenada": conversation_state.get("coordenada")}
                         )
 
-                # SGP POST /api/ura/viabilidade/ exige logradouro OU CEP.
-                tem_logradouro_ou_cep = bool(logradouro or cep)
+                # CEP/coordenadas podem vir no meio de um texto longo (argumentos ou mensagens do cliente).
+                texto_args = "\n".join(
+                    str(function_args.get(k) or "")
+                    for k in ("logradouro", "bairro", "cidade", "cep", "coordenada", "endereco")
+                )
+                textos_cliente = None
+                if len(cep) != 8:
+                    textos_cliente = _textos_recentes_cliente(conv)
+                    cep = (
+                        extrair_cep(texto_args)
+                        or next(filter(None, map(extrair_cep, textos_cliente)), None)
+                        or cep
+                    )
+                if not coords:
+                    if textos_cliente is None:
+                        textos_cliente = _textos_recentes_cliente(conv)
+                    coords = (
+                        extrair_coordenadas(texto_args)
+                        or next(filter(None, map(extrair_coordenadas, textos_cliente)), None)
+                        or coordenadas_de_link_maps(texto_args)
+                        or next(filter(None, map(coordenadas_de_link_maps, textos_cliente)), None)
+                    )
+                if logradouro:
+                    logradouro = limpar_logradouro(logradouro)
+                if bairro:
+                    bairro = limpar_logradouro(bairro)
+
+                # Só CEP ou localização exata dão resultado confiável; rua/bairro/número são complemento.
+                tem_cep = bool(cep)
                 pode_consultar_coords = bool(coords and gateway_id and raio_m)
 
-                if not tem_logradouro_ou_cep and not coords:
+                if not tem_cep and not coords:
                     return {
                         "success": False,
-                        "erro": "Informe nome da rua/avenida e/ou CEP, ou a localizacao pelo WhatsApp.",
+                        "erro": "Falta CEP ou localizacao (pin / link do Google Maps).",
                         "nota": nota_pedir_opcoes,
                     }
 
-                if not tem_logradouro_ou_cep and coords and not pode_consultar_coords:
+                if not tem_cep and coords and not pode_consultar_coords:
                     logger.info(
-                        "[SGP] consulta_viabilidade coordenadas bloqueada | provedor=%s | motivo=gateway/raio nao configurados",
+                        "[SGP] consulta_viabilidade coordenadas sem gateway/raio | provedor=%s | pedindo CEP",
                         provedor.id,
                     )
                     return {
                         "success": False,
-                        "viabilidade_indisponivel": True,
-                        "erro": "indisponivel_uso_interno",
-                        "nota": nota_indisponivel,
+                        "erro": "precisa_cep",
+                        "nota": nota_pedir_cep,
                     }
 
                 consulta_endereco = {"consultado": False, "viavel": False}
                 consulta_coordenadas = {"consultado": False, "viavel": False}
 
-                if tem_logradouro_ou_cep:
-                    try:
-                        sgp_end = sgp.consultar_viabilidade(
-                            logradouro=logradouro or None,
-                            numero_inicial=numero_inicial or None,
-                            numero_final=numero_final or None,
-                            bairro=bairro or None,
-                            cep=cep or None,
-                            cidade=cidade or None,
-                        )
-                        consulta_endereco = _avaliar_viabilidade_endereco(sgp_end)
-                    except Exception as e:
-                        logger.warning("[SGP] consulta_viabilidade endereco falhou: %s", e)
-                        consulta_endereco = {
-                            "consultado": True,
-                            "sucesso": False,
-                            "viavel": False,
-                            "conclusivo": False,
-                            "erro": str(e),
-                            "resultados": [],
-                        }
+                if tem_cep:
+                    # O SGP cruza todos os filtros enviados: um bairro/complemento diferente do
+                    # cadastro zera o resultado. Consulta do mais específico ao mais amplo.
+                    numero = {"numero_inicial": numero_inicial, "numero_final": numero_final}
+                    candidatas = [
+                        {"logradouro": logradouro, "bairro": bairro, "cep": cep, "cidade": cidade, **numero},
+                        {"cep": cep, **numero},
+                        {"cep": cep},
+                    ]
+                    tentativas = []
+                    for cand in candidatas:
+                        filtros = {k: v for k, v in cand.items() if v}
+                        if filtros not in tentativas:
+                            tentativas.append(filtros)
+
+                    consultas = []
+                    for filtros in tentativas:
+                        try:
+                            aval = _avaliar_viabilidade_endereco(sgp.consultar_viabilidade(**filtros))
+                        except Exception as e:
+                            logger.warning("[SGP] consulta_viabilidade endereco falhou: %s", e)
+                            aval = {
+                                "consultado": True,
+                                "sucesso": False,
+                                "viavel": False,
+                                "conclusivo": False,
+                                "erro": str(e),
+                                "resultados": [],
+                            }
+                        aval["filtros"] = filtros
+                        consultas.append(aval)
+                        if aval.get("viavel"):
+                            break
+
+                    consulta_endereco = dict(
+                        next((c for c in consultas if c.get("viavel")), None)
+                        or next((c for c in consultas if c.get("sucesso") and c.get("conclusivo")), None)
+                        or consultas[0]
+                    )
+                    consulta_endereco["tentativas"] = len(consultas)
 
                 if pode_consultar_coords:
                     try:
@@ -2184,8 +2256,9 @@ class AIActionsHandler:
                 else:
                     nota = (
                         "Consulta inconclusiva. NAO diga que nao ha viabilidade. "
-                        "Peca a outra opcao que ainda faltar: localizacao atual pelo WhatsApp (pin) "
-                        "OU nome da rua/avenida e/ou CEP. Depois chame a tool de novo."
+                        "Peca com gentileza a outra opcao que ainda faltar: localizacao atual pelo "
+                        "WhatsApp (pin), o CEP ou o link da localizacao no Google Maps. "
+                        "Depois chame a tool de novo."
                     )
                     inconclusivo = True
 
@@ -2286,7 +2359,7 @@ class AIActionsHandler:
             {"type": "function", "function": {"name": "verificar_acesso", "description": "Verifica se o acesso à internet do contrato está online, offline ou em manutenção. Parametro contrato = contrato_id do buscar_cliente, NUNCA o CPF. Se Manutencao: informe e NÃO abra chamado. Se Offline: diagnostico com o cliente (ligado, LED/LOS). LED vermelho/LOS: NÃO abra chamado nem transfira só por isso; verifique manutenção e continue o suporte.", "parameters": {"type": "object", "properties": {"contrato": {"type": "string"}}, "required": ["contrato"]}}},
             {"type": "function", "function": {"name": "abrir_chamado", "description": "Cria chamado técnico no SGP somente após diagnóstico (CPF, contrato real, verificar_manutencao, verificar_acesso). NUNCA invente contrato. NUNCA use só porque o cliente mencionou LED vermelho ou enviou foto. NUNCA use se houver manutenção ou contrato suspenso.", "parameters": {"type": "object", "properties": {"contrato": {"type": "string"}, "conteudo": {"type": "string"}}, "required": ["contrato", "conteudo"]}}},
             {"type": "function", "function": {"name": "liberar_confianca", "description": "Realiza desbloqueio em confiança do contrato suspenso. Use quando o cliente quiser desbloquear o acesso sem pagar imediatamente. O CPF/CNPJ é opcional e será buscado da memória se não fornecido. O conteúdo (conteudo) deve ser o que o cliente disse sobre quando vai pagar (ex: 'vou paga amanhã'), ou deixe vazio para usar 'Liberação Via NioChat' como padrão.", "parameters": {"type": "object", "properties": {"contrato": {"type": "string"}, "cpf_cnpj": {"type": "string", "description": "CPF/CNPJ do cliente (opcional, será buscado da memória se não fornecido)"}, "conteudo": {"type": "string", "description": "Conteúdo da promessa de pagamento que o cliente mencionou (ex: 'vou paga amanhã'). Se o cliente não mencionou nada específico, deixe vazio ou não inclua este parâmetro para usar 'Liberação Via NioChat' como padrão."}}, "required": ["contrato"]}}},
-            {"type": "function", "function": {"name": "consulta_viabilidade", "description": "Consulta viabilidade via SGP. Opcoes: pin WhatsApp (latitude/longitude) OU endereco escrito com nome da rua/avenida e/ou CEP (pelo menos um dos dois obrigatorio). Se o cliente quiser contratar e ainda nao informou, peca as duas opcoes. Com pin, rua ou CEP, chame a tool imediatamente. tem_viabilidade=true continua; false ofereca comercial. Se viabilidade_indisponivel=true, siga a nota: NUNCA mencione configuracao/sistema ao cliente.", "parameters": {"type": "object", "properties": {"logradouro": {"type": "string"}, "numero_inicial": {"type": "string"}, "numero_final": {"type": "string"}, "bairro": {"type": "string"}, "cep": {"type": "string"}, "cidade": {"type": "string"}, "latitude": {"type": "string"}, "longitude": {"type": "string"}, "coordenada": {"type": "string"}}, "required": []}}},
+            {"type": "function", "function": {"name": "consulta_viabilidade", "description": "Consulta viabilidade via SGP. Exige CEP ou localizacao exata: pin WhatsApp (latitude/longitude), CEP ou link do Google Maps (em coordenada). Rua, bairro e numero sozinhos nao bastam: peca com gentileza pin, CEP ou link do Google Maps. Com pin, link ou CEP, chame a tool imediatamente. tem_viabilidade=true continua; false ofereca comercial. Se viabilidade_indisponivel=true, siga a nota: NUNCA mencione configuracao/sistema ao cliente.", "parameters": {"type": "object", "properties": {"logradouro": {"type": "string"}, "numero_inicial": {"type": "string"}, "numero_final": {"type": "string"}, "bairro": {"type": "string"}, "cep": {"type": "string"}, "cidade": {"type": "string"}, "latitude": {"type": "string"}, "longitude": {"type": "string"}, "coordenada": {"type": "string"}}, "required": []}}},
         ]
 
     def convert_tools_to_gemini(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
