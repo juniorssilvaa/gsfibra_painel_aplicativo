@@ -36,6 +36,7 @@ class ProvedorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Provedor
         fields = '__all__'
+        read_only_fields = ['plano_nome', 'plano_max_canais', 'plano_max_usuarios']
 
     def get_national_holidays(self, obj):
         from .national_holidays import resolve_national_holidays

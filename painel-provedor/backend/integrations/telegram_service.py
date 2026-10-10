@@ -1330,6 +1330,12 @@ class TelegramManager:
                 
                 # Buscar ou criar Canal correspondente
                 def _get_or_create_canal():
+                    if not Canal.objects.filter(tipo='telegram', provedor=integration.provedor).exists():
+                        from core.plan_limits import canal_limit_error
+
+                        limite = canal_limit_error(integration.provedor, 'telegram')
+                        if limite:
+                            raise PermissionError(limite)
                     return Canal.objects.get_or_create(
                         tipo='telegram',
                         provedor=integration.provedor,

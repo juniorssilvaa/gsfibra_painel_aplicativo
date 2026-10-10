@@ -38,6 +38,7 @@ router.register(r'acs', ACSIntegrationViewSet, basename='acs')
 urlpatterns = [
     # Rotas específicas ANTES do router para evitar conflitos
     path('webhooks/admin/provider-status/', csrf_exempt(views.AdminProviderStatusWebhookView.as_view()), name='webhook-admin-provider-status'),
+    path('webhooks/admin/plan-limits/', csrf_exempt(views.AdminPlanLimitsWebhookView.as_view()), name='webhook-admin-plan-limits'),
     path('webhooks/admin/sync-niohub/', csrf_exempt(views.AdminSyncNiohubWebhookView.as_view()), name='webhook-admin-sync-niohub'),
     path('webhooks/admin/upsert-user/', csrf_exempt(views.AdminUpsertUserWebhookView.as_view()), name='webhook-admin-upsert-user'),
     path('webhooks/admin/delete-user/', csrf_exempt(views.AdminDeleteUserWebhookView.as_view()), name='webhook-admin-delete-user'),

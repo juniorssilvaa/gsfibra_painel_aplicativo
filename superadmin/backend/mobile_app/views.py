@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers, viewsets, permissions, status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action, api_view, permission_classes
@@ -19,6 +21,7 @@ from .models import (
     MobileScheduledNotification,
 )
 from .permissions import IsSuperadmin, IsMobilePanelUser, is_superadmin_user, provedor_id_for_user
+from .public_api import _branding_url
 from .services import ensure_mobile_app_for_provedor, count_outdated_devices, mask_ip
 
 
@@ -31,11 +34,23 @@ class MobileAppProfileSerializer(serializers.ModelSerializer):
     genieacs_token = serializers.CharField(required=False, allow_blank=True)
     has_genieacs_token = serializers.SerializerMethodField()
     has_genieacs_password = serializers.SerializerMethodField()
+    remove_logo = serializers.BooleanField(write_only=True, required=False)
+    remove_login_logo = serializers.BooleanField(write_only=True, required=False)
+    logo_url = serializers.SerializerMethodField()
+    login_logo_url = serializers.SerializerMethodField()
+
+    COLOR_FIELDS = (
+        'primary_color', 'secondary_color', 'login_bg_color',
+        'login_button_color', 'login_text_color', 'app_bg_color', 'card_color',
+    )
 
     class Meta:
         model = MobileAppProfile
         fields = (
-            'id', 'provedor_id', 'provedor_nome', 'logo', 'primary_color',
+            'id', 'provedor_id', 'provedor_nome', 'logo', 'login_logo', 'primary_color',
+            'secondary_color', 'login_bg_color', 'login_button_color', 'login_text_color',
+            'app_bg_color', 'card_color', 'home_logo_position',
+            'remove_logo', 'remove_login_logo', 'logo_url', 'login_logo_url', 'app_default_theme',
             'glass_intensity', 'glass_blur', 'ambient_shadow',
             'cnpj', 'number', 'is_active', 'created_at', 'updated_at',
             'sgp_url', 'sgp_app_name', 'webhook_url', 'latest_app_version',
@@ -43,7 +58,7 @@ class MobileAppProfileSerializer(serializers.ModelSerializer):
             'has_genieacs_token', 'has_genieacs_password',
             'app_users_count', 'active_token',
         )
-        read_only_fields = ('created_at', 'updated_at', 'active_token', 'is_active')
+        read_only_fields = ('created_at', 'updated_at', 'active_token', 'is_active', 'app_default_theme')
 
     def get_app_users_count(self, obj):
         return MobileAppUser.objects.filter(provedor_id=obj.provedor_id).count()
@@ -54,11 +69,35 @@ class MobileAppProfileSerializer(serializers.ModelSerializer):
             return None
         return f'{t[:8]}…{t[-4:]}'
 
+    def _branding(self, obj, kind):
+        request = self.context.get('request')
+        return _branding_url(request, obj, kind) if request else None
+
+    def get_logo_url(self, obj):
+        return self._branding(obj, 'logo')
+
+    def get_login_logo_url(self, obj):
+        return self._branding(obj, 'login-logo')
+
     def get_has_genieacs_token(self, obj):
         return bool(obj.genieacs_token)
 
     def get_has_genieacs_password(self, obj):
         return bool(obj.genieacs_password)
+
+    def validate(self, attrs):
+        for field in self.COLOR_FIELDS:
+            if field not in attrs:
+                continue
+            value = (attrs[field] or '').strip().upper()
+            if value and not re.fullmatch(r'#[0-9A-F]{6}', value):
+                raise serializers.ValidationError({field: 'Use o formato #RRGGBB.'})
+            if field == 'primary_color' and not value:
+                raise serializers.ValidationError({field: 'A cor principal é obrigatória.'})
+            attrs[field] = value
+        if 'number' in attrs:
+            attrs['number'] = (attrs['number'] or '').strip() or None
+        return attrs
 
     def update(self, instance, validated_data):
         # Só superadmin pode ligar/desligar is_active via serializer se vier no payload
@@ -68,6 +107,15 @@ class MobileAppProfileSerializer(serializers.ModelSerializer):
         for secret in ('genieacs_password', 'genieacs_token'):
             if secret in validated_data and not validated_data[secret]:
                 validated_data.pop(secret)
+        for flag, field in (('remove_logo', 'logo'), ('remove_login_logo', 'login_logo')):
+            if validated_data.pop(flag, False) and field not in validated_data:
+                current = getattr(instance, field)
+                if current:
+                    try:
+                        current.delete(save=False)
+                    except OSError:
+                        pass
+                setattr(instance, field, None)
         return super().update(instance, validated_data)
 
 

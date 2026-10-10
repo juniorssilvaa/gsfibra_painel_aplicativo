@@ -185,6 +185,17 @@ def process_embedded_signup_finish(
     try:
         provedor = Provedor.objects.get(id=provider_id)
         access_token = None
+
+        if channel_id:
+            vai_criar = not Canal.objects.filter(id=channel_id, provedor=provedor).exists()
+        else:
+            vai_criar = not Canal.objects.filter(provedor=provedor, tipo="whatsapp_oficial").exists()
+        if vai_criar:
+            from core.plan_limits import canal_limit_error
+
+            limite = canal_limit_error(provedor, "whatsapp_oficial")
+            if limite:
+                return False, None, limite
         
         # 1. TROCA DE TOKEN (Obrigatório se code estiver presente)
         if code:

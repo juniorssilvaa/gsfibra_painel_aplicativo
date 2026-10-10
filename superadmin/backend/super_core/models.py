@@ -51,6 +51,29 @@ class Company(models.Model):
         ordering = ['name']
 
 
+class Plano(models.Model):
+    """Plano contratado pelo provedor: mensalidade e limites do painel (0 = ilimitado)."""
+
+    nome = models.CharField(max_length=100, unique=True)
+    descricao = models.TextField(blank=True, default='')
+    valor = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    ciclo = models.CharField(max_length=20, default='MONTHLY')
+    max_canais = models.PositiveIntegerField(default=0, help_text='0 = ilimitado. O canal do App Mobile não conta.')
+    max_usuarios = models.PositiveIntegerField(default=0, help_text='0 = ilimitado.')
+    ativo = models.BooleanField(default=True)
+    ordem = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['ordem', 'valor', 'nome']
+        verbose_name = 'Plano'
+        verbose_name_plural = 'Planos'
+
+    def __str__(self):
+        return self.nome
+
+
 class Provedor(models.Model):
     RELEASE_CHANNELS = [
         ('beta', 'Beta (Atualização Automática)'),
@@ -139,11 +162,26 @@ class Provedor(models.Model):
     integration_token = models.CharField(max_length=255, blank=True, default='')
     integration_token_last_used_at = models.DateTimeField(null=True, blank=True)
 
+    plano = models.ForeignKey(Plano, on_delete=models.SET_NULL, null=True, blank=True, related_name='provedores')
+    canais_extras = models.PositiveIntegerField(default=0)
+    usuarios_extras = models.PositiveIntegerField(default=0)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['nome']
+
+    def plan_limits(self) -> dict:
+        """Limites efetivos (plano + extras). None = sem limite."""
+        plano = self.plano
+        if plano is None:
+            return {'max_canais': None, 'max_usuarios': None, 'plano_nome': ''}
+        return {
+            'max_canais': (plano.max_canais + self.canais_extras) if plano.max_canais else None,
+            'max_usuarios': (plano.max_usuarios + self.usuarios_extras) if plano.max_usuarios else None,
+            'plano_nome': plano.nome,
+        }
 
 
 class ProvedorHealth(models.Model):

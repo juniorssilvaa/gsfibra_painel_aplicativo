@@ -439,6 +439,10 @@ class Provedor(models.Model):
     subscription_status = models.CharField(max_length=50, null=True, blank=True, verbose_name='Status da Assinatura')
     subscription_next_due_date = models.DateField(null=True, blank=True, verbose_name='Próximo Vencimento')
     block_reason = models.TextField(null=True, blank=True, verbose_name='Motivo do Bloqueio')
+    # Plano contratado no Superadmin (null = sem limite). O canal do App Mobile não conta.
+    plano_nome = models.CharField(max_length=100, blank=True, default='', verbose_name='Plano contratado')
+    plano_max_canais = models.PositiveIntegerField(null=True, blank=True, verbose_name='Limite de canais do plano')
+    plano_max_usuarios = models.PositiveIntegerField(null=True, blank=True, verbose_name='Limite de usuários do plano')
     sgp_webhook_token = models.CharField(
         max_length=128,
         unique=True,

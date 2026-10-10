@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Wifi, Search, Edit, Trash2, MoreVertical, Plus, Eye, Users, MessageCircle, TrendingUp, Database, Trash, FileText, CheckCircle2, RefreshCw, Zap, KeyRound, Copy, X, Calendar, Bell, Globe2, CreditCard, ExternalLink, Smartphone, MessageSquare, ChevronsUpDown, Router } from 'lucide-react';
+import { Wifi, Search, Edit, Trash2, MoreVertical, Plus, Eye, Users, MessageCircle, TrendingUp, Database, Trash, FileText, CheckCircle2, RefreshCw, Zap, KeyRound, Copy, X, Calendar, Bell, Globe2, CreditCard, ExternalLink, Smartphone, MessageSquare, ChevronsUpDown, Router, Layers } from 'lucide-react';
 import axios from 'axios';
 import ReactDOM from 'react-dom';
 import { toast } from './lib/notify';
@@ -77,6 +77,10 @@ const subscriptionCycleLabel = (cycle) => {
   return map[key] || cycle || '—';
 };
 
+const todayIso = () => new Date().toLocaleDateString('sv-SE');
+
+const ASAAS_EDITABLE_PAYMENT = ['PENDING', 'OVERDUE'];
+
 const paymentStatusUi = (status) => {
   if (['RECEIVED', 'RECEIVED_IN_CASH', 'CONFIRMED'].includes(status)) {
     return { label: 'Pago', pill: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20', icon: 'bg-emerald-500/10 text-emerald-400' };
@@ -104,6 +108,88 @@ const normalizeSubdomainInput = (value) => {
     .replace(/^https?:\/\//, '')
     .replace(/\/+$/, '');
 };
+
+const planLimitLabel = (base, extra) => (Number(base) > 0 ? Number(base) + (Number(extra) || 0) : 'Ilimitado');
+
+function PlanoFields({ form, setForm, planos, usage, hasSubscription }) {
+  const selected = planos.find((p) => String(p.id) === String(form.plano || ''));
+  const visible = planos.filter((p) => p.ativo || String(p.id) === String(form.plano || ''));
+  const fieldClass = 'w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border';
+
+  const choose = (value) => {
+    const plano = planos.find((p) => String(p.id) === String(value));
+    setForm((prev) => {
+      const next = { ...prev, plano: value };
+      if (plano && !hasSubscription) {
+        next.subscription_value = plano.valor;
+        next.subscription_cycle = plano.ciclo;
+      }
+      return next;
+    });
+  };
+
+  const setNumber = (name) => (e) => {
+    const value = e.target.value;
+    setForm((prev) => ({ ...prev, [name]: value === '' ? '' : Math.max(0, parseInt(value, 10) || 0) }));
+  };
+
+  const usageLine = (label, used, base, extra) => {
+    const limit = planLimitLabel(base, extra);
+    const over = typeof limit === 'number' && used != null && used > limit;
+    return (
+      <div className="rounded-lg border border-border bg-[#181b20] px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">{label}</p>
+        <p className={`text-sm font-semibold ${over ? 'text-amber-300' : 'text-white'}`}>
+          {used != null ? `${used} de ${limit}` : limit}
+        </p>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+        <Layers className="w-5 h-5" /> Plano
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Plano</label>
+          <select className={fieldClass} value={form.plano || ''} onChange={(e) => choose(e.target.value)}>
+            <option value="">Sem plano (sem limites)</option>
+            {visible.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nome} — R$ {Number(p.valor || 0).toFixed(2)}{p.ativo ? '' : ' (inativo)'}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Canais extras</label>
+          <input type="number" min="0" className={fieldClass} value={form.canais_extras ?? 0} onChange={setNumber('canais_extras')} disabled={!selected} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Usuários extras</label>
+          <input type="number" min="0" className={fieldClass} value={form.usuarios_extras ?? 0} onChange={setNumber('usuarios_extras')} disabled={!selected} />
+        </div>
+      </div>
+      {selected && (
+        <div className="mt-3 grid grid-cols-2 gap-3 md:max-w-md">
+          {usageLine('Canais', usage?.canais, selected.max_canais, form.canais_extras)}
+          {usageLine('Usuários', usage?.usuarios, selected.max_usuarios, form.usuarios_extras)}
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        {!selected
+          ? 'Sem plano o provedor não tem limite de canais nem de usuários.'
+          : hasSubscription
+            ? `A assinatura atual não muda sozinha. Para cobrar R$ ${Number(selected.valor || 0).toFixed(2)}, use "Editar assinatura" em Detalhes Financeiros.`
+            : 'O valor e o ciclo do plano já foram para a assinatura (Detalhes Financeiros).'}
+        {usage?.error ? ` ${usage.error}` : ''}
+        {' '}O canal do App Mobile não conta no limite. Extras só valem quando o recurso do plano tem limite.
+      </p>
+    </div>
+  );
+}
 
 export default function SuperadminProvedores() {
   const [search, setSearch] = useState('');
@@ -156,6 +242,9 @@ export default function SuperadminProvedores() {
     enable_chat: true,
     enable_mobile_app: false,
     enable_acs: false,
+    plano: '',
+    canais_extras: 0,
+    usuarios_extras: 0,
   });
   const [showEditModal, setShowEditModal] = useState(false);
   const [editProvedorForm, setEditProvedorForm] = useState({
@@ -195,7 +284,12 @@ export default function SuperadminProvedores() {
     enable_chat: true,
     enable_mobile_app: false,
     enable_acs: false,
+    plano: '',
+    canais_extras: 0,
+    usuarios_extras: 0,
   });
+  const [planos, setPlanos] = useState([]);
+  const [planUsage, setPlanUsage] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updateForm, setUpdateForm] = useState({ channel: 'stable', version: '' });
   const [releaseJob, setReleaseJob] = useState(null);
@@ -224,6 +318,10 @@ export default function SuperadminProvedores() {
   const [limpezaResult, setLimpezaResult] = useState(null);
   const [subscriptionPayments, setSubscriptionPayments] = useState([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
+  const [paymentEdit, setPaymentEdit] = useState(null);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [subscriptionEdit, setSubscriptionEdit] = useState(null);
+  const [savingSubscription, setSavingSubscription] = useState(false);
   const [asaasSandbox, setAsaasSandbox] = useState(true);
   const [vpsPool, setVpsPool] = useState(FALLBACK_VPS_POOL);
   const [sortKey, setSortKey] = useState('id');
@@ -433,6 +531,13 @@ export default function SuperadminProvedores() {
   }, []);
 
   useEffect(() => {
+    axios
+      .get('/api/planos/', { headers: { Authorization: `Token ${localStorage.getItem('token')}` } })
+      .then((res) => setPlanos(res.data.results || res.data || []))
+      .catch((err) => console.error('Erro ao carregar planos:', err));
+  }, []);
+
+  useEffect(() => {
     const fetchAsaasConfig = async () => {
       try {
         const token = localStorage.getItem('token');
@@ -566,6 +671,9 @@ export default function SuperadminProvedores() {
       }
 
       delete payload.vps_key;
+      payload.plano = payload.plano ? Number(payload.plano) : null;
+      payload.canais_extras = Number(payload.canais_extras) || 0;
+      payload.usuarios_extras = Number(payload.usuarios_extras) || 0;
 
       // Limpar campos de data vazios para evitar erro de validação do Django
       if (!payload.subscription_next_due_date) delete payload.subscription_next_due_date;
@@ -761,8 +869,18 @@ export default function SuperadminProvedores() {
       enable_chat: provedor.chat_enabled !== false,
       enable_mobile_app: !!provedor.mobile_app_enabled,
       enable_acs: !!provedor.acs_enabled,
+      plano: provedor.plano ? String(provedor.plano) : '',
+      canais_extras: provedor.canais_extras || 0,
+      usuarios_extras: provedor.usuarios_extras || 0,
     });
     setSubscriptionPayments([]);
+    setPaymentEdit(null);
+    setSubscriptionEdit(null);
+    setPlanUsage(null);
+    axios
+      .get(`/api/provedores/${provedor.id}/plan_usage/`, { headers: { Authorization: `Token ${localStorage.getItem('token')}` } })
+      .then((res) => setPlanUsage(res.data))
+      .catch((err) => console.error('Erro ao consultar uso do plano:', err));
     setShowEditModal(true);
     setMenuId(null);
     if (provedor.asaas_customer_id || provedor.asaas_subscription_id) {
@@ -832,6 +950,9 @@ export default function SuperadminProvedores() {
       }
       // Garantir que desired_id nunca vai no payload de edição
       delete payload.desired_id;
+      payload.plano = payload.plano ? Number(payload.plano) : null;
+      payload.canais_extras = Number(payload.canais_extras) || 0;
+      payload.usuarios_extras = Number(payload.usuarios_extras) || 0;
 
       // Buscar o objeto original do provedor para preservar outras integracoes
       const originalProvedor = provedoresState.find(p => p.id === payload.id);
@@ -1006,6 +1127,66 @@ export default function SuperadminProvedores() {
       toast.apiError(err, 'Erro ao criar assinatura. Verifique os dados.');
     } finally {
       setLoadingEdit(false);
+    }
+  };
+
+  const handleSavePayment = async () => {
+    if (!paymentEdit) return;
+    setSavingPayment(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`/api/provedores/${editProvedorForm.id}/update_payment/`, {
+        payment_id: paymentEdit.id,
+        value: paymentEdit.value,
+        dueDate: paymentEdit.dueDate,
+        billingType: paymentEdit.billingType,
+        description: paymentEdit.description,
+      }, { headers: { Authorization: `Token ${token}` } });
+      if (res.data.success) {
+        const updated = res.data.payment;
+        setSubscriptionPayments((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
+        setPaymentEdit(null);
+        toast.success('Cobrança atualizada no Asaas.');
+      } else {
+        toast.apiError({ response: { data: res.data } }, 'Não foi possível atualizar a cobrança.');
+      }
+    } catch (err) {
+      toast.apiError(err, 'Não foi possível atualizar a cobrança.');
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
+  const handleSaveSubscription = async () => {
+    if (!subscriptionEdit) return;
+    setSavingSubscription(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`/api/provedores/${editProvedorForm.id}/update_subscription/`, subscriptionEdit, {
+        headers: { Authorization: `Token ${token}` },
+      });
+      if (res.data.success) {
+        const fields = {
+          subscription_status: res.data.subscription_status,
+          subscription_value: res.data.subscription_value,
+          subscription_cycle: res.data.subscription_cycle,
+          subscription_billing_type: res.data.subscription_billing_type,
+          subscription_next_due_date: res.data.subscription_next_due_date || '',
+        };
+        setEditProvedorForm((prev) => ({ ...prev, ...fields }));
+        setProvedoresState((prev) => prev.map((p) => (p.id === editProvedorForm.id ? { ...p, ...fields } : p)));
+        setSubscriptionEdit(null);
+        toast.success(res.data.pending_updated
+          ? 'Assinatura atualizada. As cobranças pendentes também foram ajustadas.'
+          : 'Assinatura atualizada. Vale para as próximas cobranças.');
+        if (res.data.pending_updated) fetchSubscriptionPayments(editProvedorForm.id);
+      } else {
+        toast.apiError({ response: { data: res.data } }, 'Não foi possível atualizar a assinatura.');
+      }
+    } catch (err) {
+      toast.apiError(err, 'Não foi possível atualizar a assinatura.');
+    } finally {
+      setSavingSubscription(false);
     }
   };
 
@@ -1610,6 +1791,8 @@ export default function SuperadminProvedores() {
               </div>
               )}
 
+              <PlanoFields form={addProvedorForm} setForm={setAddProvedorForm} planos={planos} usage={null} hasSubscription={false} />
+
               {/* Seção 2: Endereço */}
               <div>
                 <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
@@ -1888,6 +2071,14 @@ export default function SuperadminProvedores() {
                 </div>
               </div>
 
+              <PlanoFields
+                form={editProvedorForm}
+                setForm={setEditProvedorForm}
+                planos={planos}
+                usage={planUsage}
+                hasSubscription={!!editProvedorForm.asaas_subscription_id}
+              />
+
               {/* Seção 2: Endereço */}
               <div>
                 <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
@@ -2089,6 +2280,79 @@ export default function SuperadminProvedores() {
                                       </p>
                                     </div>
                                   </div>
+                                  {!isInterBilling(editProvedorForm) && !subscriptionEdit && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSubscriptionEdit({
+                                        value: editProvedorForm.subscription_value || '',
+                                        cycle: editProvedorForm.subscription_cycle || 'MONTHLY',
+                                        billingType: editProvedorForm.subscription_billing_type || 'BOLETO',
+                                        nextDueDate: editProvedorForm.subscription_next_due_date || '',
+                                        updatePendingPayments: false,
+                                      })}
+                                      className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-gray-200 transition hover:border-primary/40 hover:bg-primary/10 hover:text-white"
+                                    >
+                                      <Edit className="h-3.5 w-3.5" /> Editar assinatura
+                                    </button>
+                                  )}
+                                  {subscriptionEdit && (
+                                    <div className="space-y-3 rounded-lg border border-primary/30 bg-black/30 p-4">
+                                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                        <div>
+                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Valor</label>
+                                          <input type="number" step="0.01" min="0.01" className={inputClass} value={subscriptionEdit.value}
+                                            onChange={(e) => setSubscriptionEdit((s) => ({ ...s, value: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Ciclo</label>
+                                          <select className={inputClass} value={subscriptionEdit.cycle}
+                                            onChange={(e) => setSubscriptionEdit((s) => ({ ...s, cycle: e.target.value }))}>
+                                            <option value="MONTHLY">Mensal</option>
+                                            <option value="BIMONTHLY">Bimestral</option>
+                                            <option value="QUARTERLY">Trimestral</option>
+                                            <option value="SEMIANNUALLY">Semestral</option>
+                                            <option value="YEARLY">Anual</option>
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Pagamento</label>
+                                          <select className={inputClass} value={subscriptionEdit.billingType}
+                                            onChange={(e) => setSubscriptionEdit((s) => ({ ...s, billingType: e.target.value }))}>
+                                            <option value="BOLETO">Boleto</option>
+                                            <option value="PIX">PIX</option>
+                                            <option value="CREDIT_CARD">Cartão de Crédito</option>
+                                            <option value="UNDEFINED">Cliente escolhe</option>
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Próx. vencimento</label>
+                                          <input type="date" min={todayIso()} className={inputClass} value={subscriptionEdit.nextDueDate}
+                                            onChange={(e) => setSubscriptionEdit((s) => ({ ...s, nextDueDate: e.target.value }))} />
+                                        </div>
+                                      </div>
+                                      <label className="flex items-start gap-2 text-xs text-gray-300">
+                                        <input type="checkbox" className="mt-0.5" checked={subscriptionEdit.updatePendingPayments}
+                                          onChange={(e) => setSubscriptionEdit((s) => ({ ...s, updatePendingPayments: e.target.checked }))} />
+                                        <span>
+                                          Aplicar também às cobranças já geradas que estão pendentes.
+                                          <span className="block text-[11px] text-gray-500">
+                                            Sem marcar, vale só para as próximas. O vencimento de faturas já geradas se altera na própria cobrança, no histórico abaixo.
+                                          </span>
+                                        </span>
+                                      </label>
+                                      <div className="flex justify-end gap-2">
+                                        <button type="button" onClick={() => setSubscriptionEdit(null)} disabled={savingSubscription}
+                                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-400 hover:bg-white/5 hover:text-white">
+                                          Cancelar
+                                        </button>
+                                        <button type="button" onClick={handleSaveSubscription} disabled={savingSubscription}
+                                          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-1.5 text-xs font-bold text-white hover:bg-primary/90 disabled:opacity-50">
+                                          {savingSubscription && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                                          Salvar no Asaas
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
                                   {!ui.live && (
                                     <p className="text-xs leading-relaxed text-amber-200/80">
                                       {isInterBilling(editProvedorForm)
@@ -2125,12 +2389,14 @@ export default function SuperadminProvedores() {
                               </span>
                             </div>
                           ) : subscriptionPayments.length > 0 ? (
-                            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
                               {subscriptionPayments.map((payment) => {
                                 const ps = paymentStatusUi(payment.status);
+                                const canEdit = !isInterBilling(editProvedorForm) && ASAAS_EDITABLE_PAYMENT.includes(payment.status);
+                                const editing = paymentEdit?.id === payment.id;
                                 return (
+                                  <div key={payment.id} className="space-y-2">
                                   <div
-                                    key={payment.id}
                                     className="group flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-[#0f1115] px-4 py-3 transition hover:border-primary/25 hover:bg-[#12151a]"
                                   >
                                     <div className="flex min-w-0 items-center gap-3">
@@ -2151,6 +2417,22 @@ export default function SuperadminProvedores() {
                                       <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${ps.pill}`}>
                                         {ps.label}
                                       </span>
+                                      {canEdit && !editing && (
+                                        <button
+                                          type="button"
+                                          className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white"
+                                          title="Alterar valor ou vencimento"
+                                          onClick={() => setPaymentEdit({
+                                            id: payment.id,
+                                            value: payment.value ?? '',
+                                            dueDate: payment.dueDate || '',
+                                            billingType: payment.billingType || 'BOLETO',
+                                            description: payment.description || '',
+                                          })}
+                                        >
+                                          <Edit className="h-4 w-4" />
+                                        </button>
+                                      )}
                                       {(payment.bankSlipUrl || payment.invoiceUrl) && (
                                         <a
                                           href={payment.bankSlipUrl || payment.invoiceUrl}
@@ -2163,6 +2445,49 @@ export default function SuperadminProvedores() {
                                         </a>
                                       )}
                                     </div>
+                                  </div>
+                                  {editing && (
+                                    <div className="space-y-3 rounded-xl border border-primary/30 bg-black/30 p-4">
+                                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                        <div>
+                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Valor</label>
+                                          <input type="number" step="0.01" min="0.01" className={inputClass} value={paymentEdit.value}
+                                            onChange={(e) => setPaymentEdit((p) => ({ ...p, value: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Vencimento</label>
+                                          <input type="date" min={todayIso()} className={inputClass} value={paymentEdit.dueDate}
+                                            onChange={(e) => setPaymentEdit((p) => ({ ...p, dueDate: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Pagamento</label>
+                                          <select className={inputClass} value={paymentEdit.billingType}
+                                            onChange={(e) => setPaymentEdit((p) => ({ ...p, billingType: e.target.value }))}>
+                                            <option value="BOLETO">Boleto</option>
+                                            <option value="PIX">PIX</option>
+                                            <option value="CREDIT_CARD">Cartão de Crédito</option>
+                                            <option value="UNDEFINED">Cliente escolhe</option>
+                                          </select>
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Descrição</label>
+                                        <input type="text" maxLength={500} className={inputClass} value={paymentEdit.description}
+                                          onChange={(e) => setPaymentEdit((p) => ({ ...p, description: e.target.value }))} />
+                                      </div>
+                                      <div className="flex justify-end gap-2">
+                                        <button type="button" onClick={() => setPaymentEdit(null)} disabled={savingPayment}
+                                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-400 hover:bg-white/5 hover:text-white">
+                                          Cancelar
+                                        </button>
+                                        <button type="button" onClick={handleSavePayment} disabled={savingPayment}
+                                          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-1.5 text-xs font-bold text-white hover:bg-primary/90 disabled:opacity-50">
+                                          {savingPayment && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                                          Salvar no Asaas
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
                                   </div>
                                 );
                               })}

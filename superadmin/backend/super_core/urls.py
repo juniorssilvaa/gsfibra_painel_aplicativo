@@ -10,6 +10,7 @@ from . import suggestions
 router = DefaultRouter()
 router.register(r'vps-servers', views.VpsServerViewSet, basename='vps-servers')
 router.register(r'provedores', views.ProvedorViewSet, basename='provedores')
+router.register(r'planos', views.PlanoViewSet, basename='planos')
 router.register(r'canais', views.CanalViewSet, basename='canais')
 router.register(r'companies', views.CompanyViewSet, basename='companies')
 router.register(r'users', views.UserViewSet, basename='users')

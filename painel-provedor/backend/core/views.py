@@ -205,14 +205,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.78.0"
+                "current_version": "2.78.1"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.78.0"
+            "current_version": "2.78.1"
         }, safe=False)
 
 
@@ -3392,6 +3392,17 @@ class UserViewSet(viewsets.ModelViewSet):
         if user.user_type not in ['superadmin', 'admin']:
             raise PermissionDenied('Apenas administradores podem criar usuários')
 
+        from core.plan_limits import user_limit_error
+
+        provedor_id = serializer.validated_data.get('provedor_id')
+        alvo = (
+            Provedor.objects.filter(id=provedor_id).first() if provedor_id
+            else Provedor.objects.filter(admins=user).first()
+        )
+        limite = user_limit_error(alvo)
+        if limite:
+            raise PermissionDenied(limite)
+
         def _save_new_user():
             if 'provedor_id' in serializer.validated_data:
                 provedor_id = serializer.validated_data['provedor_id']
@@ -3760,6 +3771,12 @@ class CanalViewSet(CanalVoiceCallsMixin, viewsets.ModelViewSet):
         if user.user_type != 'superadmin':
             if provedor not in Provedor.objects.filter(admins=user):
                 raise PermissionDenied('Você não tem permissão para criar canais neste provedor')
+
+        from core.plan_limits import canal_limit_error
+
+        limite = canal_limit_error(provedor, serializer.validated_data.get('tipo') or '')
+        if limite:
+            raise PermissionDenied(limite)
         
         # Salvar com provedor (mesmo sendo read_only no serializer, podemos passar no save)
         serializer.save(provedor=provedor)
@@ -9199,6 +9216,43 @@ class AdminProviderStatusWebhookView(APIView):
             'bot_mode': bot_mode,
             'agent_mode': agent_mode,
         })
+
+
+class AdminPlanLimitsWebhookView(APIView):
+    """
+    Superadmin envia os limites do plano (POST) e consulta o uso (GET ?provedor_id=).
+    Body POST: { provedor_id, plano_nome, max_canais, max_usuarios } — null/0 = sem limite.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def _provedor(self, request, central_id):
+        integration_ok, _ = _is_superadmin_integration_authorized(request)
+        if not integration_ok:
+            return None, Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        from core.provedor_id_mapping import resolve_local_provedor_for_central_id
+
+        provedor = resolve_local_provedor_for_central_id(central_id)
+        if not provedor:
+            return None, Response({'error': 'Provedor not found'}, status=status.HTTP_404_NOT_FOUND)
+        return provedor, None
+
+    def get(self, request, *args, **kwargs):
+        provedor, err = self._provedor(request, request.query_params.get('provedor_id'))
+        if err:
+            return err
+        from core.plan_limits import plan_usage
+
+        return Response(plan_usage(provedor))
+
+    def post(self, request, *args, **kwargs):
+        data = request.data if isinstance(request.data, dict) else {}
+        provedor, err = self._provedor(request, data.get('provedor_id'))
+        if err:
+            return err
+        from core.plan_limits import apply_plan_limits, plan_usage
+
+        apply_plan_limits(provedor, data)
+        return Response(plan_usage(provedor))
 
 
 class InboundWebhookView(APIView):

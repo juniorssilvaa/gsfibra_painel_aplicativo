@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.conf import settings
 from django.db import connection
 import secrets
-from .models import Provedor, Canal, User, Company, AuditLog, MensagemSistema, BillingTemplate, SystemConfig, VpsServer, SystemUpdate
+from .models import Provedor, Canal, User, Company, AuditLog, MensagemSistema, BillingTemplate, SystemConfig, VpsServer, SystemUpdate, Plano
 from .billing_send_service import run_billing_send_cycle
 from rest_framework import serializers
 import logging
@@ -118,6 +118,62 @@ def _asaas_fetch_payment_by_id(payment_id: str) -> dict | None:
 
 def _asaas_confirm_payments(payments: list | None, *, max_items: int = 50) -> list:
     return confirm_payments_on_asaas(payments, _asaas_fetch_payment_by_id, max_items=max_items)
+
+
+ASAAS_BILLING_TYPES = ('BOLETO', 'PIX', 'CREDIT_CARD', 'UNDEFINED')
+ASAAS_CYCLES = ('WEEKLY', 'BIWEEKLY', 'MONTHLY', 'BIMONTHLY', 'QUARTERLY', 'SEMIANNUALLY', 'YEARLY')
+ASAAS_PAYMENT_EDITABLE = ('PENDING', 'OVERDUE')
+
+
+def _asaas_error_text(exc: Exception) -> str:
+    """Mensagem legível a partir de 'Asaas HTTP 400: {"errors": [...]}'."""
+    import json
+
+    raw = str(exc)
+    _, _, body = raw.partition(': ')
+    try:
+        errors = json.loads(body).get('errors') or []
+        descriptions = [str(e.get('description') or '').strip() for e in errors if isinstance(e, dict)]
+        text = ' '.join(d for d in descriptions if d)
+        if text:
+            return text
+    except (ValueError, AttributeError):
+        pass
+    return raw
+
+
+def _parse_iso_date(raw):
+    from datetime import date
+
+    try:
+        return date.fromisoformat(str(raw or '').strip()[:10])
+    except ValueError:
+        return None
+
+
+def _parse_money(raw):
+    try:
+        value = round(float(str(raw).replace(',', '.')), 2)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _asaas_payment_summary(p: dict) -> dict:
+    return {
+        'id': p.get('id'),
+        'description': (p.get('description') or '').strip(),
+        'dueDate': p.get('dueDate'),
+        'value': p.get('value'),
+        'netValue': p.get('netValue'),
+        'status': p.get('status'),
+        'billingType': p.get('billingType'),
+        'confirmedDate': p.get('confirmedDate'),
+        'paymentDate': p.get('paymentDate'),
+        'invoiceUrl': p.get('invoiceUrl'),
+        'bankSlipUrl': p.get('bankSlipUrl'),
+        'provider': 'asaas',
+    }
 
 
 def _asaas_delete_subscription(subscription_id: str) -> None:
@@ -332,10 +388,15 @@ class ProvedorSerializer(serializers.ModelSerializer):
     mobile_app_enabled = serializers.SerializerMethodField()
     chat_enabled = serializers.SerializerMethodField()
     acs_enabled = serializers.SerializerMethodField()
+    plano_nome = serializers.ReadOnlyField(source='plano.nome')
+    limites = serializers.SerializerMethodField()
 
     class Meta:
         model = Provedor
         exclude = ('panel_bootstrap_password_ciphertext', 'integration_token')
+
+    def get_limites(self, obj):
+        return obj.plan_limits()
 
     def get_users_count(self, obj):
         try:
@@ -891,9 +952,62 @@ def _sync_bot_mode_to_tenant(provedor):
         logger.warning("[sync-bot-mode] Erro: %s", exc)
 
 
-def notify_provider_panel(provedor_id, is_active, status_text, block_reason=None):
+def _tenant_admin_url(provedor, path: str):
+    """URL de um webhook admin no painel do provedor (TENANT_WEBHOOK_BASE_URL só vale em DEBUG para localhost)."""
     import os
 
+    local_base = (os.environ.get('TENANT_WEBHOOK_BASE_URL') or '').strip().rstrip('/')
+    if local_base and any(
+        h in local_base.lower()
+        for h in ('://127.0.0.1', '://localhost', '://0.0.0.0')
+    ):
+        from django.conf import settings as dj_settings
+        if not getattr(dj_settings, 'DEBUG', False):
+            local_base = ''
+    if local_base:
+        return f"{local_base}/api/webhooks/admin/{path}/"
+    provider_subdomain = (provedor.subdomain or '').strip()
+    if not provider_subdomain:
+        return None
+    if '.' not in provider_subdomain:
+        provider_subdomain = f'{provider_subdomain}.niohub.com.br'
+    return f"https://{provider_subdomain.rstrip('/')}/api/webhooks/admin/{path}/"
+
+
+def _push_plan_limits_to_tenant(provedor_id):
+    """Envia plano e limites (plano + extras) ao painel do provedor."""
+    provedor = Provedor.objects.select_related('plano').filter(id=provedor_id).first()
+    if not provedor:
+        return
+    token = (provedor.integration_token or '').strip()
+    url = _tenant_admin_url(provedor, 'plan-limits')
+    if not token or not url:
+        logger.info('[plan-limits] Provedor %s sem token/subdomínio — o heartbeat aplica depois.', provedor_id)
+        return
+    try:
+        resp = requests.post(
+            url,
+            json={'provedor_id': provedor.id, **provedor.plan_limits()},
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=10,
+        )
+        if resp.ok:
+            logger.info('[plan-limits] Limites enviados ao provedor %s', provedor_id)
+        else:
+            logger.warning('[plan-limits] Provedor %s respondeu HTTP %s: %s', provedor_id, resp.status_code, resp.text[:200])
+    except Exception as exc:
+        logger.warning('[plan-limits] Falha ao enviar limites ao provedor %s: %s', provedor_id, exc)
+
+
+def push_plan_limits_async(provedor_ids):
+    def _run():
+        for pid in provedor_ids:
+            _push_plan_limits_to_tenant(pid)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def notify_provider_panel(provedor_id, is_active, status_text, block_reason=None):
     try:
         provedor = Provedor.objects.filter(id=provedor_id).first()
         if not provedor:
@@ -904,25 +1018,10 @@ def notify_provider_panel(provedor_id, is_active, status_text, block_reason=None
             logger.warning("[provider-status] Token não configurado no provedor %s.", provedor_id)
             return
 
-        local_base = (os.environ.get('TENANT_WEBHOOK_BASE_URL') or '').strip().rstrip('/')
-        # Em produção, nunca encaminhar status para localhost (URL de dev).
-        if local_base and any(
-            h in local_base.lower()
-            for h in ('://127.0.0.1', '://localhost', '://0.0.0.0')
-        ):
-            from django.conf import settings as dj_settings
-            if not getattr(dj_settings, 'DEBUG', False):
-                local_base = ''
-        if local_base:
-            url = f"{local_base}/api/webhooks/admin/provider-status/"
-        else:
-            provider_subdomain = (provedor.subdomain or '').strip()
-            if not provider_subdomain:
-                logger.warning("Webhook do provedor não configurado (subdomain ausente).")
-                return
-            if '.' not in provider_subdomain:
-                provider_subdomain = f'{provider_subdomain}.niohub.com.br'
-            url = f"https://{provider_subdomain.rstrip('/')}/api/webhooks/admin/provider-status/"
+        url = _tenant_admin_url(provedor, 'provider-status')
+        if not url:
+            logger.warning("Webhook do provedor não configurado (subdomain ausente).")
+            return
 
         payload = {
             'provedor_id': provedor_id,
@@ -1067,8 +1166,74 @@ class TenantBillingStatusView(APIView):
         )
 
 
+class PlanoSerializer(serializers.ModelSerializer):
+    provedores_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Plano
+        fields = [
+            'id', 'nome', 'descricao', 'valor', 'ciclo', 'max_canais', 'max_usuarios',
+            'ativo', 'ordem', 'provedores_count', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_nome(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('Informe o nome do plano.')
+        return value
+
+    def validate_ciclo(self, value):
+        value = (value or 'MONTHLY').upper()
+        if value not in ASAAS_CYCLES:
+            raise serializers.ValidationError('Ciclo inválido.')
+        return value
+
+    def validate_valor(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError('O valor não pode ser negativo.')
+        return value
+
+
+class IsSuperadminOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return getattr(request.user, 'user_type', '') == 'superadmin'
+
+
+class PlanoViewSet(viewsets.ModelViewSet):
+    serializer_class = PlanoSerializer
+    permission_classes = [IsSuperadminOrReadOnly]
+    pagination_class = None
+
+    def get_queryset(self):
+        from django.db.models import Count
+
+        return Plano.objects.annotate(provedores_count=Count('provedores'))
+
+    def perform_update(self, serializer):
+        before = serializer.instance
+        old_limits = (before.max_canais, before.max_usuarios, before.nome)
+        plano = serializer.save()
+        if (plano.max_canais, plano.max_usuarios, plano.nome) != old_limits:
+            push_plan_limits_async(list(plano.provedores.values_list('id', flat=True)))
+
+    def destroy(self, request, *args, **kwargs):
+        plano = self.get_object()
+        em_uso = plano.provedores.count()
+        if em_uso:
+            return Response(
+                {'error': f'Este plano está em uso por {em_uso} provedor(es). Desative-o em vez de excluir.'},
+                status=400,
+            )
+        return super().destroy(request, *args, **kwargs)
+
+
 class ProvedorViewSet(viewsets.ModelViewSet):
-    queryset = Provedor.objects.select_related('mobile_app', 'acs').all()
+    queryset = Provedor.objects.select_related('mobile_app', 'acs', 'plano').all()
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ProvedorSerializer
 
@@ -1328,8 +1493,12 @@ class ProvedorViewSet(viewsets.ModelViewSet):
         old_active = instance.is_active
         old_bot_mode = instance.bot_mode
         old_agent_mode = getattr(instance, 'agent_mode', 'isp')
+        old_plan = (instance.plano_id, instance.canais_extras, instance.usuarios_extras)
 
         updated_instance = serializer.save()
+
+        if (updated_instance.plano_id, updated_instance.canais_extras, updated_instance.usuarios_extras) != old_plan:
+            push_plan_limits_async([updated_instance.id])
 
         if updated_instance.asaas_customer_id and updated_instance.notification_disabled:
             try:
@@ -1394,6 +1563,8 @@ class ProvedorViewSet(viewsets.ModelViewSet):
         # Após criar o Provedor, sincronizar niohub no tenant (liga-o ao Provedor correcto)
         thread = threading.Thread(target=_sync_niohub_in_tenant, args=(instance,), daemon=True)
         thread.start()
+        if instance.plano_id:
+            push_plan_limits_async([instance.id])
 
     def _require_superadmin(self, request):
         user = getattr(request, 'user', None)
@@ -2025,23 +2196,196 @@ class ProvedorViewSet(viewsets.ModelViewSet):
                 return Response({'success': True, 'data': []})
             return Response({'success': False, 'error': str(exc)}, status=400)
 
-        payments = []
-        for p in _asaas_confirm_payments(data.get('data') or [], max_items=50):
-            payments.append({
-                'id': p.get('id'),
-                'description': (p.get('description') or '').strip(),
-                'dueDate': p.get('dueDate'),
-                'value': p.get('value'),
-                'netValue': p.get('netValue'),
-                'status': p.get('status'),
-                'billingType': p.get('billingType'),
-                'confirmedDate': p.get('confirmedDate'),
-                'paymentDate': p.get('paymentDate'),
-                'invoiceUrl': p.get('invoiceUrl'),
-                'bankSlipUrl': p.get('bankSlipUrl'),
-                'provider': 'asaas',
-            })
+        payments = [_asaas_payment_summary(p) for p in _asaas_confirm_payments(data.get('data') or [], max_items=50)]
         return Response({'success': True, 'data': payments, 'provider': 'asaas'})
+
+    @staticmethod
+    def _is_inter_billing(provedor: Provedor) -> bool:
+        return (
+            (provedor.billing_provider or '') == Provedor.BILLING_PROVIDER_INTER
+            or (provedor.asaas_subscription_id or '').startswith('INTER-SUB-')
+        )
+
+    @action(detail=True, methods=['get'], url_path='plan_usage')
+    def plan_usage(self, request, pk=None):
+        """GET /api/provedores/<id>/plan_usage/ — limites do plano + canais/usuários em uso no painel."""
+        provedor = self.get_object()
+        data = {**provedor.plan_limits(), 'canais': None, 'usuarios': None, 'sincronizado': None}
+        token = (provedor.integration_token or '').strip()
+        url = _tenant_admin_url(provedor, 'plan-limits')
+        if not token or not url:
+            data['error'] = 'Painel do provedor ainda não implantado.'
+            return Response(data)
+        try:
+            resp = requests.get(
+                url,
+                params={'provedor_id': provedor.id},
+                headers={'Authorization': f'Bearer {token}'},
+                timeout=8,
+            )
+            if not resp.ok:
+                data['error'] = f'O painel respondeu HTTP {resp.status_code}.'
+                return Response(data)
+            tenant = resp.json() or {}
+        except Exception as exc:
+            logger.warning('[plan-usage] Provedor %s: %s', provedor.id, exc)
+            data['error'] = 'Não foi possível consultar o painel do provedor.'
+            return Response(data)
+        data['canais'] = tenant.get('canais')
+        data['usuarios'] = tenant.get('usuarios')
+        data['sincronizado'] = (
+            tenant.get('max_canais') == data['max_canais']
+            and tenant.get('max_usuarios') == data['max_usuarios']
+        )
+        if not data['sincronizado']:
+            push_plan_limits_async([provedor.id])
+        return Response(data)
+
+    @action(detail=True, methods=['post'], url_path='update_payment')
+    def update_payment(self, request, pk=None):
+        """
+        POST /api/provedores/<id>/update_payment/
+        Body: { payment_id, value, dueDate, billingType?, description? }
+        Altera uma cobrança aguardando pagamento ou vencida (PUT /v3/payments/{id}).
+        """
+        try:
+            self._require_superadmin(request)
+        except PermissionError:
+            return Response({'error': 'Forbidden'}, status=403)
+
+        provedor = self.get_object()
+        if self._is_inter_billing(provedor):
+            return Response({'success': False, 'error': 'Cobranças do Banco Inter não são editadas por aqui.'}, status=400)
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        payment_id = str(payload.get('payment_id') or '').strip()
+        if not payment_id:
+            return Response({'success': False, 'error': 'Informe a cobrança.'}, status=400)
+
+        try:
+            current = _asaas_request('GET', f'/payments/{payment_id}')
+        except RuntimeError as exc:
+            return Response({'success': False, 'error': _asaas_error_text(exc)}, status=400)
+
+        customer_id = (provedor.asaas_customer_id or '').strip()
+        subscription_id = (provedor.asaas_subscription_id or '').strip()
+        if not (
+            (customer_id and current.get('customer') == customer_id)
+            or (subscription_id and current.get('subscription') == subscription_id)
+        ):
+            return Response({'success': False, 'error': 'Esta cobrança não pertence a este provedor.'}, status=403)
+        if current.get('deleted') or current.get('status') not in ASAAS_PAYMENT_EDITABLE:
+            return Response({
+                'success': False,
+                'error': 'Só é possível alterar cobranças aguardando pagamento ou vencidas.',
+            }, status=400)
+
+        value = _parse_money(payload.get('value', current.get('value')))
+        if value is None:
+            return Response({'success': False, 'error': 'Informe um valor maior que zero.'}, status=400)
+        due = _parse_iso_date(payload.get('dueDate') or current.get('dueDate'))
+        if due is None:
+            return Response({'success': False, 'error': 'Data de vencimento inválida.'}, status=400)
+        if due < timezone.localdate():
+            return Response({'success': False, 'error': 'O vencimento não pode ser uma data passada.'}, status=400)
+        billing_type = str(payload.get('billingType') or current.get('billingType') or 'BOLETO').upper()
+        if billing_type not in ASAAS_BILLING_TYPES:
+            return Response({'success': False, 'error': 'Forma de pagamento inválida.'}, status=400)
+
+        body = {'billingType': billing_type, 'value': value, 'dueDate': due.isoformat()}
+        if 'description' in payload:
+            body['description'] = str(payload.get('description') or '').strip()[:500]
+
+        try:
+            updated = _asaas_request('PUT', f'/payments/{payment_id}', json=body)
+        except RuntimeError as exc:
+            logger.warning('[Asaas] Falha ao atualizar cobrança %s do provedor %s: %s', payment_id, provedor.id, exc)
+            return Response({'success': False, 'error': _asaas_error_text(exc)}, status=400)
+        return Response({'success': True, 'payment': _asaas_payment_summary(updated or {**current, **body})})
+
+    @action(detail=True, methods=['post'], url_path='update_subscription')
+    def update_subscription(self, request, pk=None):
+        """
+        POST /api/provedores/<id>/update_subscription/
+        Body: { value?, cycle?, billingType?, nextDueDate?, description?, updatePendingPayments? }
+        Altera a recorrência (PUT /v3/subscriptions/{id}). Cobranças já geradas só mudam com updatePendingPayments.
+        """
+        try:
+            self._require_superadmin(request)
+        except PermissionError:
+            return Response({'error': 'Forbidden'}, status=403)
+
+        provedor = self.get_object()
+        if self._is_inter_billing(provedor):
+            return Response({'success': False, 'error': 'Assinaturas do Banco Inter não são editadas por aqui.'}, status=400)
+        subscription_id = (provedor.asaas_subscription_id or '').strip()
+        if not subscription_id:
+            return Response({'success': False, 'error': 'Este provedor não tem assinatura no Asaas.'}, status=400)
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        body = {}
+        if payload.get('value') not in (None, ''):
+            value = _parse_money(payload.get('value'))
+            if value is None:
+                return Response({'success': False, 'error': 'Informe um valor maior que zero.'}, status=400)
+            body['value'] = value
+        if payload.get('cycle'):
+            cycle = str(payload['cycle']).upper()
+            if cycle not in ASAAS_CYCLES:
+                return Response({'success': False, 'error': 'Ciclo inválido.'}, status=400)
+            body['cycle'] = cycle
+        if payload.get('billingType'):
+            billing_type = str(payload['billingType']).upper()
+            if billing_type not in ASAAS_BILLING_TYPES:
+                return Response({'success': False, 'error': 'Forma de pagamento inválida.'}, status=400)
+            body['billingType'] = billing_type
+        if payload.get('nextDueDate'):
+            due = _parse_iso_date(payload['nextDueDate'])
+            if due is None:
+                return Response({'success': False, 'error': 'Data do próximo vencimento inválida.'}, status=400)
+            if due < timezone.localdate():
+                return Response({'success': False, 'error': 'O próximo vencimento não pode ser uma data passada.'}, status=400)
+            body['nextDueDate'] = due.isoformat()
+        if 'description' in payload:
+            body['description'] = str(payload.get('description') or '').strip()[:500]
+        if not body:
+            return Response({'success': False, 'error': 'Nada para alterar.'}, status=400)
+        body['updatePendingPayments'] = coerce_bool(payload.get('updatePendingPayments'), default=False)
+
+        try:
+            sub = _asaas_request('PUT', f'/subscriptions/{subscription_id}', json=body) or {}
+        except RuntimeError as exc:
+            logger.warning('[Asaas] Falha ao atualizar assinatura %s do provedor %s: %s', subscription_id, provedor.id, exc)
+            return Response({'success': False, 'error': _asaas_error_text(exc)}, status=400)
+
+        provedor.subscription_value = sub.get('value', body.get('value', provedor.subscription_value))
+        provedor.subscription_cycle = sub.get('cycle') or body.get('cycle') or provedor.subscription_cycle
+        provedor.subscription_billing_type = (
+            sub.get('billingType') or body.get('billingType') or provedor.subscription_billing_type
+        )
+        next_due = _parse_iso_date(sub.get('nextDueDate') or body.get('nextDueDate'))
+        if next_due:
+            provedor.subscription_next_due_date = next_due
+        if sub.get('status'):
+            provedor.subscription_status = sub['status']
+        provedor.save(update_fields=[
+            'subscription_value',
+            'subscription_cycle',
+            'subscription_billing_type',
+            'subscription_next_due_date',
+            'subscription_status',
+        ])
+        return Response({
+            'success': True,
+            'subscription_status': provedor.subscription_status,
+            'subscription_value': provedor.subscription_value,
+            'subscription_cycle': provedor.subscription_cycle,
+            'subscription_billing_type': provedor.subscription_billing_type,
+            'subscription_next_due_date': (
+                provedor.subscription_next_due_date.isoformat() if provedor.subscription_next_due_date else None
+            ),
+            'pending_updated': body['updatePendingPayments'],
+        })
 
     @action(detail=True, methods=['get'], url_path='integration-token')
     def integration_token_status(self, request, pk=None):
@@ -2607,7 +2951,7 @@ class ProviderHeartbeatView(APIView):
                 provedor=provedor,
                 defaults={'reported_at': provedor.integration_token_last_used_at, 'data': health},
             )
-        return Response({'ok': True, 'current_version': version})
+        return Response({'ok': True, 'current_version': version, 'plano': provedor.plan_limits()})
 
 
 class ProviderFxUsdBrlView(APIView):

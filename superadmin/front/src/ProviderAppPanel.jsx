@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 import {
   LayoutDashboard,
@@ -39,6 +39,26 @@ import {
   FileText,
   Calendar,
   Save,
+  Palette,
+  Upload,
+  Headset,
+  Barcode,
+  ReceiptText,
+  LockOpen,
+  ChartColumn,
+  Video,
+  Activity,
+  Layers,
+  MonitorSmartphone,
+  Menu,
+  Globe,
+  Clock,
+  ChevronDown,
+  MessageCircle,
+  Phone,
+  CreditCard,
+  LogIn,
+  CircleCheck,
 } from 'lucide-react'
 import {
   PieChart,
@@ -69,6 +89,7 @@ const NAV = [
   ['push-sent', 'Enviadas', History],
   ['warnings', 'Comunicados', Megaphone],
   ['config', 'Aplicativo', Settings],
+  ['appearance', 'Aparência', Palette],
   ['plans', 'Planos', Package],
   ['sgp', 'Integrações', PlugZap],
   ['staff', 'Usuários', UserCog],
@@ -2572,6 +2593,1095 @@ function StaffUsersPanel({ currentUserId, onNotify, onError }) {
   )
 }
 
+const DEFAULT_PRIMARY = '#0D70B3'
+
+const THEME_COLORS = [
+  ['primary_color', 'Cor principal', 'Barra superior, botões, ícones e destaques do app.'],
+  ['secondary_color', 'Cor secundária', 'Detalhes, bolhas do chat e textos sobre cards claros.'],
+  ['login_bg_color', 'Fundo do login', 'Cor base do fundo da tela de login.'],
+  ['login_button_color', 'Botão ENTRAR', 'Cor do botão de entrar na tela de login.'],
+  ['login_text_color', 'Textos do login', 'Textos, campo de CPF e links da tela de login.'],
+  ['app_bg_color', 'Fundo do app', 'Fundo das telas no modo claro. Vazio usa a mesma cor do fundo do login.'],
+  ['card_color', 'Cor dos cards', 'Cards e barra inferior no modo claro. O texto escurece ou clareia sozinho.'],
+]
+
+const isHexColor = (v) => /^#[0-9A-Fa-f]{6}$/.test(v || '')
+
+function ColorField({ label, help, value, defaultValue, onChange, onReset }) {
+  const effective = isHexColor(value) ? value : isHexColor(defaultValue) ? defaultValue : '#000000'
+  return (
+    <div className="flex flex-col gap-2 border-b border-border px-5 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+      <div className="min-w-0">
+        <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{help}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <input
+          type="color"
+          value={effective}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          className="h-9 w-12 cursor-pointer rounded border border-border bg-background p-0.5"
+          aria-label={label}
+        />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          placeholder={isHexColor(defaultValue) ? `Padrão ${defaultValue}` : 'Padrão do app'}
+          maxLength={7}
+          className={`${PANEL_INPUT} w-32 font-mono`}
+        />
+        <button type="button" onClick={onReset} className={BTN_GHOST} title="Voltar para a cor padrão do app">
+          Padrão
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function LogoField({ label, help, preview, onPick, onRemove, previewBg }) {
+  const inputRef = useRef(null)
+  const openPicker = () => inputRef.current?.click()
+  return (
+    <div className="flex flex-col gap-3 border-b border-border px-5 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+      <div className="min-w-0">
+        <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{help}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={openPicker}
+          title="Clique para carregar uma imagem"
+          className={`group flex h-16 w-32 items-center justify-center overflow-hidden rounded-lg border transition-colors hover:border-primary ${
+            preview ? 'border-border' : 'border-dashed border-muted-foreground/50'
+          }`}
+          style={{ background: previewBg }}
+        >
+          {preview ? (
+            <img src={preview} alt={label} className="max-h-14 max-w-[7.5rem] object-contain" />
+          ) : (
+            <span
+              className="flex flex-col items-center gap-1 px-2 text-center text-[11px] opacity-80 group-hover:opacity-100"
+              style={{ color: onColor(previewBg) }}
+            >
+              <Upload className="h-4 w-4" />
+              Clique para carregar
+            </span>
+          )}
+        </button>
+        <button type="button" onClick={openPicker} className={BTN_GHOST}>
+          <Upload className="h-4 w-4" />
+          Carregar
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) onPick(f)
+            e.target.value = ''
+          }}
+        />
+        {preview && (
+          <button type="button" onClick={onRemove} className={BTN_DANGER} title="Remover logo">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const hexToRgb = (hex) => {
+  const n = parseInt(hex.slice(1), 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+const rgbToHex = (r, g, b) =>
+  `#${[r, g, b].map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('')}`.toUpperCase()
+
+const rgba = (hex, alpha) => {
+  const [r, g, b] = hexToRgb(hex)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+const mixHex = (a, b, t) => {
+  const A = hexToRgb(a)
+  const B = hexToRgb(b)
+  return rgbToHex(...A.map((v, i) => v + (B[i] - v) * t))
+}
+
+// Mesmo cálculo do _shade do app (desloca a luminosidade em HSL).
+function shadeHex(hex, amount) {
+  const [r, g, b] = hexToRgb(hex).map((v) => v / 255)
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  const d = max - min
+  let h = 0
+  let s = 0
+  if (d) {
+    s = d / (1 - Math.abs(2 * l - 1))
+    if (max === r) h = ((g - b) / d) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const nl = Math.min(1, Math.max(0, l + amount))
+  const c = (1 - Math.abs(2 * nl - 1)) * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = nl - c / 2
+  const [r1, g1, b1] =
+    h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x]
+  return rgbToHex((r1 + m) * 255, (g1 + m) * 255, (b1 + m) * 255)
+}
+
+// Mesma regra do AppBranding do app: campo vazio usa a cor de fábrica do build daquele provedor.
+function previewTheme(form, defaults) {
+  const pick = (v) => (isHexColor(v) ? v.toUpperCase() : null)
+  const factoryPrimary = pick(defaults?.primary_color)
+  const custom = pick(form?.primary_color)
+  const customPrimary = custom && custom !== factoryPrimary ? custom : null
+  const primary = customPrimary || factoryPrimary || DEFAULT_PRIMARY
+  const factory = (key, fallback) => (customPrimary ? fallback : pick(defaults?.[key]) || fallback)
+  const loginBg = pick(form?.login_bg_color) || factory('login_bg_color', shadeHex(primary, -0.22))
+  return {
+    primary,
+    loginBg,
+    loginButton: pick(form?.login_button_color) || factory('login_button_color', primary),
+    loginText: pick(form?.login_text_color) || pick(defaults?.login_text_color) || '#FFFFFF',
+    appBg: pick(form?.app_bg_color) || loginBg,
+    card: pick(form?.card_color) || '#FFFFFF',
+  }
+}
+
+// Mesmo critério do ThemeData.estimateBrightnessForColor do Flutter.
+const isDarkColor = (hex) => {
+  const lin = (v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+  const [r, g, b] = hexToRgb(hex).map(lin)
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+  return (luminance + 0.05) ** 2 <= 0.15
+}
+const onColor = (hex) => (isDarkColor(hex) ? '#FFFFFF' : '#1F2124')
+
+const HOME_SHORTCUTS = [
+  { ids: ['wifi', 'MEU WI-FI', 'meu_wifi'], icon: Wifi, label: 'Meu Wi-Fi' },
+  { ids: ['CONSUMO', 'consumo'], icon: ChartColumn, label: 'Consumo' },
+  { ids: ['cameras', 'CÂMERAS', 'cameras_cftv'], icon: Video, label: 'Câmeras' },
+  { ids: ['speed_test', 'FAST TEST', 'speedtest', 'SPEED_TEST'], icon: Gauge, label: 'Teste de Velocidade' },
+  { ids: ['diagnostic', 'DIAGNÓSTICO WI-FI', 'wifi_diagnostic', 'DIAGNOSTICO WI-FI'], icon: Activity, label: 'Diagnóstico' },
+  { ids: ['PLANOS', 'planos'], icon: Layers, label: 'Planos' },
+  {
+    ids: ['contrato', 'CONTRATO', 'CONTRATO ASSINADO', 'contrato_assinado', 'CONTRATO_ASSINADO'],
+    icon: FileText,
+    label: 'Contrato Assinado',
+  },
+  { ids: ['nota_fiscal', 'NOTA FISCAL', 'notas', 'NOTAS'], icon: ReceiptText, label: 'Nota Fiscal' },
+  {
+    ids: ['connected_devices', 'CONNECTED_DEVICES', 'dispositivos', 'DISPOSITIVOS CONECTADOS'],
+    icon: MonitorSmartphone,
+    label: 'Dispositivos',
+  },
+]
+
+function homeShortcuts(config) {
+  if (!config) return []
+  const tools = {
+    speed_test: config.tool_speed_test,
+    auto_unlock: config.tool_auto_unlock,
+    faturas: config.tool_faturas,
+    connected_devices: config.tool_connected_devices,
+    wifi: config.tool_wifi,
+    cameras: config.tool_cameras,
+  }
+  const keys = new Set([
+    ...(Array.isArray(config.active_shortcuts) ? config.active_shortcuts : []),
+    ...Object.keys(tools).filter((k) => tools[k]),
+  ])
+  return HOME_SHORTCUTS.filter((item) =>
+    item.ids.some((id) => keys.has(id) || keys.has(id.toUpperCase()) || keys.has(id.toLowerCase())),
+  )
+}
+
+function seededRandom(seed) {
+  let s = seed >>> 0
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0
+    let t = s
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// Porta do BrandLoginBackground do app (lib/widgets/brand_login_background.dart).
+function paintLoginBackground(ctx, w, h, base, glow) {
+  const line = mixHex(glow, '#FFFFFF', 0.35)
+  const dot = mixHex(glow, '#FFFFFF', 0.45)
+  const radial = (ax, ay, radius, stops) => {
+    const cx = w / 2 + (ax * w) / 2
+    const cy = h / 2 + (ay * h) / 2
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * Math.min(w, h))
+    stops.forEach(([offset, color]) => g.addColorStop(offset, color))
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
+  }
+  const stroke = (width, color, draw) => {
+    ctx.beginPath()
+    draw()
+    ctx.lineWidth = width
+    ctx.strokeStyle = color
+    ctx.stroke()
+  }
+
+  const bg = ctx.createLinearGradient(0, 0, w, h)
+  bg.addColorStop(0, base)
+  bg.addColorStop(0.32, shadeHex(base, 0.07))
+  bg.addColorStop(0.68, shadeHex(base, -0.03))
+  bg.addColorStop(1, shadeHex(base, 0.11))
+  ctx.fillStyle = bg
+  ctx.fillRect(0, 0, w, h)
+
+  radial(-0.75, -0.75, 1.0, [
+    [0, rgba(shadeHex(glow, 0.08), 0.38)],
+    [0.4, rgba(glow, 0.15)],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+  radial(0.15, -0.2, 0.95, [
+    [0, rgba(glow, 0.22)],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+  radial(0.85, 0.95, 0.7, [
+    [0, rgba(shadeHex(glow, 0.06), 0.36)],
+    [0.5, rgba(glow, 0.1)],
+    [1, 'rgba(0,0,0,0)'],
+  ])
+
+  const mainWave = () => {
+    ctx.moveTo(0, h * 0.23)
+    ctx.bezierCurveTo(w * 0.2, h * 0.34, w * 0.54, h * 0.36, w, h * 0.07)
+  }
+  stroke(1.5, rgba(line, 0.65), mainWave)
+  ctx.filter = 'blur(10px)'
+  stroke(8, rgba(shadeHex(glow, 0.06), 0.2), mainWave)
+  ctx.filter = 'none'
+
+  for (let i = 0; i < 24; i++) {
+    const o = i * 4.5
+    stroke(0.45, rgba(line, 0.18), () => {
+      ctx.moveTo(0, h * 0.23 + o)
+      ctx.bezierCurveTo(w * 0.24, h * 0.36 + o * 0.35, w * 0.59, h * 0.37 + o * 0.28, w, h * 0.07 + o * 0.2)
+    })
+  }
+
+  const random = seededRandom(10)
+  const circle = (x, y, r, color) => {
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fillStyle = color
+    ctx.fill()
+  }
+  for (let i = 0; i < 450; i++) {
+    const x = random() * w
+    const y = h * 0.19 + random() * h * 0.25
+    const curveY = h * (0.22 + 0.18 * Math.sin((x / w) * Math.PI))
+    if (y > curveY) circle(x, y, 0.3 + random() * 1.2, rgba(dot, 0.05 + random() * 0.17))
+  }
+
+  stroke(1.2, rgba(line, 0.45), () => {
+    ctx.moveTo(w * 0.52, h)
+    ctx.bezierCurveTo(w * 0.68, h * 0.92, w * 0.83, h * 0.89, w, h * 0.85)
+  })
+  for (let i = 0; i < 20; i++) {
+    const o = i * 5
+    stroke(0.45, rgba(line, 0.15), () => {
+      ctx.moveTo(w * 0.53, h + o)
+      ctx.bezierCurveTo(w * 0.7, h * 0.94 + o * 0.18, w * 0.87, h * 0.9 + o * 0.18, w, h * 0.86 + o * 0.15)
+    })
+  }
+  for (let i = 0; i < 180; i++) {
+    const x = w * 0.55 + random() * w * 0.45
+    const y = h * 0.83 + random() * h * 0.17
+    circle(x, y, 0.3 + random() * 1, rgba(dot, 0.05 + random() * 0.18))
+  }
+
+  radial(0, 0, 1.0, [
+    [0.4, 'rgba(0,0,0,0)'],
+    [0.78, 'rgba(0,0,0,0.08)'],
+    [1, 'rgba(0,0,0,0.2)'],
+  ])
+}
+
+const PHONE_W = 360
+const PHONE_H = 780
+const PHONE_SCALE = 0.75
+
+function LoginBackgroundCanvas({ base, glow }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = PHONE_W * dpr
+    canvas.height = PHONE_H * dpr
+    const ctx = canvas.getContext('2d')
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    paintLoginBackground(ctx, PHONE_W, PHONE_H, base, glow)
+  }, [base, glow])
+  return <canvas ref={ref} style={{ position: 'absolute', inset: 0, width: PHONE_W, height: PHONE_H }} />
+}
+
+function PhoneFrame({ background, children }) {
+  return (
+    <div
+      className="mx-auto overflow-hidden rounded-[2rem] border-[6px] border-zinc-800 shadow-xl"
+      style={{ width: PHONE_W * PHONE_SCALE + 12, height: PHONE_H * PHONE_SCALE + 12, background }}
+    >
+      <div
+        className="relative origin-top-left overflow-hidden"
+        style={{
+          width: PHONE_W,
+          height: PHONE_H,
+          transform: `scale(${PHONE_SCALE})`,
+          fontFamily: 'Roboto, "Segoe UI", system-ui, sans-serif',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function PhoneStatusBar({ color }) {
+  return (
+    <div className="flex items-center justify-between px-5" style={{ height: 28, color, fontSize: 13, fontWeight: 600 }}>
+      <span>13:40</span>
+      <span className="flex items-center gap-1.5">
+        <Wifi size={14} />
+        <span className="relative inline-block rounded-[3px] border" style={{ width: 22, height: 11, borderColor: color }}>
+          <span className="absolute inset-[1.5px] rounded-[1px]" style={{ background: color, right: 6 }} />
+        </span>
+      </span>
+    </div>
+  )
+}
+
+function LogoPlaceholder({ color, height }) {
+  return (
+    <div
+      className="flex w-full items-center justify-center rounded-2xl border-2 border-dashed text-center"
+      style={{ height, borderColor: rgba(color, 0.35), color: rgba(color, 0.75), fontSize: 14 }}
+    >
+      Logo padrão do app
+    </div>
+  )
+}
+
+function PixGlyph({ size = 30 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="#FFFFFF" aria-hidden="true">
+      <path d="M11.917 11.71a2.046 2.046 0 0 1-1.454-.602l-2.1-2.1a.4.4 0 0 0-.551 0l-2.108 2.108a2.044 2.044 0 0 1-1.454.602h-.414l2.66 2.66c.83.83 2.177.83 3.007 0l2.667-2.668h-.253zM4.25 4.282c.55 0 1.066.214 1.454.602l2.108 2.108a.39.39 0 0 0 .552 0l2.1-2.1a2.044 2.044 0 0 1 1.453-.602h.253L9.503 1.623a2.127 2.127 0 0 0-3.007 0l-2.66 2.66h.414z" />
+      <path d="m14.377 6.496-1.612-1.612a.307.307 0 0 1-.114.023h-.733c-.379 0-.75.154-1.017.422l-2.1 2.1a1.005 1.005 0 0 1-1.425 0L5.268 5.32a1.448 1.448 0 0 0-1.018-.422h-.9a.306.306 0 0 1-.109-.021L1.623 6.496c-.83.83-.83 2.177 0 3.008l1.618 1.618a.305.305 0 0 1 .108-.022h.901c.38 0 .75-.153 1.018-.421L7.375 8.57a1.034 1.034 0 0 1 1.426 0l2.1 2.1c.267.268.638.421 1.017.421h.733c.04 0 .079.01.114.024l1.612-1.612c.83-.83.83-2.178 0-3.008z" />
+    </svg>
+  )
+}
+
+function WhatsappGlyph({ size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="#FFFFFF" aria-hidden="true">
+      <path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.07-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.88 1.21 3.08c.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.63.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.69.25-1.29.17-1.41-.07-.13-.27-.2-.57-.35zM12.05 21.5h-.01a9.4 9.4 0 0 1-4.79-1.31l-.34-.2-3.56.93.95-3.47-.22-.36a9.38 9.38 0 0 1-1.44-5c0-5.19 4.23-9.42 9.43-9.42 2.52 0 4.88.98 6.66 2.76a9.36 9.36 0 0 1 2.76 6.67c0 5.2-4.23 9.42-9.43 9.42zm8.02-17.44A11.27 11.27 0 0 0 12.05.75C5.8.75.72 5.83.72 12.08c0 2 .52 3.95 1.52 5.66L.62 23.25l5.64-1.48a11.3 11.3 0 0 0 5.79 1.47h.01c6.25 0 11.33-5.08 11.33-11.33 0-3.03-1.18-5.87-3.32-8.01z" />
+    </svg>
+  )
+}
+
+function LoginPreview({ theme, logo, savedUser }) {
+  const text = theme.loginText
+  const button = theme.loginButton
+  return (
+    <PhoneFrame background={theme.loginBg}>
+      <LoginBackgroundCanvas base={theme.loginBg} glow={theme.primary} />
+      <div className="relative flex h-full flex-col">
+        <PhoneStatusBar color="#FFFFFF" />
+        <div className="flex flex-col" style={{ padding: '0 24px' }}>
+          <div style={{ height: 56 }} />
+          <div className="flex items-center justify-center" style={{ height: 135 }}>
+            {logo ? (
+              <img src={logo} alt="" style={{ maxHeight: 135, maxWidth: '100%', objectFit: 'contain' }} />
+            ) : (
+              <LogoPlaceholder color={text} height={135} />
+            )}
+          </div>
+          <div style={{ height: 48 }} />
+          <p style={{ color: text, fontSize: 28, fontWeight: 700, lineHeight: 1.2 }}>Acesse sua conta</p>
+          <div style={{ height: 12 }} />
+          <p style={{ color: rgba(text, 0.92), fontSize: 17, lineHeight: 1.3 }}>Informe seu CPF ou CNPJ para começar</p>
+          <div style={{ height: 34 }} />
+          {savedUser ? (
+            <div
+              className="flex items-center bg-white"
+              style={{ padding: 16, borderRadius: 16, boxShadow: '0 6px 16px rgba(0,0,0,0.12)' }}
+            >
+              <div
+                className="flex shrink-0 items-center justify-center rounded-full text-white"
+                style={{ width: 48, height: 48, background: theme.loginBg, fontSize: 18, fontWeight: 700 }}
+              >
+                M
+              </div>
+              <div className="min-w-0 flex-1" style={{ marginLeft: 16 }}>
+                <p className="truncate" style={{ color: theme.loginBg, fontSize: 16, fontWeight: 700 }}>
+                  MARIA DA SILVA
+                </p>
+                <p style={{ marginTop: 4, color: rgba(theme.loginBg, 0.75), fontSize: 14 }}>***.961.212-**</p>
+              </div>
+              <span style={{ padding: '0 12px', color: theme.loginBg, fontSize: 14, fontWeight: 700 }}>Trocar</span>
+            </div>
+          ) : (
+            <div>
+              <div style={{ border: `2px solid ${text}`, borderRadius: 16, padding: '20px 20px', color: text, fontSize: 18 }}>
+                CPF/CNPJ
+              </div>
+              <div className="flex items-center" style={{ marginTop: 12 }}>
+                <span style={{ width: 20, height: 20, margin: 2, border: `2px solid ${text}`, borderRadius: 6 }} />
+                <span style={{ marginLeft: 8, color: text, fontSize: 15 }}>Lembrar meu CPF/CNPJ neste dispositivo</span>
+              </div>
+            </div>
+          )}
+          <div style={{ height: 38 }} />
+          <div
+            className="flex items-center justify-center text-white"
+            style={{
+              height: 58,
+              borderRadius: 29,
+              background: `linear-gradient(180deg, ${shadeHex(button, 0.14)} 0%, ${button} 42%, ${shadeHex(button, -0.16)} 100%)`,
+              border: `1.2px solid ${rgba(shadeHex(button, 0.3), 0.55)}`,
+              boxShadow: `0 10px 16px rgba(0,0,0,0.40), 0 5px 10px ${rgba(shadeHex(button, -0.3), 0.55)}`,
+            }}
+          >
+            <LogIn size={22} />
+            <span style={{ marginLeft: 10, fontSize: 18, fontWeight: 800, letterSpacing: 0.8 }}>ENTRAR</span>
+          </div>
+          <div style={{ height: 48 }} />
+          <p className="text-center" style={{ color: text, fontSize: 16, padding: '10px 0' }}>Preciso de ajuda?</p>
+          <p className="text-center" style={{ color: text, fontSize: 16, padding: '10px 0' }}>Ver planos</p>
+        </div>
+      </div>
+    </PhoneFrame>
+  )
+}
+
+/** Faixa do topo da Início onde o logo desliza; com onChange, o logo pode ser arrastado. */
+function HomeLogoTrack({ position = 0, onChange, children }) {
+  const trackRef = useRef(null)
+  const itemRef = useRef(null)
+  const drag = useRef(null)
+  const pct = Math.min(100, Math.max(0, position))
+
+  const onPointerDown = (e) => {
+    if (!onChange) return
+    const item = itemRef.current.getBoundingClientRect()
+    drag.current = { grab: e.clientX - item.left }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const onPointerMove = (e) => {
+    if (!drag.current) return
+    const track = trackRef.current.getBoundingClientRect()
+    const item = itemRef.current.getBoundingClientRect()
+    const free = track.width - item.width
+    if (free <= 0) return
+    const next = ((e.clientX - drag.current.grab - track.left) / free) * 100
+    onChange(Math.round(Math.min(100, Math.max(0, next))))
+  }
+  const onPointerUp = () => {
+    drag.current = null
+  }
+
+  return (
+    <div ref={trackRef} className="min-w-0 flex-1">
+      <div
+        ref={itemRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        title={onChange ? 'Arraste para posicionar o logo' : undefined}
+        className={onChange ? 'cursor-grab rounded-lg outline-1 outline-white/40 outline-dashed active:cursor-grabbing' : ''}
+        style={{
+          position: 'relative',
+          display: 'inline-block',
+          left: `${pct}%`,
+          transform: `translateX(-${pct}%)`,
+          touchAction: 'none',
+          userSelect: 'none',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function HomePreview({ theme, logo, shortcuts, logoPosition = 0, onLogoPositionChange }) {
+  const primary = theme.primary
+  const bg = theme.appBg
+  const card = theme.card
+  const dark = isDarkColor(card)
+  const onBg = onColor(bg)
+  const text = dark ? '#FFFFFF' : '#000000'
+  const sub = dark ? '#9E9E9E' : '#616161'
+  const cardStyle = { background: card, borderRadius: 24, padding: 20 }
+  const square = (radius, children) => (
+    <div
+      className="flex shrink-0 items-center justify-center text-white"
+      style={{ width: 54, height: 54, borderRadius: radius, background: primary }}
+    >
+      {children}
+    </div>
+  )
+  const infoRow = (Icon, label, value, extra) => (
+    <div className="flex items-center">
+      <Icon size={20} color={primary} />
+      <div className="min-w-0 flex-1" style={{ marginLeft: 10 }}>
+        <p style={{ color: sub, fontSize: 12, fontWeight: 700 }}>{label}</p>
+        {value && (
+          <div className="flex items-center" style={{ marginTop: 2 }}>
+            {extra}
+            <span style={{ color: text, fontSize: 15, fontWeight: 700 }}>{value}</span>
+          </div>
+        )}
+      </div>
+      {!value && <ChevronDown size={22} color={sub} />}
+    </div>
+  )
+  const navItem = (Icon, label, selected) => {
+    const color = selected ? primary : onColor(card)
+    return (
+      <div className="flex flex-col items-center" style={{ padding: '8px 12px', color }}>
+        <Icon size={26} />
+        <span style={{ marginTop: 4, fontSize: 10, fontWeight: selected ? 700 : 400 }}>{label}</span>
+      </div>
+    )
+  }
+
+  return (
+    <PhoneFrame background={bg}>
+      <div className="flex h-full flex-col" style={{ background: bg }}>
+        <PhoneStatusBar color={onBg} />
+        <div className="flex items-center" style={{ padding: '8px 16px' }}>
+          <HomeLogoTrack position={logoPosition} onChange={onLogoPositionChange}>
+            {logo ? (
+              <img src={logo} alt="" draggable={false} style={{ height: 72, maxWidth: 220, objectFit: 'contain' }} />
+            ) : (
+              <div style={{ width: 160 }}>
+                <LogoPlaceholder color={onBg} height={60} />
+              </div>
+            )}
+          </HomeLogoTrack>
+          <Bell size={28} color={onBg} style={{ margin: 8, flexShrink: 0 }} />
+        </div>
+        <div className="flex-1 overflow-y-auto" style={{ padding: '0 16px', scrollbarWidth: 'none' }}>
+          <div style={{ height: 16 }} />
+          <div style={cardStyle}>
+            <div className="flex items-center">
+              <div
+                className="flex shrink-0 items-center justify-center"
+                style={{ width: 60, height: 60, borderRadius: 16, background: primary }}
+              >
+                <User size={36} color="#FFFFFF" fill="#FFFFFF" />
+              </div>
+              <div className="min-w-0 flex-1" style={{ marginLeft: 16 }}>
+                <div className="flex items-center justify-between">
+                  <span
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      background: dark ? 'rgba(255,255,255,0.1)' : '#EEEEEE',
+                      fontSize: 10,
+                      fontWeight: 700,
+                    }}
+                  >
+                    <span style={{ color: sub }}>Contrato: </span>
+                    <span style={{ color: text }}>10234</span>
+                  </span>
+                  <span
+                    style={{
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      background: 'rgba(76,175,80,0.2)',
+                      color: '#4CAF50',
+                      fontSize: 10,
+                      fontWeight: 700,
+                    }}
+                  >
+                    ATIVO
+                  </span>
+                </div>
+                <p className="truncate" style={{ color: text, fontSize: 18, fontWeight: 700 }}>
+                  MARIA DA SILVA
+                </p>
+              </div>
+            </div>
+            <div
+              style={{
+                marginTop: 20,
+                padding: '12px 16px',
+                borderRadius: 16,
+                background: dark ? '#000000' : '#F5F5F5',
+                border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)'}`,
+              }}
+            >
+              <p className="truncate" style={{ color: text, fontSize: 12, fontWeight: 700 }}>FIBRA 600 MEGA</p>
+              <p style={{ marginTop: 4, color: text, fontSize: 12, fontWeight: 700 }}>
+                VENC. 10 <span style={{ color: dark ? 'rgba(255,255,255,0.24)' : 'rgba(0,0,0,0.26)' }}>|</span> 15/03/2024
+              </p>
+              <div style={{ margin: '11px 0', height: 1, background: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)' }} />
+              <div className="flex items-center">
+                <p className="min-w-0 flex-1 truncate" style={{ color: text, fontSize: 12, fontWeight: 700 }}>
+                  RUA DAS FLORES, 123 - CENTRO
+                </p>
+                <ChevronDown size={22} color={text} />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ height: 16 }} />
+          <div style={cardStyle}>
+            <div className="flex items-center" style={{ color: '#F57C00', fontWeight: 700, fontSize: 14 }}>
+              <CircleCheck size={20} />
+              <span style={{ marginLeft: 8 }}>FATURA ABERTA</span>
+            </div>
+            <p style={{ marginTop: 12, color: text, fontSize: 36, fontWeight: 700, lineHeight: 1.2 }}>R$ 99,90</p>
+            <p style={{ color: '#9E9E9E', fontSize: 14 }}>Vencimento 10/11/2026</p>
+            <div className="flex items-center" style={{ marginTop: 20, gap: 8 }}>
+              <div
+                className="flex flex-1 items-center justify-center text-white"
+                style={{ background: primary, borderRadius: 16, padding: '12px 0', fontSize: 14, fontWeight: 700 }}
+              >
+                <PixGlyph />
+                <span style={{ marginLeft: 8 }}>Pagar com PIX</span>
+              </div>
+              {square(12, <Barcode size={24} />)}
+              {square(12, <CreditCard size={24} />)}
+            </div>
+          </div>
+
+          <div style={{ height: 16 }} />
+          <div style={cardStyle}>
+            <div className="flex items-center">
+              <Wifi size={24} color={primary} />
+              <span style={{ marginLeft: 8, color: text, fontSize: 14, fontWeight: 700 }}>Informação da sua rede wifi</span>
+            </div>
+            <p style={{ marginTop: 16, color: text, fontSize: 18, fontWeight: 700 }}>MINHA_REDE_5G</p>
+            <div style={{ marginTop: 16 }}>
+              {infoRow(
+                Router,
+                'Status do modem',
+                'Online',
+                <span className="rounded-full" style={{ width: 8, height: 8, marginRight: 6, background: '#4CAF50' }} />,
+              )}
+            </div>
+            <div style={{ marginTop: 12 }}>{infoRow(Globe, 'IP do modem', '100.64.12.34')}</div>
+            <div style={{ marginTop: 12 }}>{infoRow(Clock, 'Modem ligado há', null)}</div>
+          </div>
+
+          <div style={{ height: 16 }} />
+          <div style={cardStyle}>
+            <div className="flex items-center">
+              <Headset size={26} color={primary} />
+              <span style={{ marginLeft: 12, color: text, fontSize: 18, fontWeight: 700, letterSpacing: 0.5 }}>Suporte</span>
+            </div>
+            <p style={{ marginTop: 12, color: sub, fontSize: 14, lineHeight: 1.5 }}>Fale com o Atendimento</p>
+            <div className="flex items-center" style={{ marginTop: 20, gap: 12 }}>
+              <div
+                className="flex flex-1 items-center justify-center text-white"
+                style={{ background: primary, borderRadius: 16, padding: '16px 0', fontSize: 13, fontWeight: 700 }}
+              >
+                <MessageCircle size={20} fill="#FFFFFF" />
+                <span style={{ marginLeft: 8 }}>Falar com o suporte</span>
+              </div>
+              {square(16, <WhatsappGlyph />)}
+              {square(16, <Phone size={22} fill="#FFFFFF" />)}
+            </div>
+          </div>
+
+          {shortcuts.length > 0 && (
+            <>
+              <div style={{ height: 24 }} />
+              <p style={{ color: onBg, fontSize: 18, fontWeight: 700 }}>Acesso Rápido</p>
+              <div className="grid grid-cols-3" style={{ marginTop: 16, rowGap: 24, columnGap: 16 }}>
+                {shortcuts.map(({ label, icon: Icon }) => (
+                  <div key={label} className="flex flex-col items-center">
+                    <div
+                      className="flex items-center justify-center"
+                      style={{
+                        width: 70,
+                        height: 70,
+                        borderRadius: 20,
+                        background: primary,
+                        boxShadow: `0 4px 12px ${rgba(primary, 0.3)}`,
+                      }}
+                    >
+                      <Icon size={32} color="#FFFFFF" />
+                    </div>
+                    <span
+                      className="text-center"
+                      style={{ marginTop: 8, color: onBg, fontSize: 12, fontWeight: 700, lineHeight: 1.2 }}
+                    >
+                      {label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <div style={{ height: 140 }} />
+        </div>
+
+        <div
+          className="absolute flex items-center justify-evenly"
+          style={{
+            left: 16,
+            right: 16,
+            bottom: 48,
+            height: 62,
+            borderRadius: 36,
+            background: rgba(card, 0.95),
+            border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+            boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
+          }}
+        >
+          {navItem(Home, 'Início', true)}
+          {navItem(ReceiptText, 'Faturas', false)}
+          <div style={{ width: 56 }} />
+          {navItem(Headset, 'Chamado', false)}
+          {navItem(Menu, 'Menu', false)}
+        </div>
+        <div
+          className="absolute flex items-center justify-center rounded-full"
+          style={{
+            bottom: 62,
+            left: PHONE_W / 2 - 32,
+            width: 64,
+            height: 64,
+            background: 'linear-gradient(135deg, #66BB6A, #2E7D32)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            boxShadow: '0 2px 0 rgba(255,255,255,0.4), 0 -4px 10px -2px rgba(0,0,0,0.2)',
+          }}
+        >
+          <div
+            className="flex items-center justify-center rounded-full"
+            style={{ width: 42, height: 42, background: 'rgba(0,0,0,0.1)' }}
+          >
+            <LockOpen size={24} color="#FFFFFF" />
+          </div>
+        </div>
+      </div>
+    </PhoneFrame>
+  )
+}
+
+function SegmentedToggle({ value, options, onChange }) {
+  return (
+    <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
+      {options.map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onChange(key)}
+          className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
+            value === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function AppearancePanel({ onNotify }) {
+  const [profile, setProfile] = useState(null)
+  const [form, setForm] = useState(null)
+  const [files, setFiles] = useState({ logo: null })
+  const [removed, setRemoved] = useState({ logo: false })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [appConfig, setAppConfig] = useState(null)
+  const [previewScreen, setPreviewScreen] = useState('login')
+  const [loginVariant, setLoginVariant] = useState('first')
+
+  const fileUrls = useMemo(
+    () => ({
+      logo: files.logo ? URL.createObjectURL(files.logo) : null,
+    }),
+    [files],
+  )
+  useEffect(
+    () => () => Object.values(fileUrls).forEach((url) => url && URL.revokeObjectURL(url)),
+    [fileUrls],
+  )
+
+  const applyProfile = (d) => {
+    setProfile(d)
+    setForm({
+      number: d.number || '',
+      primary_color: (d.primary_color || '').toUpperCase() === DEFAULT_PRIMARY ? '' : (d.primary_color || '').toUpperCase(),
+      secondary_color: d.secondary_color || '',
+      login_bg_color: d.login_bg_color || '',
+      login_button_color: d.login_button_color || '',
+      login_text_color: d.login_text_color || '',
+      app_bg_color: d.app_bg_color || '',
+      card_color: d.card_color || '',
+      home_logo_position: Number.isFinite(d.home_logo_position) ? d.home_logo_position : 0,
+    })
+    setFiles({ logo: null })
+    setRemoved({ logo: false })
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const res = await axios.get('/api/mobile-app/profiles/mine/', { headers: authHeaders() })
+        if (!cancelled) applyProfile(res.data || {})
+        axios
+          .get('/api/mobile-app/profiles/mine-app-config/', { headers: authHeaders() })
+          .then((cfg) => !cancelled && setAppConfig(cfg.data || null))
+          .catch(() => {})
+      } catch (err) {
+        if (!cancelled) setError(err?.response?.data?.error || 'Não foi possível carregar a aparência do app.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const setField = (key, value) => setForm((f) => ({ ...f, [key]: value }))
+  const setLogoPosition = (value) => {
+    setField('home_logo_position', value)
+    setPreviewScreen('home')
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    const invalid = THEME_COLORS.find(([key]) => form[key] && !isHexColor(form[key]))
+    if (invalid) {
+      setError(`${invalid[1]}: use o formato #RRGGBB ou deixe vazio para usar o padrão do app.`)
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      const data = new FormData()
+      data.append('number', form.number.trim())
+      THEME_COLORS.forEach(([key]) => {
+        const value = form[key] || ''
+        data.append(key, key === 'primary_color' && !value ? DEFAULT_PRIMARY : value)
+      })
+      data.append('home_logo_position', String(form.home_logo_position))
+      if (files.logo) data.append('logo', files.logo)
+      else if (removed.logo) data.append('remove_logo', 'true')
+      if (profile?.login_logo_url) data.append('remove_login_logo', 'true')
+      const res = await axios.patch('/api/mobile-app/profiles/mine/', data, { headers: authHeaders() })
+      applyProfile(res.data || {})
+      onNotify?.('Aparência do aplicativo salva. O app aplica na próxima abertura.')
+    } catch (err) {
+      const d = err?.response?.data
+      const first = d && typeof d === 'object' ? Object.values(d).flat()[0] : null
+      setError(d?.error || first || 'Não foi possível salvar a aparência.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const factoryTheme = profile?.app_default_theme || {}
+  const hasFactoryTheme = isHexColor(factoryTheme.primary_color)
+  const theme = previewTheme(form, factoryTheme)
+  const THEME_KEY = {
+    primary_color: 'primary',
+    login_bg_color: 'loginBg',
+    login_button_color: 'loginButton',
+    login_text_color: 'loginText',
+    app_bg_color: 'appBg',
+    card_color: 'card',
+  }
+  const fieldDefault = (key) => {
+    if (!hasFactoryTheme) return null
+    if (!THEME_KEY[key]) return factoryTheme[key] || null
+    return previewTheme({ ...form, [key]: '' }, factoryTheme)[THEME_KEY[key]]
+  }
+  const appLogo = fileUrls.logo || (removed.logo ? null : profile?.logo_url || null)
+  const shortcuts = homeShortcuts(appConfig)
+
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h2 className="mb-1 text-xl font-bold text-foreground">Aparência do App</h2>
+        <p className="text-sm text-muted-foreground">
+          Contato, logos e cores do aplicativo dos seus clientes. Campos vazios usam o padrão do app.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-5 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {loading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+
+      {!loading && form && (
+        <form onSubmit={submit} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
+            <div className={`${PANEL_CARD} overflow-hidden p-0`}>
+              <div className="border-b border-border px-5 py-3 text-sm font-bold text-foreground">Contato de suporte</div>
+              <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase">WhatsApp de suporte</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Usado no “Preciso de ajuda?” do login, no suporte e na tela de bloqueio.
+                  </p>
+                </div>
+                <input
+                  type="tel"
+                  value={form.number}
+                  onChange={(e) => setField('number', e.target.value)}
+                  placeholder="(00) 00000-0000"
+                  maxLength={20}
+                  className={`${PANEL_INPUT} sm:max-w-xs`}
+                />
+              </div>
+            </div>
+
+            <div className={`${PANEL_CARD} overflow-hidden p-0`}>
+              <div className="border-b border-border px-5 py-3 text-sm font-bold text-foreground">Logos</div>
+              <LogoField
+                label="Logo do app"
+                help="Usado em todo o app: abertura, login, tela inicial e telas internas. PNG com fundo transparente."
+                preview={appLogo}
+                previewBg="#0A0A0A"
+                onPick={(f) => {
+                  setFiles((s) => ({ ...s, logo: f }))
+                  setRemoved((s) => ({ ...s, logo: false }))
+                }}
+                onRemove={() => {
+                  setFiles((s) => ({ ...s, logo: null }))
+                  setRemoved((s) => ({ ...s, logo: true }))
+                }}
+              />
+              <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase">Posição do logo na Início</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Escolha um lado ou arraste o logo na prévia ao lado para ajustar.
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-stretch gap-2 sm:w-64">
+                  <SegmentedToggle
+                    value={{ 0: 'left', 50: 'center', 100: 'right' }[form.home_logo_position] ?? ''}
+                    options={[
+                      ['left', 'Esquerda'],
+                      ['center', 'Centro'],
+                      ['right', 'Direita'],
+                    ]}
+                    onChange={(v) => setLogoPosition({ left: 0, center: 50, right: 100 }[v])}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={form.home_logo_position}
+                    onChange={(e) => setLogoPosition(Number(e.target.value))}
+                    className="w-full accent-primary"
+                    aria-label="Posição do logo"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className={`${PANEL_CARD} overflow-hidden p-0`}>
+              <div className="border-b border-border px-5 py-3 text-sm font-bold text-foreground">Cores</div>
+              {THEME_COLORS.map(([key, label, help]) => (
+                <ColorField
+                  key={key}
+                  label={label}
+                  help={help}
+                  value={form[key]}
+                  defaultValue={fieldDefault(key)}
+                  onChange={(v) => setField(key, v)}
+                  onReset={() => setField(key, '')}
+                />
+              ))}
+            </div>
+
+            <div className="flex justify-end">
+              <button type="submit" disabled={saving} className={`${BTN_PRIMARY} px-8`}>
+                <Save className="h-4 w-4" />
+                {saving ? 'Salvando…' : 'Salvar aparência'}
+              </button>
+            </div>
+          </div>
+
+          <div className="xl:sticky xl:top-4 xl:self-start">
+            <div className="mb-3 flex flex-col items-center gap-2">
+              <SegmentedToggle
+                value={previewScreen}
+                options={[
+                  ['login', 'Login'],
+                  ['home', 'Início'],
+                ]}
+                onChange={setPreviewScreen}
+              />
+              {previewScreen === 'login' && (
+                <SegmentedToggle
+                  value={loginVariant}
+                  options={[
+                    ['first', 'Primeiro acesso'],
+                    ['saved', 'CPF salvo'],
+                  ]}
+                  onChange={setLoginVariant}
+                />
+              )}
+            </div>
+            {previewScreen === 'login' ? (
+              <LoginPreview theme={theme} logo={appLogo} savedUser={loginVariant === 'saved'} />
+            ) : (
+              <HomePreview
+                theme={theme}
+                logo={appLogo}
+                shortcuts={shortcuts}
+                logoPosition={form.home_logo_position}
+                onLogoPositionChange={setLogoPosition}
+              />
+            )}
+            {!hasFactoryTheme && (
+              <p className="mx-auto mt-3 max-w-[282px] rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-[11px] text-amber-600 dark:text-amber-400">
+                O app deste provedor ainda não informou as cores de fábrica. Campos vazios aparecem com cor genérica
+                até o app (versão atualizada) ser aberto uma vez.
+              </p>
+            )}
+            <p className="mx-auto mt-3 max-w-[282px] text-center text-[11px] text-muted-foreground">
+              Dados de cliente fictícios. Sem logo enviado, o app usa o logo que já vem na versão publicada.
+            </p>
+          </div>
+        </form>
+      )}
+    </div>
+  )
+}
+
 function CompanyPanel({ onNotify, onError }) {
   const [form, setForm] = useState({
     razao_social: '',
@@ -4125,8 +5235,8 @@ export default function ProviderAppPanel({ onLogout }) {
 
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
         {!isFormTab && (
-          <div className={`pb-0 ${tab === 'config' || tab === 'plans' || tab === 'sgp' || tab === 'staff' || tab === 'company' ? 'px-6 pt-4' : 'p-6'}`}>
-            {tab !== 'config' && tab !== 'plans' && tab !== 'sgp' && tab !== 'staff' && tab !== 'company' && (
+          <div className={`pb-0 ${tab === 'config' || tab === 'appearance' || tab === 'plans' || tab === 'sgp' || tab === 'staff' || tab === 'company' ? 'px-6 pt-4' : 'p-6'}`}>
+            {tab !== 'config' && tab !== 'appearance' && tab !== 'plans' && tab !== 'sgp' && tab !== 'staff' && tab !== 'company' && (
               <div className="mb-6">
                 <h1 className="text-2xl font-bold tracking-tight text-foreground">{pageTitle}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">{pageSubtitle}</p>
@@ -4211,6 +5321,8 @@ export default function ProviderAppPanel({ onLogout }) {
             {tab === 'company' && (
               <CompanyPanel onNotify={setMessage} onError={setError} />
             )}
+
+            {tab === 'appearance' && <AppearancePanel onNotify={setMessage} />}
 
             {tab === 'profile' && (
               <ProfilePanel

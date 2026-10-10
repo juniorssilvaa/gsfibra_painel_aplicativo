@@ -757,6 +757,45 @@ def _pending_for_offsets(asaas, today: date, offsets: List[int]) -> List[Dict]:
     return asaas.confirm_payments(out, max_items=100)
 
 
+def _missed_run_days(today_d: date, allowed_days: set) -> List[date]:
+    """Dias sem envio (ex.: sábado e domingo) desde o último dia de envio, do mais antigo ao mais recente."""
+    missed = []
+    for back in range(1, 7):
+        day = today_d - timedelta(days=back)
+        if _billing_config_weekday(day) in allowed_days:
+            break
+        missed.append(day)
+    return sorted(missed)
+
+
+def _asaas_open_for_day(asaas, day: date, offsets: List[int]) -> List[Dict]:
+    """Cobranças em aberto (pendentes ou já vencidas) que cairiam nos offsets daquele dia."""
+    targets = {day - timedelta(days=u) for u in offsets}
+    if not targets:
+        return []
+    items: List[Dict] = []
+    for status in ("PENDING", "OVERDUE"):
+        res = asaas.list_payments(
+            status=status,
+            due_date_ge=min(targets).isoformat(),
+            due_date_le=max(targets).isoformat(),
+        )
+        if res.get("success"):
+            items.extend(res.get("data") or [])
+    out = []
+    for p in items:
+        try:
+            if date.fromisoformat((p.get("dueDate") or "")[:10]) in targets:
+                out.append(p)
+        except ValueError:
+            continue
+    return asaas.confirm_payments(out, max_items=100)
+
+
+def _payment_key(payment: Dict) -> str:
+    return f"{payment.get('provider') or 'asaas'}:{payment.get('id')}"
+
+
 def _calc_offset(payment: Dict, today_d: date) -> int:
     """Retorna quantos dias de diferença entre hoje e o vencimento."""
     due_str = payment.get("dueDate") or ""
@@ -814,11 +853,11 @@ def run_billing_send_cycle(force: bool = False) -> Dict:
         return {"success": False, "reason": "billing_whatsapp_waba_id_missing"}
 
     now = timezone.localtime()
+    run_days_raw = str(payload.get("billing_run_days") or "0,1,2,3,4,5,6").strip()
+    allowed_days = {d.strip() for d in run_days_raw.split(",") if d.strip()}
 
     if not force:
         # ── Verificar se hoje é dia de rodar ─────────────────────────────────────
-        run_days_raw = str(payload.get("billing_run_days") or "0,1,2,3,4,5,6").strip()
-        allowed_days = {d.strip() for d in run_days_raw.split(",") if d.strip()}
         if _billing_config_weekday(now) not in allowed_days:
             return {"success": True, "executed": False, "reason": "not_scheduled_day"}
 
@@ -860,13 +899,30 @@ def run_billing_send_cycle(force: bool = False) -> Dict:
 
     inter_items = _inter_payments_for_offsets(today_d, offsets)
 
-    all_items = [(p, _calc_offset(p, today_d)) for p in (overdue_items + due_soon_items + inter_items)]
+    selected: Dict[str, Tuple[Dict, int]] = {}
+    for p in overdue_items + due_soon_items + inter_items:
+        selected.setdefault(_payment_key(p), (p, _calc_offset(p, today_d)))
+
+    # Dias sem envio (fim de semana): o que cairia neles sai agora, uma mensagem por fatura.
+    missed_days = _missed_run_days(today_d, allowed_days) if offsets else []
+    recovered = 0
+    for day in reversed(missed_days):
+        day_items = (_asaas_open_for_day(asaas, day, offsets) if asaas_ready else []) + _inter_payments_for_offsets(day, offsets)
+        for p in day_items:
+            key = _payment_key(p)
+            if key not in selected:
+                selected[key] = (p, _calc_offset(p, day))
+                recovered += 1
+
+    all_items = list(selected.values())
     logger.info(
-        "[BillingSend] offsets=%s asaas_overdue=%s asaas_due_soon=%s inter=%s total=%s",
+        "[BillingSend] offsets=%s asaas_overdue=%s asaas_due_soon=%s inter=%s dias_sem_envio=%s recuperadas=%s total=%s",
         offsets,
         len(overdue_items),
         len(due_soon_items),
         len(inter_items),
+        [d.isoformat() for d in missed_days],
+        recovered,
         len(all_items),
     )
 

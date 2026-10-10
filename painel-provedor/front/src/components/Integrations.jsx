@@ -667,6 +667,14 @@ function instagramOAuthErrorMessage(code, detail) {
   return base;
 }
 
+function canalErrorMessage(err, fallback) {
+  const data = err?.response?.data;
+  if (typeof data === 'string' && data.trim() && !data.trim().startsWith('<')) return data;
+  const msg = data?.detail || data?.error;
+  if (Array.isArray(msg)) return msg[0] || fallback;
+  return (typeof msg === 'string' && msg) || fallback;
+}
+
 export default function Integrations({ provedorId, mode = 'full' }) {
   const [providerConfig, setProviderConfig] = useState(null);
   const [supportNotifyPhone, setSupportNotifyPhone] = useState('');
@@ -2901,9 +2909,9 @@ export default function Integrations({ provedorId, mode = 'full' }) {
         setChannels(Array.isArray(res.data) ? res.data : res.data.results || []);
         setLoading(false);
       });
-    }).catch(() => {
+    }).catch((err) => {
       setAdding(false);
-      toast.error(t('erro_adicionar_canal'));
+      toast.error(canalErrorMessage(err, t('erro_adicionar_canal')));
     });
   };
 
@@ -2930,7 +2938,7 @@ export default function Integrations({ provedorId, mode = 'full' }) {
         });
       }).catch((err) => {
         setAdding(false);
-        toast.error(t('erro_adicionar_canal'));
+        toast.error(canalErrorMessage(err, t('erro_adicionar_canal')));
       });
       return;
     }
@@ -3009,7 +3017,7 @@ export default function Integrations({ provedorId, mode = 'full' }) {
           handleTelegramResponse(response, token);
         }).catch((err) => {
           setAdding(false);
-          toast.error(t('erro_adicionar_canal'));
+          toast.error(canalErrorMessage(err, t('erro_adicionar_canal')));
         });
         return;
       } else {
@@ -3025,7 +3033,7 @@ export default function Integrations({ provedorId, mode = 'full' }) {
       handleTelegramResponse(response, token);
     }).catch((err) => {
       setAdding(false);
-      toast.error(t('erro_adicionar_canal'));
+      toast.error(canalErrorMessage(err, t('erro_adicionar_canal')));
     });
   };
 

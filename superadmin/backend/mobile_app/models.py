@@ -8,6 +8,7 @@ Provedor Niohub (super_core.Provedor) substitui o antigo Provider 1:1.
 import uuid
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
@@ -22,7 +23,21 @@ class MobileAppProfile(models.Model):
         related_name='mobile_app',
     )
     logo = models.ImageField(upload_to='mobile_app/logos/', blank=True, null=True)
+    login_logo = models.ImageField(upload_to='mobile_app/logos/', blank=True, null=True)
     primary_color = models.CharField(max_length=7, default='#0D70B3')
+    # Tema do app (vazio = o app usa a cor padrão embutida no build).
+    secondary_color = models.CharField(max_length=7, blank=True, default='')
+    login_bg_color = models.CharField(max_length=7, blank=True, default='')
+    login_button_color = models.CharField(max_length=7, blank=True, default='')
+    login_text_color = models.CharField(max_length=7, blank=True, default='')
+    app_bg_color = models.CharField(max_length=7, blank=True, default='')
+    card_color = models.CharField(max_length=7, blank=True, default='')
+    # Posição horizontal do logo no topo da tela inicial: 0 = esquerda, 50 = centro, 100 = direita.
+    home_logo_position = models.PositiveSmallIntegerField(
+        default=0, validators=[MinValueValidator(0), MaxValueValidator(100)]
+    )
+    # Cores embutidas no build do app deste provedor (enviadas pelo próprio app).
+    app_default_theme = models.JSONField(default=dict, blank=True)
     glass_intensity = models.IntegerField(default=82)
     glass_blur = models.IntegerField(default=18)
     ambient_shadow = models.IntegerField(default=55)

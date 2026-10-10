@@ -381,6 +381,8 @@ const UserManagement = ({ provedorId: provedorIdProp }) => {
       if (err.response && err.response.data) {
         if (err.response.data.username) {
           setErrorMsg(err.response.data.username[0]);
+        } else if (typeof err.response.data.detail === 'string') {
+          setErrorMsg(err.response.data.detail);
         } else if (typeof err.response.data === 'string') {
           setErrorMsg(err.response.data);
         } else {

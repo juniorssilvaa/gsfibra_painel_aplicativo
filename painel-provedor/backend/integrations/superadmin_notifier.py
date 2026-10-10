@@ -501,6 +501,27 @@ def fetch_superadmin_tenant_billing_status() -> dict | None:
     return None
 
 
+def _apply_plan_from_heartbeat(resp) -> None:
+    """Resposta do heartbeat traz o plano; garante os limites mesmo se um push do Superadmin falhou."""
+    try:
+        plano = (resp.json() or {}).get('plano')
+        if not isinstance(plano, dict):
+            return
+        from core.plan_limits import apply_plan_limits
+        from core.provedor_id_mapping import configured_central_provedor_id, resolve_local_provedor_for_central_id
+
+        from core.models import Provedor
+
+        central_id = configured_central_provedor_id()
+        if central_id:
+            provedor = resolve_local_provedor_for_central_id(central_id)
+        else:
+            provedor = Provedor.objects.first() if Provedor.objects.count() == 1 else None
+        apply_plan_limits(provedor, plano)
+    except Exception as exc:
+        logger.debug('[SuperadminNotifier] plano do heartbeat não aplicado: %s', exc)
+
+
 def report_running_version() -> bool:
     """Envia a versão do painel (APP_VERSION) ao Superadmin."""
     try:
@@ -536,6 +557,7 @@ def report_running_version() -> bool:
                 continue
             if resp.ok:
                 logger.info('[SuperadminNotifier] heartbeat versão=%s ok', version)
+                _apply_plan_from_heartbeat(resp)
                 return True
             logger.warning(
                 '[SuperadminNotifier] heartbeat HTTP %s: %s',

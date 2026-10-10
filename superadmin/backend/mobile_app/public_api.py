@@ -1,10 +1,13 @@
 """APIs públicas consumidas pelo app mobile do cliente."""
+import json
 import logging
+import mimetypes
 import re
 import time
 
 import requests
 from django.db import OperationalError, transaction
+from django.http import FileResponse, Http404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.decorators import api_view, permission_classes
@@ -66,6 +69,88 @@ def _provider_block_payload(provedor, profile=None):
     }
 
 logger = logging.getLogger(__name__)
+
+BRANDING_FILES = {'logo': 'logo', 'login-logo': 'login_logo'}
+
+
+def _public_origin(request) -> str:
+    proto = request.META.get('HTTP_X_FORWARDED_PROTO') or request.scheme or 'https'
+    host = request.META.get('HTTP_X_FORWARDED_HOST') or request.get_host()
+    return f'{proto}://{host}'.rstrip('/')
+
+
+def _branding_url(request, profile, kind):
+    if not getattr(profile, BRANDING_FILES[kind]):
+        return None
+    version = int(profile.updated_at.timestamp()) if profile.updated_at else 0
+    return f'{_public_origin(request)}/v1/branding/{profile.provedor_id}/{kind}/?v={version}'
+
+
+def _theme_payload(request, profile):
+    """Personalização visual do app; cores vazias = o app usa o padrão do build."""
+    primary = profile.primary_color or ''
+    if primary.upper() == '#0D70B3':
+        primary = ''
+    return {
+        'primary_color': primary,
+        'secondary_color': profile.secondary_color or '',
+        'login_bg_color': profile.login_bg_color or '',
+        'login_button_color': profile.login_button_color or '',
+        'login_text_color': profile.login_text_color or '',
+        'app_bg_color': profile.app_bg_color or '',
+        'card_color': profile.card_color or '',
+        'home_logo_position': profile.home_logo_position,
+        'logo_url': _branding_url(request, profile, 'logo'),
+        'login_logo_url': _branding_url(request, profile, 'login-logo'),
+    }
+
+
+APP_DEFAULT_THEME_KEYS = (
+    'primary_color', 'secondary_color', 'login_bg_color', 'login_button_color', 'login_text_color',
+    'app_bg_color', 'card_color',
+)
+
+
+def _remember_app_defaults(request, profile):
+    """Guarda as cores de fábrica que o app envia (X-App-Default-Theme) para a prévia do painel."""
+    raw = request.META.get('HTTP_X_APP_DEFAULT_THEME')
+    if not raw:
+        return
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+    clean = {}
+    for key in APP_DEFAULT_THEME_KEYS:
+        value = str(data.get(key) or '').strip().upper()
+        if re.fullmatch(r'#[0-9A-F]{6}', value):
+            clean[key] = value
+    if clean and clean != (profile.app_default_theme or {}):
+        # update() não mexe em updated_at, que versiona as URLs dos logos.
+        MobileAppProfile.objects.filter(pk=profile.pk).update(app_default_theme=clean)
+        profile.app_default_theme = clean
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def public_branding_file(request, provedor_id, kind):
+    field = BRANDING_FILES.get(kind)
+    if not field:
+        raise Http404()
+    profile = MobileAppProfile.objects.filter(provedor_id=provedor_id).first()
+    image = getattr(profile, field, None) if profile else None
+    if not image:
+        raise Http404()
+    try:
+        fh = image.open('rb')
+    except Exception:
+        raise Http404()
+    content_type = mimetypes.guess_type(image.name)[0] or 'application/octet-stream'
+    response = FileResponse(fh, content_type=content_type)
+    response['Cache-Control'] = 'public, max-age=86400'
+    return response
 
 
 def _require_provedor(request, *, from_body=False):
@@ -142,15 +227,18 @@ def public_app_config(request):
             }, status=403)
         update_user_activity(provedor, cpf)
 
+    _remember_app_defaults(request, profile)
     config, _ = MobileAppConfig.objects.get_or_create(profile=profile)
-    logo_url = request.build_absolute_uri(profile.logo.url) if profile.logo else None
+    theme = _theme_payload(request, profile)
 
     return Response({
         'provider_id': provedor.id,
         'provider_name': provedor.nome,
         'provider_phone': profile.number or '',
+        'support_phone': profile.number or '',
         'primary_color': profile.primary_color,
-        'logo_url': logo_url,
+        'logo_url': theme['logo_url'],
+        'theme': theme,
         'active_shortcuts': config.active_shortcuts or [],
         'active_tools': {
             'speed_test': config.tool_speed_test,

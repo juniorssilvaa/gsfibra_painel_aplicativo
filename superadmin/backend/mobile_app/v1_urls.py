@@ -37,6 +37,11 @@ urlpatterns = [
     # Home / branding / ferramentas do provedor
     path('home', public_api.public_app_config, name='v1-home'),
     path('home/', public_api.public_app_config, name='v1-home-slash'),
+    path(
+        'branding/<int:provedor_id>/<str:kind>/',
+        public_api.public_branding_file,
+        name='v1-branding-file',
+    ),
 
     # Planos
     path('plans', public_api.public_plans, name='v1-plans'),

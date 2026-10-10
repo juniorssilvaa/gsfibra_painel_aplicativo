@@ -18,6 +18,7 @@ import SuperadminVps from './SuperadminVps';
 import SuperadminSaude from './SuperadminSaude';
 import SuperadminAppMobile from './SuperadminAppMobile';
 import SuperadminAcs from './SuperadminAcs';
+import SuperadminPlanos from './SuperadminPlanos';
 import { Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
 import ReactDOM from 'react-dom';
@@ -358,6 +359,7 @@ export default function SuperadminDashboard({ onLogout }) {
         <Route path="vps" element={<SuperadminVps />} />
         <Route path="painel-empresa" element={<div className="flex-1 p-6">Redirecionando para o painel de empresa...</div>} />
         <Route path="provedores" element={<SuperadminProvedores />} />
+        <Route path="planos" element={<SuperadminPlanos />} />
         <Route path="saude" element={<SuperadminSaude />} />
         <Route path="app-mobile" element={<SuperadminAppMobile />} />
         <Route path="acs" element={<SuperadminAcs />} />

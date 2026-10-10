@@ -1,6 +1,20 @@
 {
-  "current_version": "2.78.0",
+  "current_version": "2.78.1",
   "versions": [
+    {
+      "version": "2.78.1",
+      "version_type": "patch",
+      "date": "2026-10-10",
+      "title": "Correção interna",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Sistema",
+          "title": "Correção interna",
+          "description": "Correção interna."
+        }
+      ]
+    },
     {
       "version": "2.78.0",
       "version_type": "minor",
