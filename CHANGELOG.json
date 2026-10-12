@@ -1,6 +1,20 @@
 {
-  "current_version": "2.78.1",
+  "current_version": "2.78.2",
   "versions": [
+    {
+      "version": "2.78.2",
+      "version_type": "patch",
+      "date": "2026-10-11",
+      "title": "Correção interna no módulo de canais",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "Canais",
+          "title": "Correção interna no módulo de canais",
+          "description": "Correção interna no módulo de canais."
+        }
+      ]
+    },
     {
       "version": "2.78.1",
       "version_type": "patch",

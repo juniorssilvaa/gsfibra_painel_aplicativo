@@ -43,6 +43,7 @@ urlpatterns = [
     path('webhooks/admin/upsert-user/', csrf_exempt(views.AdminUpsertUserWebhookView.as_view()), name='webhook-admin-upsert-user'),
     path('webhooks/admin/delete-user/', csrf_exempt(views.AdminDeleteUserWebhookView.as_view()), name='webhook-admin-delete-user'),
     path('webhooks/admin/users-status/', csrf_exempt(views.AdminUsersStatusWebhookView.as_view()), name='webhook-admin-users-status'),
+    path('webhooks/admin/channels-status/', csrf_exempt(views.AdminChannelsStatusWebhookView.as_view()), name='webhook-admin-channels-status'),
     path('webhooks/admin/maintenance/', csrf_exempt(views.AdminMaintenanceWebhookView.as_view()), name='webhook-admin-maintenance'),
     path('webhooks/admin/system-message/', csrf_exempt(views.AdminSystemMessageWebhookView.as_view()), name='webhook-admin-system-message'),
     path('webhooks/inbound/', csrf_exempt(views.InboundWebhookView.as_view()), name='webhook-inbound'),

@@ -293,6 +293,8 @@ export default function SuperadminProvedores() {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updateForm, setUpdateForm] = useState({ channel: 'stable', version: '' });
   const [releaseJob, setReleaseJob] = useState(null);
+  const [activeRelease, setActiveRelease] = useState(null);
+  const [unlockingRelease, setUnlockingRelease] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [loadingAdd, setLoadingAdd] = useState(false);
   const [loadingUpdate, setLoadingUpdate] = useState(false);
@@ -529,6 +531,35 @@ export default function SuperadminProvedores() {
 
     fetchVpsPool();
   }, []);
+
+  useEffect(() => {
+    if (!showUpdateModal) return;
+    axios
+      .get('/api/system-updates/current/', { headers: { Authorization: `Token ${localStorage.getItem('token')}` } })
+      .then((res) => setActiveRelease(res.data?.active || null))
+      .catch((err) => console.error('Erro ao consultar atualização em andamento:', err));
+  }, [showUpdateModal]);
+
+  const handleUnlockRelease = async () => {
+    if (!window.confirm(
+      'Destravar a atualização em andamento?\n\nUse só se ela travou (sem progresso). '
+      + 'Os provedores já atualizados continuam na versão nova; depois libere a versão de novo.'
+    )) return false;
+    setUnlockingRelease(true);
+    try {
+      await axios.post('/api/system-updates/unlock/', {}, {
+        headers: { Authorization: `Token ${localStorage.getItem('token')}` },
+      });
+      setActiveRelease(null);
+      toast.success('Atualização destravada. Já pode liberar a versão novamente.');
+      return true;
+    } catch (err) {
+      toast.apiError(err, 'Não foi possível destravar a atualização.');
+      return false;
+    } finally {
+      setUnlockingRelease(false);
+    }
+  };
 
   useEffect(() => {
     axios
@@ -3219,6 +3250,28 @@ export default function SuperadminProvedores() {
                 </p>
               )}
 
+              {activeRelease && !loadingUpdate && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+                  <p className="text-sm text-amber-200">
+                    Há uma atualização <strong>{activeRelease.version}</strong> ({activeRelease.channel}) marcada como em andamento
+                    {activeRelease.last_activity
+                      ? ` · última atividade em ${new Date(activeRelease.last_activity).toLocaleString('pt-BR')}`
+                      : ''}.
+                  </p>
+                  <p className="text-xs text-amber-200/80">
+                    Se ela travou, destrave e libere a versão de novo. Sem progresso por 2 horas, ela é destravada sozinha.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleUnlockRelease}
+                    disabled={unlockingRelease}
+                    className="px-4 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-sm font-semibold border border-amber-500/40 disabled:opacity-50"
+                  >
+                    {unlockingRelease ? 'Destravando...' : 'Destravar atualização'}
+                  </button>
+                </div>
+              )}
+
               <div className="pt-2">
                 <button 
                   onClick={async () => {
@@ -3255,7 +3308,12 @@ export default function SuperadminProvedores() {
                       });
                       setProvedoresState(resList.data.results || resList.data);
                     } catch (err) {
-                      alert('Erro ao processar atualização: ' + (err.response?.data?.error || err.message));
+                      if (err.response?.status === 409 && err.response?.data?.active) {
+                        setActiveRelease(err.response.data.active);
+                        toast.error('Existe uma atualização marcada como em andamento. Se ela travou, use "Destravar atualização".');
+                      } else {
+                        alert('Erro ao processar atualização: ' + (err.response?.data?.error || err.message));
+                      }
                     } finally {
                       setLoadingUpdate(false);
                     }

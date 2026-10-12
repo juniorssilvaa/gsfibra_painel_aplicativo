@@ -223,6 +223,7 @@ function ChannelCard({ channel, onConnect, onDelete, onDisconnect, onCheckStatus
 
   // Para WhatsApp Oficial, verificar se está em processamento
   const isProcessingState = isWhatsappOficial && isProcessing;
+  const perdeuConexaoMeta = isWhatsappOficial && !isConnected && !isProcessingState && Boolean(channel.phone_number_id);
 
   // Obter status da sessão WhatsApp (Uazapi) se disponível
   // whatsapp_session é o valor do banco de dados para sessões Uazapi
@@ -585,6 +586,9 @@ function ChannelCard({ channel, onConnect, onDelete, onDisconnect, onCheckStatus
         {isProcessingState && (
           <span className="text-xs text-muted-foreground ml-2">Aguardando confirmação da Meta</span>
         )}
+        {perdeuConexaoMeta && (
+          <span className="text-xs text-orange-400 ml-1">Conexão com a Meta perdida</span>
+        )}
 
         {/* Botões para WhatsApp */}
         {isWhatsapp && isConnected && (
@@ -599,9 +603,14 @@ function ChannelCard({ channel, onConnect, onDelete, onDisconnect, onCheckStatus
         {(isWhatsapp || isWhatsappOficial) && !isConnected && !isProcessingState && (
           <button
             onClick={() => onConnect(channel.id)}
-            className="bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white px-4 py-1 rounded-full text-xs font-semibold shadow ml-2"
+            className={`text-white px-4 py-1 rounded-full text-xs font-semibold shadow ml-2 bg-gradient-to-r ${
+              perdeuConexaoMeta
+                ? 'from-orange-500 to-orange-700 hover:from-orange-600 hover:to-orange-800'
+                : 'from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800'
+            }`}
+            title={perdeuConexaoMeta ? 'A Meta não reconhece mais esta conexão. Reconecte para voltar a receber e enviar mensagens.' : undefined}
           >
-            {t('conectar')}
+            {perdeuConexaoMeta ? 'Reconectar' : t('conectar')}
           </button>
         )}
         {/* Botão para Telegram */}
@@ -1030,6 +1039,43 @@ export default function Integrations({ provedorId, mode = 'full' }) {
     }));
   }, [statusPolling, stopStatusPolling]);
 
+  const verificarConexoesOficiais = useCallback(async (lista) => {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    const oficiais = (Array.isArray(lista) ? lista : []).filter(
+      (c) => c.tipo === 'whatsapp_oficial' && c.phone_number_id
+    );
+    if (!token || !oficiais.length) return;
+    await Promise.all(
+      oficiais.map(async (c) => {
+        try {
+          const vr = await axios.post(
+            `/api/canais/${c.id}/verificar-conexao/`,
+            {},
+            { headers: { Authorization: `Token ${token}` } }
+          );
+          const updated = vr.data?.canal;
+          if (updated) {
+            setChannels((prev) =>
+              prev.map((ch) => (ch.id === updated.id ? { ...ch, ...updated } : ch))
+            );
+          }
+        } catch {
+          /* verificação best-effort */
+        }
+      })
+    );
+  }, []);
+
+  const channelsRef = useRef([]);
+  useEffect(() => {
+    channelsRef.current = channels;
+  }, [channels]);
+
+  useEffect(() => {
+    const id = setInterval(() => verificarConexoesOficiais(channelsRef.current), 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [verificarConexoesOficiais]);
+
   useEffect(() => {
     setLoading(true);
     setError('');
@@ -1048,32 +1094,7 @@ export default function Integrations({ provedorId, mode = 'full' }) {
         const list = res.data.results || res.data;
         setChannels(list);
         setLoading(false);
-
-        // Verificar na Meta se canais Oficiais "conectados" ainda têm token válido
-        const oficiais = (Array.isArray(list) ? list : []).filter(
-          (c) => c.tipo === 'whatsapp_oficial' && c.token && c.phone_number_id
-        );
-        if (oficiais.length) {
-          await Promise.all(
-            oficiais.map(async (c) => {
-              try {
-                const vr = await axios.post(
-                  `/api/canais/${c.id}/verificar-conexao/`,
-                  {},
-                  { headers: { Authorization: `Token ${token}` } }
-                );
-                const updated = vr.data?.canal;
-                if (updated) {
-                  setChannels((prev) =>
-                    prev.map((ch) => (ch.id === updated.id ? { ...ch, ...updated } : ch))
-                  );
-                }
-              } catch (_) {
-                /* verificação best-effort */
-              }
-            })
-          );
-        }
+        await verificarConexoesOficiais(list);
       })
       .catch((error) => {
         setError(t('erro_carregar_canais'));
@@ -1576,7 +1597,7 @@ export default function Integrations({ provedorId, mode = 'full' }) {
             if (data.status_novo && data.status_novo !== 'connected') {
               pushToast({
                 show: true,
-                message: 'WhatsApp Oficial desconectado. Clique em Conectar para reconectar sem perder o ID do canal.',
+                message: 'WhatsApp Oficial desconectado da Meta. Clique em Reconectar para voltar a funcionar sem perder o ID do canal.',
                 type: 'warning',
               });
               setTimeout(() => pushToast({ show: false, message: '', type: 'info' }), 6000);
@@ -1888,7 +1909,7 @@ export default function Integrations({ provedorId, mode = 'full' }) {
     // Tratamento específico para WhatsApp Oficial - Navegar diretamente para tela de espera/onboarding
     if (canal.tipo === 'whatsapp_oficial') {
       const status = canal.state || canal.status;
-      if (status === 'connected' || status === 'open' || status === 'Conectado') {
+      if (canal.ativo && (status === 'connected' || status === 'open' || status === 'Conectado')) {
         pushToast({ show: true, message: 'WhatsApp Oficial já está conectado!', type: 'info' });
         setTimeout(() => pushToast({ show: false, message: '', type: 'info' }), 3000);
         return;

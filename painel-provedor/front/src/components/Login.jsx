@@ -20,6 +20,8 @@ import {
   isProvedorPaymentBlockedError,
 } from '../utils/provedorPaymentBlock';
 
+const PROFILE_LOAD_ERROR = 'Não foi possível carregar seu perfil. Tente novamente em instantes.';
+
 export default function Login() {
   const { refresh } = useAuth();
   const navigate = useNavigate();
@@ -96,6 +98,12 @@ export default function Login() {
     }
   };
 
+  const openBlockedScreen = async () => {
+    setPaymentBlocked(true);
+    emitProvedorPaymentBlocked();
+    await refresh();
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (loading) return;
@@ -111,11 +119,12 @@ export default function Login() {
         if (!data?.token) throw new Error('Token ausente');
         localStorage.setItem('auth_token', data.token);
         if (data.payment_blocked || data.code === 'PROVEDOR_PAYMENT_BLOCKED') {
-          emitProvedorPaymentBlocked();
+          await openBlockedScreen();
+          return;
         }
         const userData = await refresh();
-        if (!userData) throw new Error('Falha ao carregar perfil');
-        if (data.payment_blocked || data.code === 'PROVEDOR_PAYMENT_BLOCKED') {
+        if (!userData) {
+          showLoginError(PROFILE_LOAD_ERROR);
           return;
         }
         await redirectAfterLogin(userData, username);
@@ -135,11 +144,12 @@ export default function Login() {
       if (!data?.token) throw new Error('Token ausente');
       localStorage.setItem('auth_token', data.token);
       if (data.payment_blocked || data.code === 'PROVEDOR_PAYMENT_BLOCKED') {
-        emitProvedorPaymentBlocked();
+        await openBlockedScreen();
+        return;
       }
       const userData = await refresh();
-      if (!userData) throw new Error('Falha ao carregar perfil');
-      if (data.payment_blocked || data.code === 'PROVEDOR_PAYMENT_BLOCKED') {
+      if (!userData) {
+        showLoginError(PROFILE_LOAD_ERROR);
         return;
       }
       await redirectAfterLogin(userData, username);
@@ -166,7 +176,12 @@ export default function Login() {
   if (paymentBlocked) {
     return (
       <BlockedScreen
-        onLogout={() => setPaymentBlocked(false)}
+        onLogout={() => {
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setPaymentBlocked(false);
+        }}
         fallbackReason="Sua fatura está em atraso. Efetue o pagamento para reativar o acesso ao painel."
       />
     );

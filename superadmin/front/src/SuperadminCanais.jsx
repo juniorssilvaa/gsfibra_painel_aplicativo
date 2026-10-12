@@ -1,6 +1,85 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, Wifi, Globe, Facebook, MessageCircle, Mail, Send, Instagram } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, Plus, Edit, Trash2, Wifi, Globe, Facebook, MessageCircle, Mail, Send, Instagram, RefreshCw, Smartphone } from 'lucide-react';
 import axios from 'axios';
+
+const TIPO_VISUAL = {
+  whatsapp: { Icon: MessageCircle, color: 'text-green-500', bg: 'bg-green-600' },
+  whatsapp_oficial: { Icon: MessageCircle, color: 'text-green-500', bg: 'bg-green-600' },
+  whatsapp_cloud: { Icon: MessageCircle, color: 'text-green-500', bg: 'bg-green-600' },
+  whatsapp_session: { Icon: MessageCircle, color: 'text-green-500', bg: 'bg-green-600' },
+  telegram: { Icon: Send, color: 'text-sky-500', bg: 'bg-sky-500' },
+  email: { Icon: Mail, color: 'text-red-500', bg: 'bg-red-500' },
+  website: { Icon: Globe, color: 'text-primary', bg: 'bg-primary' },
+  webchat: { Icon: Globe, color: 'text-primary', bg: 'bg-primary' },
+  instagram: { Icon: Instagram, color: 'text-pink-500', bg: 'bg-gradient-to-tr from-yellow-500 via-pink-500 to-purple-600' },
+  facebook: { Icon: Facebook, color: 'text-blue-600', bg: 'bg-blue-600' },
+  app_mobile: { Icon: Smartphone, color: 'text-violet-500', bg: 'bg-violet-600' },
+};
+
+function CanalAvatar({ canal, live }) {
+  const visual = TIPO_VISUAL[canal.tipo] || TIPO_VISUAL.whatsapp;
+  const { Icon } = visual;
+  const foto = live?.profile_picture || canal.dados_extras?.profile_picture_url || canal.dados_extras?.profilePicUrl;
+  const [fotoFalhou, setFotoFalhou] = useState(false);
+
+  useEffect(() => setFotoFalhou(false), [foto]);
+
+  if (!foto || fotoFalhou) {
+    return (
+      <div className="w-10 h-10 rounded-full bg-muted border border-border flex items-center justify-center flex-shrink-0">
+        <Icon className={`w-5 h-5 ${visual.color}`} />
+      </div>
+    );
+  }
+  return (
+    <div className="relative w-10 h-10 flex-shrink-0">
+      <img
+        src={foto}
+        alt={canal.nome}
+        className="w-10 h-10 rounded-full object-cover border border-border"
+        onError={() => setFotoFalhou(true)}
+      />
+      <span className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full ${visual.bg} border-2 border-card flex items-center justify-center`}>
+        <Icon className="w-3 h-3 text-white" />
+      </span>
+    </div>
+  );
+}
+
+function StatusConexao({ live, carregando }) {
+  if (!live) {
+    return (
+      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-muted text-muted-foreground">
+        {carregando ? 'Verificando...' : 'Sem informação'}
+      </span>
+    );
+  }
+  if (live.connected === true) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+        <span className="w-2 h-2 rounded-full bg-green-500" /> Conectado
+      </span>
+    );
+  }
+  if (live.connected === false) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800"
+        title={live.error || ''}
+      >
+        <span className="w-2 h-2 rounded-full bg-red-500" /> Desconectado
+      </span>
+    );
+  }
+  return (
+    <span
+      className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"
+      title={live.error || ''}
+    >
+      Indisponível
+    </span>
+  );
+}
 
 export default function SuperadminCanais() {
   const [search, setSearch] = useState('');
@@ -9,6 +88,8 @@ export default function SuperadminCanais() {
   const [provedores, setProvedores] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [liveStatus, setLiveStatus] = useState({});
+  const [loadingLive, setLoadingLive] = useState(false);
   const [addCanalForm, setAddCanalForm] = useState({
     tipo: 'telegram',
     nome: '',
@@ -85,6 +166,26 @@ export default function SuperadminCanais() {
     fetchData();
   }, []);
 
+  const fetchLiveStatus = useCallback(async (refresh = false) => {
+    setLoadingLive(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/canais/live-status/', {
+        headers: { Authorization: `Token ${token}` },
+        params: refresh ? { refresh: 1 } : undefined,
+      });
+      setLiveStatus(res.data?.status || {});
+    } catch (err) {
+      console.error('Erro ao consultar status dos canais:', err);
+    } finally {
+      setLoadingLive(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLiveStatus();
+  }, [fetchLiveStatus]);
+
   const handleAddCanalChange = (e) => {
     const { name, value, type, checked } = e.target;
     setAddCanalForm(prev => ({
@@ -153,23 +254,6 @@ export default function SuperadminCanais() {
     }
   };
 
-  const handleToggleStatus = async (canalId, currentStatus) => {
-    try {
-      const token = localStorage.getItem('token');
-      await axios.patch(`/api/canais/${canalId}/`, { ativo: !currentStatus }, {
-        headers: { Authorization: `Token ${token}` }
-      });
-
-      // Atualizar status na lista
-      setCanais(prev => prev.map(c =>
-        c.id === canalId ? { ...c, ativo: !currentStatus } : c
-      ));
-
-    } catch (err) {
-      alert('Erro ao alterar status do canal!');
-    }
-  };
-
   const filteredCanais = canais.filter(canal => {
     const searchLower = search.toLowerCase();
     // O provedor pode vir como objeto completo ou como ID
@@ -206,6 +290,15 @@ export default function SuperadminCanais() {
             className="pl-10 pr-4 py-2 rounded bg-background border w-full"
           />
         </div>
+        <button
+          className="flex items-center gap-2 border border-border px-4 py-2 rounded font-medium text-sm text-foreground hover:bg-muted disabled:opacity-60"
+          onClick={() => fetchLiveStatus(true)}
+          disabled={loadingLive}
+          title="Consultar novamente a Meta"
+        >
+          <RefreshCw className={`w-4 h-4 ${loadingLive ? 'animate-spin' : ''}`} />
+          {loadingLive ? 'Verificando...' : 'Atualizar status'}
+        </button>
         <button
           className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded font-medium text-sm"
           onClick={() => setShowAddModal(true)}
@@ -419,28 +512,15 @@ export default function SuperadminCanais() {
               // O provedor pode vir como objeto completo ou como ID
               const provedorId = typeof canal.provedor === 'object' ? canal.provedor.id : canal.provedor;
               const provedor = provedores.find(p => p.id === provedorId);
+              const live = liveStatus[String(canal.id)];
               return (
                 <tr key={canal.id} className="hover:bg-muted/50">
                   <td className="px-6 py-4 min-w-[240px] align-middle">
                     <div className="flex items-center gap-3">
-                      {/* Foto de perfil do WhatsApp ou ícone fallback */}
-                      {canal.dados_extras?.profile_picture_url || canal.dados_extras?.profilePicUrl ? (
-                        <img
-                          src={canal.dados_extras.profile_picture_url || canal.dados_extras.profilePicUrl}
-                          alt={canal.nome}
-                          className="w-10 h-10 rounded-full object-cover border border-border"
-                          onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-                        />
-                      ) : null}
-                      <div
-                        className="w-10 h-10 rounded-full bg-green-900/40 border border-green-700/30 items-center justify-center flex-shrink-0"
-                        style={{ display: (canal.dados_extras?.profile_picture_url || canal.dados_extras?.profilePicUrl) ? 'none' : 'flex' }}
-                      >
-                        {tipoIcons[canal.tipo] || <MessageCircle className="w-5 h-5 text-green-500" />}
-                      </div>
+                      <CanalAvatar canal={canal} live={live} />
                       <div>
                         <div className="font-semibold text-card-foreground">
-                          {canal.nome || tipoLabels[canal.tipo] || canal.tipo}
+                          {canal.nome || live?.display_name || tipoLabels[canal.tipo] || canal.tipo}
                         </div>
                         <div className="text-xs text-muted-foreground font-mono">
                           {canal.tipo === 'instagram'
@@ -475,13 +555,7 @@ export default function SuperadminCanais() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-center align-middle">
-                    <button
-                      className={`px-3 py-1 rounded-full text-xs font-semibold focus:outline-none transition-colors duration-200 ${canal.ativo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => handleToggleStatus(canal.id, canal.ativo)}
-                    >
-                      {canal.ativo ? 'Ativo' : 'Inativo'}
-                    </button>
+                    <StatusConexao live={live} carregando={loadingLive} />
                   </td>
                   <td className="px-6 py-4 text-center align-middle text-sm text-muted-foreground">
                     {new Date(canal.created_at).toLocaleDateString('pt-BR')}

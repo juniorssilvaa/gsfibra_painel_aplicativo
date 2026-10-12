@@ -3,19 +3,79 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict
+from datetime import timedelta
+from typing import Any, Dict, Optional
 
 from django.db import close_old_connections
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 logger = logging.getLogger(__name__)
+
+# A thread do release morre junto com o processo (restart/deploy do superadmin) e o
+# registro ficaria "running" para sempre; sem progresso por este tempo, ele expira.
+RELEASE_STALE_AFTER = timedelta(hours=2)
 
 
 def _append_result(update, row: Dict[str, Any]) -> None:
     results = list(update.results or [])
-    results.append(row)
+    results.append({**row, "at": timezone.now().isoformat()})
     update.results = results
     update.save(update_fields=["results"])
+
+
+def release_last_activity(update):
+    marcas = [update.release_date, update.started_at]
+    for row in update.results or []:
+        at = parse_datetime(str(row.get("at") or "")) if isinstance(row, dict) else None
+        if at:
+            marcas.append(at)
+    marcas = [m for m in marcas if m]
+    return max(marcas) if marcas else None
+
+
+def _close_active(update, motivo: str) -> None:
+    from super_core.models import SystemUpdate
+
+    update.status = SystemUpdate.STATUS_FAILED
+    update.finished_at = timezone.now()
+    update.description = f"{update.description or ''} · {motivo}".strip(" ·")
+    update.save(update_fields=["status", "finished_at", "description"])
+    logger.warning("[release] SystemUpdate id=%s encerrada: %s", update.id, motivo)
+
+
+def active_releases():
+    from super_core.models import SystemUpdate
+
+    return SystemUpdate.objects.filter(
+        status__in=[SystemUpdate.STATUS_PENDING, SystemUpdate.STATUS_RUNNING]
+    ).order_by("-release_date")
+
+
+def expire_stale_releases() -> int:
+    """Encerra releases ativas sem progresso há mais de RELEASE_STALE_AFTER."""
+    limite = timezone.now() - RELEASE_STALE_AFTER
+    expiradas = 0
+    for update in active_releases():
+        ultima = release_last_activity(update)
+        if ultima and ultima < limite:
+            _close_active(update, "Expirada: sem progresso por mais de 2h (processo interrompido)")
+            expiradas += 1
+    return expiradas
+
+
+def unlock_releases(username: str = "") -> int:
+    quem = f" por {username}" if username else ""
+    total = 0
+    for update in active_releases():
+        _close_active(update, f"Destravada manualmente{quem}")
+        total += 1
+    return total
+
+
+def current_release() -> Optional[Any]:
+    expire_stale_releases()
+    return active_releases().first()
 
 
 def execute_release(update_id: int) -> None:

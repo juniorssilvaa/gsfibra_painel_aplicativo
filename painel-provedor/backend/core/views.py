@@ -205,14 +205,14 @@ def changelog_view(request):
             # Retornar estrutura vazia se não encontrar
             return JsonResponse({
                 "versions": [],
-                "current_version": "2.78.1"
+                "current_version": "2.78.2"
         }, safe=False)
     except Exception as e:
         logger.error(f'Erro ao carregar changelog: {e}')
         # Retornar estrutura vazia em caso de erro
         return JsonResponse({
             "versions": [],
-            "current_version": "2.78.1"
+            "current_version": "2.78.2"
         }, safe=False)
 
 
@@ -9146,6 +9146,28 @@ class AdminUsersStatusWebhookView(APIView):
             })
 
         return Response({'users': result, 'total': len(result), 'provedor_id': pid})
+
+
+class AdminChannelsStatusWebhookView(APIView):
+    """
+    Status real (Meta) e foto de perfil dos canais do tenant, para a tela Canais do superadmin.
+
+    GET /api/webhooks/admin/channels-status/?refresh=1
+    Header obrigatório: Authorization: Bearer <SUPERADMIN_PROVIDER_TOKEN>
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        integration_ok, _ = _is_superadmin_integration_authorized(request)
+        if not integration_ok:
+            logger.warning("[channels-status] Auth inválida (Bearer).")
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        from integrations.channel_live_status import all_channels_live_status
+
+        refresh = (request.query_params.get('refresh') or '').strip() in ('1', 'true')
+        channels = all_channels_live_status(refresh=refresh)
+        return Response({'channels': channels, 'total': len(channels)})
 
 
 class AdminProviderStatusWebhookView(APIView):

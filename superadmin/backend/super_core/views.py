@@ -647,12 +647,22 @@ class SystemUpdateViewSet(viewsets.ModelViewSet):
         if not version:
             return Response({'error': 'Versão obrigatória'}, status=status.HTTP_400_BAD_REQUEST)
 
-        running = SystemUpdate.objects.filter(
-            status__in=[SystemUpdate.STATUS_PENDING, SystemUpdate.STATUS_RUNNING]
-        ).exists()
-        if running:
+        from .services.release_service import current_release, release_last_activity
+
+        ativa = current_release()
+        if ativa:
+            ultima = release_last_activity(ativa)
             return Response(
-                {'error': 'Já existe uma atualização em andamento. Aguarde terminar.'},
+                {
+                    'error': 'Já existe uma atualização em andamento. Aguarde terminar.',
+                    'active': {
+                        'id': ativa.id,
+                        'version': ativa.version,
+                        'channel': ativa.channel,
+                        'status': ativa.status,
+                        'last_activity': ultima.isoformat() if ultima else None,
+                    },
+                },
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -681,6 +691,30 @@ class SystemUpdateViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_202_ACCEPTED,
         )
+
+    @action(detail=False, methods=['get'])
+    def current(self, request):
+        from .services.release_service import current_release, release_last_activity
+
+        ativa = current_release()
+        if not ativa:
+            return Response({'active': None})
+        ultima = release_last_activity(ativa)
+        data = self.get_serializer(ativa).data
+        data['last_activity'] = ultima.isoformat() if ultima else None
+        return Response({'active': data})
+
+    @action(detail=False, methods=['post'])
+    def unlock(self, request):
+        from .services.release_service import unlock_releases
+
+        if getattr(request.user, 'user_type', '') != 'superadmin':
+            return Response(
+                {'error': 'Apenas o superadmin pode destravar atualizações.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        total = unlock_releases(getattr(request.user, 'username', '') or '')
+        return Response({'success': True, 'unlocked': total})
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -2574,6 +2608,17 @@ class CanalViewSet(viewsets.ModelViewSet):
             except ValueError:
                 pass
         return qs
+
+    @action(detail=False, methods=['get'], url_path='live-status')
+    def live_status(self, request):
+        """
+        GET /api/canais/live-status/?refresh=1
+        Conectado/Desconectado real (Meta) e foto de perfil de cada canal, consultando os tenants.
+        """
+        from super_core.services.channel_live_status import canais_live_status
+
+        refresh = (request.query_params.get('refresh') or '').strip() in ('1', 'true')
+        return Response({'status': canais_live_status(self.get_queryset(), refresh=refresh)})
 
     @action(detail=False, methods=['post'], url_path='resync-dispatcher',
             permission_classes=[permissions.IsAuthenticated])

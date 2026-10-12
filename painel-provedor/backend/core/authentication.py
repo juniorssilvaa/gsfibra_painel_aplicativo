@@ -22,7 +22,10 @@ class LoggedTokenAuthentication(TokenAuthentication):
             return None
         user, token = result
         from core.login_provedor_access import api_access_denied_message_for_user
+        from core.middleware.provedor_suspension import is_suspension_exempt_path
 
+        if is_suspension_exempt_path(getattr(request, 'path', '')):
+            return user, token
         denied = api_access_denied_message_for_user(user)
         if denied:
             raise AuthenticationFailed(denied)
