@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense, lazy, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, LogOut, Sun, Moon, ClipboardList, User } from 'lucide-react';
+import { ArrowLeft, Sun, Moon, ClipboardList, User } from 'lucide-react';
 import ConversationList from './ConversationList';
 import InternalChatButton from './InternalChatButton';
 import NotificationBell from './NotificationBell';
@@ -269,12 +269,12 @@ const ConversationsPage = ({ selectedConversation: propSelectedConversation, set
             <NotificationBell />
 
             <button
-            className="p-2 rounded-lg transition-colors text-topbar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            title={t('sair')}
-            onClick={handleLogout}
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+              type="button"
+              className="px-2 py-1.5 rounded-lg text-sm font-semibold text-nowrap transition-colors text-topbar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              onClick={handleLogout}
+            >
+              {t('sair')}
+            </button>
           </div>
         </div>
 

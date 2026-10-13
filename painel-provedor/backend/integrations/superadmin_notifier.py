@@ -232,9 +232,12 @@ def _resolve_provider_token(superadmin_url: str) -> str:
 
     provedor_id = _resolve_provedor_id()
     if provedor_id:
+        cache_key = f'id:{provedor_id}'
+        cached = _token_cache.get(cache_key)
+        if cached and time.monotonic() - cached[1] < _TOKEN_CACHE_TTL:
+            return cached[0]
         token = _fetch_token_by_provedor_id(superadmin_url, provedor_id, secret)
         if token:
-            cache_key = f'id:{provedor_id}'
             _token_cache[cache_key] = (token, time.monotonic())
             return token
 

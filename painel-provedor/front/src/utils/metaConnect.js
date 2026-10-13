@@ -5,6 +5,14 @@
  */
 export const META_CONNECT_IFRAME_CACHE_BUSTER = '8';
 
+/** postMessage do popup /app/meta/ads-connect com o token de anúncios para o Estúdio de Marketing. */
+export const META_ADS_AUTH_MESSAGE = 'META_ADS_AUTH';
+
+/** Origem onde o popup de login de anúncios roda (host central ou o próprio painel). */
+export function getMetaAdsConnectOrigin() {
+  return getMetaConnectOrigin() || window.location.origin;
+}
+
 /**
  * Host central onde corre o JS SDK da Meta (ex.: https://connect.niohub.com.br).
  * Definido em build-time: VITE_META_CONNECT_ORIGIN. Vazio = fluxo legacy no próprio subdomínio do provedor.

@@ -16,6 +16,9 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+# Mensagens de chat atendente↔cliente: geram push, mas não entram no histórico de notificações.
+CHAT_SOURCES = frozenset({'support_chat'})
+
 _firebase_app = initialize_firebase()
 
 
@@ -326,32 +329,33 @@ def send_push_notification_core(
 
     recipients_list = list(recipients_by_key.values())[:500]
 
-    try:
-        payload_data = data or {}
-        MobileNotificationLog.objects.create(
-            provedor_id=provedor_id,
-            source=source,
-            title=title,
-            body=message,
-            recipients_count=len(tokens),
-            success_count=success_count,
-            failure_count=failure_count,
-            notif_type=str(payload_data.get('type') or 'info')[:20],
-            link=(payload_data.get('url') or payload_data.get('link') or None),
-            image_url=(payload_data.get('image_url') or None) or None,
-            segment_type=segment_type or 'all',
-            recipients=recipients_list,
-            metadata={
-                'segment_tags': segment_tags,
-                'segment_search': segment_search,
-                'target_customer_ids': (
-                    str(target_customer_ids)[:500] if target_customer_ids else None
-                ),
-                'unique_clients': len(recipients_list),
-            },
-        )
-    except Exception:
-        logger.exception('[mobile_app] falha ao gravar log de notificação')
+    if source not in CHAT_SOURCES:
+        try:
+            payload_data = data or {}
+            MobileNotificationLog.objects.create(
+                provedor_id=provedor_id,
+                source=source,
+                title=title,
+                body=message,
+                recipients_count=len(tokens),
+                success_count=success_count,
+                failure_count=failure_count,
+                notif_type=str(payload_data.get('type') or 'info')[:20],
+                link=(payload_data.get('url') or payload_data.get('link') or None),
+                image_url=(payload_data.get('image_url') or None) or None,
+                segment_type=segment_type or 'all',
+                recipients=recipients_list,
+                metadata={
+                    'segment_tags': segment_tags,
+                    'segment_search': segment_search,
+                    'target_customer_ids': (
+                        str(target_customer_ids)[:500] if target_customer_ids else None
+                    ),
+                    'unique_clients': len(recipients_list),
+                },
+            )
+        except Exception:
+            logger.exception('[mobile_app] falha ao gravar log de notificação')
 
     try:
         if source != 'in_app_warning_system':

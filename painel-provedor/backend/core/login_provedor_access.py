@@ -16,6 +16,7 @@ _DEFAULT_BLOCK_MESSAGE = (
 
 _CENTRAL_SYNC_CACHE: dict[int, Tuple[float, bool, str]] = {}
 _CENTRAL_SYNC_TTL_SEC = 45
+_LAST_SYNC_AT: dict[Tuple[int, ...], float] = {}
 
 
 def collect_user_provedores(user) -> List:
@@ -123,6 +124,12 @@ def refresh_provedores_block_from_superadmin(
     """
     if not provedores:
         return
+
+    sync_key = tuple(sorted(p.id for p in provedores))
+    now = time.monotonic()
+    if use_cache and now - _LAST_SYNC_AT.get(sync_key, 0.0) < _CENTRAL_SYNC_TTL_SEC:
+        return
+    _LAST_SYNC_AT[sync_key] = now
 
     from integrations.superadmin_notifier import (
         fetch_central_provedor_by_id,

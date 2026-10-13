@@ -43,7 +43,7 @@ class MarketingMessage(models.Model):
 
 
 class MarketingAsset(models.Model):
-    """Imagem do Estúdio: arte gerada pela IA ou referência enviada pelo dono (logo, arte antiga)."""
+    """Imagem do Estúdio enviada pelo dono para usar nos anúncios (kind='reference')."""
     KIND_CHOICES = [('creative', 'Arte gerada'), ('reference', 'Referência')]
 
     provedor = models.ForeignKey(Provedor, on_delete=models.CASCADE, related_name='marketing_assets')
@@ -79,3 +79,60 @@ class MarketingAsset(models.Model):
 
     def __str__(self):
         return f"MarketingAsset {self.id} [{self.kind}]"
+
+
+class MetaAdsConnection(models.Model):
+    """Conta de anúncios da Meta conectada pelo dono do provedor (token só no servidor)."""
+    provedor = models.OneToOneField(Provedor, on_delete=models.CASCADE, related_name='meta_ads_connection')
+    access_token = models.TextField()
+    token_expires_at = models.DateTimeField(null=True, blank=True)
+    scopes = models.JSONField(default=list, blank=True)
+    fb_user_id = models.CharField(max_length=64, blank=True, default='')
+    fb_user_name = models.CharField(max_length=200, blank=True, default='')
+    ad_account_id = models.CharField(max_length=64, blank=True, default='')
+    ad_account_name = models.CharField(max_length=200, blank=True, default='')
+    currency = models.CharField(max_length=10, blank=True, default='')
+    page_id = models.CharField(max_length=64, blank=True, default='')
+    page_name = models.CharField(max_length=200, blank=True, default='')
+    instagram_user_id = models.CharField(max_length=64, blank=True, default='')
+    instagram_username = models.CharField(max_length=100, blank=True, default='')
+    connected_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'marketing_meta_ads_connections'
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.access_token and self.ad_account_id and self.page_id)
+
+
+class MetaAdAction(models.Model):
+    """Criação/edição de campanha preparada pela IA; só é executada depois que o dono confirma."""
+    KIND_CHOICES = [('create', 'Criar campanha'), ('update', 'Editar campanha')]
+    STATUS_CHOICES = [
+        ('pending', 'Aguardando confirmação'),
+        ('running', 'Executando'),
+        ('applied', 'Executada'),
+        ('cancelled', 'Cancelada'),
+        ('error', 'Erro'),
+    ]
+
+    provedor = models.ForeignKey(Provedor, on_delete=models.CASCADE, related_name='meta_ad_actions')
+    thread = models.ForeignKey(MarketingThread, on_delete=models.SET_NULL, null=True, blank=True, related_name='ad_actions')
+    message = models.ForeignKey(MarketingMessage, on_delete=models.SET_NULL, null=True, blank=True, related_name='ad_actions')
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES)
+    campaign_id = models.CharField(max_length=64, blank=True, default='')
+    payload = models.JSONField(default=dict, blank=True)
+    resumo = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    result = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'marketing_meta_ad_actions'
+        ordering = ['-id']

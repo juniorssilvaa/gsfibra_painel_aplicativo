@@ -66,6 +66,8 @@ urlpatterns = [
     # Chat de atendimento no app (canal do painel)
     path('support/messages', support_views.support_messages, name='v1-support-messages'),
     path('support/messages/', support_views.support_messages, name='v1-support-messages-slash'),
+    path('support/reactions', support_views.support_reactions, name='v1-support-reactions'),
+    path('support/reactions/', support_views.support_reactions, name='v1-support-reactions-slash'),
     path('support/outbound', support_views.support_outbound, name='v1-support-outbound'),
     path('support/outbound/', support_views.support_outbound, name='v1-support-outbound-slash'),
     path('support/files/<uuid:media_id>', support_views.support_media_file, name='v1-support-file'),

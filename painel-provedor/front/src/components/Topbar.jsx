@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ClipboardList, LogOut, Sun, Moon, Menu } from 'lucide-react';
+import { ClipboardList, Sun, Moon, Menu } from 'lucide-react';
 import InternalChatButton from './InternalChatButton';
 import NotificationBell from './NotificationBell';
 import StatusDot from './StatusDot';
@@ -84,11 +84,11 @@ export default React.memo(function Topbar({ onLogout, onChangelog, onNotificatio
       {/* Sistema de Notificações do Superadmin */}
       <NotificationBell />
       <button
-        className="p-2 rounded-lg transition-colors text-topbar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        title={t('sair')}
+        type="button"
+        className="px-2 py-1.5 rounded-lg text-sm font-semibold text-nowrap transition-colors text-topbar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         onClick={onLogout}
       >
-        <LogOut className="w-5 h-5" />
+        {t('sair')}
       </button>
       </div>
     </div>

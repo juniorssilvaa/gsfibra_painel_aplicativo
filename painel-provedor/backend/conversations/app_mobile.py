@@ -18,7 +18,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from conversations.inbound_routing import reopen_conversation_for_bot
-from conversations.models import Contact, Conversation, Inbox, Message, Team
+from conversations.models import Contact, Conversation, Inbox, Message, MessageReaction, Team
 from core.models import Canal, Provedor
 
 logger = logging.getLogger(__name__)
@@ -307,7 +307,82 @@ def _mirror_remote_media_locally(
     }
 
 
-def _serialize_message(msg: Message) -> dict:
+MEDIA_PREVIEW_LABELS = {
+    'image': '📷 Imagem',
+    'audio': '🎵 Áudio',
+    'ptt': '🎤 Mensagem de voz',
+    'video': '🎬 Vídeo',
+    'document': '📎 Arquivo',
+    'sticker': 'Figurinha',
+    'location': '📍 Localização',
+}
+
+
+def _message_preview(msg: Message) -> str:
+    content = (msg.content or '').strip()
+    if not msg.is_from_customer:
+        content = _strip_agent_signature(content)
+    if content:
+        return content[:300]
+    return MEDIA_PREVIEW_LABELS.get(msg.message_type or '', 'Mensagem')
+
+
+def _find_reply_target(msg: Message, raw_id, by_id: Optional[dict] = None) -> Optional[Message]:
+    if raw_id in (None, ''):
+        return None
+    raw = str(raw_id).strip()
+    if raw.isdigit():
+        target_id = int(raw)
+        if by_id is not None and target_id in by_id:
+            return by_id[target_id]
+        return Message.objects.filter(id=target_id, conversation__contact_id=msg.conversation.contact_id).first()
+    return Message.objects.filter(
+        external_id=raw, conversation__contact_id=msg.conversation.contact_id
+    ).order_by('-id').first()
+
+
+def _serialize_reply(msg: Message, by_id: Optional[dict] = None) -> Optional[dict]:
+    attrs = msg.additional_attributes or {}
+    raw_id = attrs.get('reply_to_message_id')
+    if not attrs.get('is_reply') and raw_id in (None, ''):
+        return None
+    target = _find_reply_target(msg, raw_id, by_id)
+    if target is None:
+        content = (attrs.get('reply_to_content') or '').strip()
+        if not content:
+            return None
+        return {
+            'id': None,
+            'content': _strip_agent_signature(content)[:300],
+            'message_type': 'text',
+            'is_from_customer': None,
+            'agent_name': None,
+        }
+    target_attrs = target.additional_attributes or {}
+    return {
+        'id': target.id,
+        'content': _message_preview(target),
+        'message_type': target.message_type or 'text',
+        'is_from_customer': bool(target.is_from_customer),
+        'agent_name': target_attrs.get('agent_name') or None,
+    }
+
+
+def _serialize_reactions(msg: Message) -> list:
+    reactions = sorted(msg.reactions.all(), key=lambda r: r.created_at or msg.created_at)
+    return [
+        {
+            'id': r.id,
+            'emoji': r.emoji,
+            'is_from_customer': bool(r.is_from_customer),
+            'created_at': r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in reactions
+        if r.emoji
+    ]
+
+
+def _serialize_message(msg: Message, by_id: Optional[dict] = None) -> dict:
     attrs = msg.additional_attributes or {}
     # App precisa da URL pública do Superadmin (não do path local do painel).
     file_url = (
@@ -331,6 +406,8 @@ def _serialize_message(msg: Message) -> dict:
         'file_name': msg.file_name or attrs.get('file_name') or None,
         'from_ai': bool(attrs.get('from_ai') or attrs.get('is_ai_response')),
         'agent_name': attrs.get('agent_name') or None,
+        'reply_to': _serialize_reply(msg, by_id),
+        'reactions': _serialize_reactions(msg),
     }
 
 
@@ -346,6 +423,7 @@ def ingest_inbound_message(
     file_name: str = '',
     mime_type: str = '',
     app_default_team_id=None,
+    reply_to_message_id=None,
 ) -> Tuple[Optional[Conversation], Optional[Message], Optional[str]]:
     cpf = _digits(cpf)
     if not cpf:
@@ -401,10 +479,12 @@ def ingest_inbound_message(
         )
         apply_app_mobile_waiting_queue(conversation, canal, provedor, team_id_override=app_default_team_id)
     else:
-        reopen_conversation_for_bot(
+        reopened = reopen_conversation_for_bot(
             conversation, ia_team=None, provedor=provedor, allow_closing_reopen=True
         )
-        apply_app_mobile_waiting_queue(conversation, canal, provedor, team_id_override=app_default_team_id)
+        # Atendimento já atribuído segue com o atendente; só volta à Espera se reabriu ou está sem dono.
+        if reopened or not conversation.assignee_id:
+            apply_app_mobile_waiting_queue(conversation, canal, provedor, team_id_override=app_default_team_id)
 
     allowed_types = {choice[0] for choice in Message.MESSAGE_TYPES}
     if message_type not in allowed_types:
@@ -439,6 +519,16 @@ def ingest_inbound_message(
             stored_file_url = mirrored.get('local_file_url') or stored_file_url
             if mirrored.get('file_name'):
                 file_name = mirrored['file_name']
+
+    if reply_to_message_id not in (None, '') and str(reply_to_message_id).strip().isdigit():
+        target = Message.objects.filter(
+            id=int(str(reply_to_message_id).strip()),
+            conversation__contact=contact,
+        ).first()
+        if target:
+            additional['reply_to_message_id'] = target.id
+            additional['reply_to_content'] = _message_preview(target)
+            additional['is_reply'] = True
 
     message = Message.objects.create(
         conversation=conversation,
@@ -577,6 +667,7 @@ class AppMobileInboundWebhookView(APIView):
             file_name=payload.get('file_name') or '',
             mime_type=payload.get('mime_type') or '',
             app_default_team_id=payload.get('app_default_team_id'),
+            reply_to_message_id=payload.get('reply_to_message_id'),
         )
         if ingest_err:
             return Response({'error': ingest_err}, status=400)
@@ -625,15 +716,95 @@ class AppMobileMessagesWebhookView(APIView):
                 'messages': [],
             })
 
-        qs = Message.objects.filter(conversation=conversation).order_by('created_at')
+        qs = (
+            Message.objects.filter(conversation=conversation)
+            .select_related('conversation')
+            .prefetch_related('reactions')
+            .order_by('created_at')
+        )
         after_id = request.GET.get('after_id')
         if after_id and str(after_id).isdigit():
             qs = qs.filter(id__gt=int(after_id))
 
-        messages = [_serialize_message(m) for m in qs[:200]]
+        rows = list(qs[:200])
+        by_id = {m.id: m for m in rows}
+        messages = [_serialize_message(m, by_id) for m in rows]
         return Response({
             'success': True,
             'conversation_id': conversation.id,
             'channel': CHANNEL_TYPE,
             'messages': messages,
+        })
+
+
+def _broadcast_reaction(message: Message, reaction: Optional[MessageReaction], emoji: str) -> None:
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+        async_to_sync(channel_layer.group_send)(
+            f'conversation_{message.conversation_id}',
+            {
+                'type': 'message_reaction',
+                'message_id': message.id,
+                'reaction': {
+                    'id': reaction.id if reaction else None,
+                    'emoji': emoji,
+                    'is_from_customer': True,
+                    'removed': emoji == '',
+                    'created_at': reaction.created_at.isoformat() if reaction and reaction.created_at else None,
+                },
+            },
+        )
+    except Exception as exc:
+        logger.warning('[app-mobile] Falha ao enviar WebSocket de reação: %s', exc)
+
+
+class AppMobileReactionWebhookView(APIView):
+    """Cliente do app reage a uma mensagem (emoji vazio remove a reação)."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        if not _authorize_superadmin(request):
+            return Response({'error': 'Unauthorized'}, status=401)
+        payload = dict(request.data) if isinstance(request.data, dict) else {}
+        provedor, err = _resolve_provedor_from_request(request, payload)
+        if err:
+            return Response({'error': err}, status=400)
+
+        cpf = _digits(payload.get('cpf'))
+        raw_id = str(payload.get('message_id') or '').strip()
+        emoji = str(payload.get('emoji') or '').strip()[:10]
+        if not cpf or not raw_id.isdigit():
+            return Response({'error': 'cpf e message_id são obrigatórios'}, status=400)
+
+        contact = Contact.objects.filter(phone=app_contact_phone(cpf), provedor=provedor).first()
+        message = None
+        if contact:
+            message = Message.objects.filter(
+                id=int(raw_id),
+                conversation__contact=contact,
+                conversation__inbox__channel_type=CHANNEL_TYPE,
+            ).first()
+        if not message:
+            return Response({'error': 'Mensagem não encontrada'}, status=404)
+
+        MessageReaction.objects.filter(message=message, is_from_customer=True).delete()
+        reaction = None
+        if emoji:
+            reaction = MessageReaction.objects.create(
+                message=message,
+                is_from_customer=True,
+                emoji=emoji,
+                additional_attributes={'source': CHANNEL_TYPE, 'app_cpf': cpf},
+            )
+        _broadcast_reaction(message, reaction, emoji)
+        return Response({
+            'success': True,
+            'message': _serialize_message(message),
         })

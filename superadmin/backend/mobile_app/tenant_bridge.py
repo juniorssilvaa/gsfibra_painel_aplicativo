@@ -64,6 +64,8 @@ def tenant_base_url(provedor) -> Optional[str]:
 
     if explicit:
         if _is_loopback_or_local_url(explicit):
+            if debug:
+                return explicit
             if subdomain_url:
                 logger.warning(
                     '[app-mobile] Ignorando painel_url/tenant_url local (%s) do provedor %s — usando %s.',
@@ -72,8 +74,6 @@ def tenant_base_url(provedor) -> Optional[str]:
                     subdomain_url,
                 )
                 return subdomain_url
-            if debug:
-                return explicit
             logger.warning(
                 '[app-mobile] painel_url local (%s) sem subdomínio no provedor %s.',
                 explicit,
@@ -85,17 +85,11 @@ def tenant_base_url(provedor) -> Optional[str]:
     fallback = (getattr(settings, 'TENANT_WEBHOOK_BASE_URL', '') or '').strip().rstrip('/')
     if fallback:
         if _is_loopback_or_local_url(fallback):
-            if subdomain_url:
-                if debug:
-                    logger.info(
-                        '[app-mobile] Preferindo subdomínio %s em vez de TENANT_WEBHOOK_BASE_URL local (%s) (provedor %s).',
-                        subdomain_url,
-                        fallback,
-                        getattr(provedor, 'id', None),
-                    )
-                return subdomain_url
+            # Em desenvolvimento o painel do provedor roda local; em produção, nunca.
             if debug:
                 return fallback
+            if subdomain_url:
+                return subdomain_url
         elif debug:
             return fallback
 
@@ -109,10 +103,10 @@ def tenant_auth_headers(provedor) -> dict:
     return {'Authorization': f'Bearer {token}'}
 
 
-def post_tenant_app_mobile(provedor, payload: dict, files=None, timeout=30):
+def post_tenant_app_mobile(provedor, payload: dict, files=None, timeout=30, path: str = ''):
     """
     Encaminha mensagem inbound do app para o painel do provedor.
-    POST /api/webhooks/app-mobile/
+    POST /api/webhooks/app-mobile/{path}
     """
     base = tenant_base_url(provedor)
     if not base:
@@ -120,7 +114,7 @@ def post_tenant_app_mobile(provedor, payload: dict, files=None, timeout=30):
     headers = tenant_auth_headers(provedor)
     if not headers:
         return False, 'Token de integração do provedor não configurado.', None
-    url = f'{base}/api/webhooks/app-mobile/'
+    url = f'{base}/api/webhooks/app-mobile/{path}'
     try:
         if files:
             resp = requests.post(url, data=payload, files=files, headers=headers, timeout=timeout)

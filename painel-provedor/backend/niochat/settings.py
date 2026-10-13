@@ -44,11 +44,11 @@ from django.core.exceptions import ImproperlyConfigured
 # BASE
 # ============================================
 
-__version__ = "2.78.2"
+__version__ = "2.78.3"
 __version_info__ = (2, 78, 0)
 
 # Compatibilidade legado
-VERSION = "2.78.2"
+VERSION = "2.78.3"
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Sempre usar config que prioriza variáveis de ambiente sobre arquivo .env
@@ -450,10 +450,6 @@ WHATSAPP_WEBHOOK_VERIFY_TOKEN = config('WHATSAPP_WEBHOOK_VERIFY_TOKEN', default=
 
 # Token do Sistema da Meta (System User Token) para operações administrativas (ex: inscrever apps)
 WHATSAPP_SYSTEM_USER_TOKEN = config('WHATSAPP_SYSTEM_USER_TOKEN', default='')
-# Estúdio de Marketing: conta Instagram profissional da NioHub usada no Business Discovery (perfis de concorrentes).
-# Sem META_DISCOVERY_ACCESS_TOKEN, usa WHATSAPP_SYSTEM_USER_TOKEN.
-META_DISCOVERY_IG_USER_ID = config('META_DISCOVERY_IG_USER_ID', default='')
-META_DISCOVERY_ACCESS_TOKEN = config('META_DISCOVERY_ACCESS_TOKEN', default='')
 
 # ============================================
 # URLs DO SISTEMA (FONTE ÚNICA DE VERDADE)

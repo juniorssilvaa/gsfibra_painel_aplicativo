@@ -18,6 +18,7 @@ import './App.css';
 const ProvedorAppWrapper = lazy(() => import('./painel-provedor/ProvedorAppWrapper'));
 const MetaFinalizing = lazy(() => import('./components/MetaFinalizing'));
 const MetaConnectInner = lazy(() => import('./components/MetaConnectInner'));
+const MetaAdsConnectInner = lazy(() => import('./components/MetaAdsConnectInner'));
 const InstagramFinalizing = lazy(() => import('./components/InstagramFinalizing'));
 const InstagramConnectInner = lazy(() => import('./components/InstagramConnectInner'));
 const OAuthCallback = lazy(() => import('./components/OAuthCallback'));
@@ -204,6 +205,7 @@ export default function App() {
       <Suspense fallback={<LoadingBar />}>
         <Routes>
           <Route path="/app/meta/connect-inner" element={<MetaConnectInner />} />
+          <Route path="/app/meta/ads-connect" element={<MetaAdsConnectInner />} />
           <Route path="/app/instagram/connect-inner" element={<InstagramConnectInner />} />
           <Route path="/*" element={<Login />} />
         </Routes>
@@ -258,6 +260,7 @@ export default function App() {
           <Route path="/app/meta/finalizando" element={<MetaFinalizing />} />
           <Route path="/app/instagram/finalizando" element={<InstagramFinalizing />} />
           <Route path="/app/instagram/connect-inner" element={<InstagramConnectInner />} />
+          <Route path="/app/meta/ads-connect" element={<MetaAdsConnectInner />} />
           <Route path="/oauth/callback" element={<OAuthCallback />} />
 
           <Route path="/:provedorId/chat" element={

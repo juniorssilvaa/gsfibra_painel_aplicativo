@@ -1425,7 +1425,17 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
               currentMessages.map(msg => {
                 if (msg.id === data.message_id) {
                   // Atualizar o campo reactions (array) do backend
-                  const existingReactions = msg.reactions || [];
+                  let existingReactions = msg.reactions || [];
+                  if (data.reaction.removed) {
+                    return {
+                      ...msg,
+                      reactions: existingReactions.filter(r => r.is_from_customer !== data.reaction.is_from_customer)
+                    };
+                  }
+                  // Cliente tem uma reação por mensagem (troca de emoji substitui)
+                  if (data.reaction.is_from_customer) {
+                    existingReactions = existingReactions.filter(r => !r.is_from_customer);
+                  }
                   const reactionExists = existingReactions.some(r =>
                     r.id === data.reaction.id ||
                     (r.emoji === data.reaction.emoji && r.is_from_customer === data.reaction.is_from_customer)
@@ -2520,6 +2530,10 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
     }
   };
 
+  const hasAssignee = Boolean(
+    conversation?.assignee?.id || conversation?.assignee?.username || conversation?.assignee_id
+  );
+
   const handleTakeOverConversation = () => {
     const a = conversation?.assignee;
     const atual = a
@@ -3398,7 +3412,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
                   <span className="text-nowrap">{assigningConversation ? 'Atribuindo...' : 'Assumir'}</span>
                 </button>
               )}
-              {!supervisorMode && (
+              {!supervisorMode && !hasAssignee && (
                 <button
                   type="button"
                   onClick={handleAssignToMe}

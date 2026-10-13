@@ -409,6 +409,22 @@ export default function MessageTemplatesPage() {
       },
       footerText: '',
     },
+    {
+      id: 'gal_5',
+      name: 'Fatura vencida',
+      category: 'Conversas de utilidade',
+      badge: 'Detalhes de pedido',
+      body:
+        'Olá, Sr(a) {{1}}. Tudo bem? Notamos que sua fatura no valor de R$ {{2}} venceu no dia {{3}}, mas ainda não identificamos o pagamento. Aconteceu alguma coisa? Saiba que estamos aqui para te ajudar em caso de duvidas ou problemas. Basta entrar em contato conosco!',
+      has_pdf: true,
+      has_pix: true,
+      has_barcode: true,
+      variableSamples: {
+        1: { example: 'Nome Cliente' },
+        2: { example: '70,00' },
+        3: { example: '13/06/2026' },
+      },
+    },
   ];
 
   // Load WhatsApp Official Channels

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toast } from '../lib/notify';
-import { Bell, X, CheckCircle } from 'lucide-react';
+import { Bell, BellRing, X, CheckCircle } from 'lucide-react';
 import axios from 'axios';
 import NotificationModal from './NotificationModal';
 import { buildAuthenticatedWebSocketUrl } from '../utils/websocketUrl';
@@ -396,11 +396,19 @@ const NotificationBell = () => {
       {/* Sino de notificações */}
       <button
         onClick={() => setShowDropdown(!showDropdown)}
-        className="relative p-2 rounded-lg transition-colors text-topbar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        title="Notificações"
+        aria-label={unreadCount > 0 ? `Notificações (${unreadCount} não lidas)` : 'Notificações'}
+        className={`relative p-2 rounded-lg transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
+          unreadCount > 0 ? 'text-primary' : 'text-topbar-foreground'
+        } ${showDropdown ? 'bg-sidebar-accent' : ''}`}
       >
-        <Bell size={20} />
+        {unreadCount > 0 ? (
+          <BellRing className="w-5 h-5" strokeWidth={2.2} />
+        ) : (
+          <Bell className="w-5 h-5" strokeWidth={2.2} />
+        )}
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+          <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none flex items-center justify-center ring-2 ring-topbar">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}

@@ -1896,16 +1896,18 @@ export default function ConversasDashboard() {
 
                   {/* Botões de Ação Diretos */}
                   <div className="flex items-center gap-1.5 border-l border-border pl-2 ml-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleAssignToMe(modalConversa)}
-                      className={`${CONVERSATION_ACTION_BTN_BASE} h-7 px-2`}
-                      style={conversationActionStyle('atender')}
-                      title="Atender conversa"
-                    >
-                      <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden sm:inline text-nowrap">Atender</span>
-                    </button>
+                    {!hasHumanAssignee(modalConversa) && (
+                      <button
+                        type="button"
+                        onClick={() => handleAssignToMe(modalConversa)}
+                        className={`${CONVERSATION_ACTION_BTN_BASE} h-7 px-2`}
+                        style={conversationActionStyle('atender')}
+                        title="Atender conversa"
+                      >
+                        <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                        <span className="hidden sm:inline text-nowrap">Atender</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"

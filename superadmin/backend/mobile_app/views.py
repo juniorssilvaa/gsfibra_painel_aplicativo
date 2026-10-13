@@ -374,7 +374,9 @@ class MobileAppProfileViewSet(viewsets.ModelViewSet):
             for log in activity_logs
         ]
 
-        logs_qs = MobileNotificationLog.objects.filter(provedor_id=pid)
+        from .push_service import CHAT_SOURCES
+
+        logs_qs = MobileNotificationLog.objects.filter(provedor_id=pid).exclude(source__in=CHAT_SOURCES)
         total_notifications = logs_qs.count()
         agg = logs_qs.aggregate(
             total_success=Sum('success_count'),
@@ -881,7 +883,9 @@ class MobileNotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsMobilePanelUser]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        from .push_service import CHAT_SOURCES
+
+        qs = super().get_queryset().exclude(source__in=CHAT_SOURCES)
         if is_superadmin_user(self.request.user):
             pid = self.request.query_params.get('provedor_id')
             return qs.filter(provedor_id=pid) if pid else qs

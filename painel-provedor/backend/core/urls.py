@@ -58,6 +58,11 @@ urlpatterns = [
         name='webhook-app-mobile-messages',
     ),
     path(
+        'webhooks/app-mobile/reactions/',
+        csrf_exempt(app_mobile.AppMobileReactionWebhookView.as_view()),
+        name='webhook-app-mobile-reactions',
+    ),
+    path(
         'webhooks/internal/instagram-oauth-finish/',
         csrf_exempt(instagram_oauth_finish_internal),
         name='webhook-instagram-oauth-finish',

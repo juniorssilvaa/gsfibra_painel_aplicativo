@@ -190,11 +190,45 @@ def support_messages(request):
         'provider_name': provedor.nome or '',
         'app_default_team_id': profile.app_default_team_id or '',
     }
+    reply_to = _digits(request.data.get('reply_to_message_id') or request.data.get('reply_to_id') or '')
+    if reply_to:
+        payload['reply_to_message_id'] = reply_to
 
     ok, error, body = post_tenant_app_mobile(provedor, payload)
     if not ok:
         return Response({'error': error or 'Falha ao enviar mensagem ao atendimento.'}, status=502)
     return Response(body if isinstance(body, dict) else {'success': True}, status=201)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@parser_classes([JSONParser, FormParser])
+def support_reactions(request):
+    """
+    App do cliente reage a uma mensagem do atendimento.
+    POST /v1/support/reactions/  {provider_token, cpf, message_id, emoji}
+    emoji vazio remove a reação do cliente.
+    """
+    ctx, err = _require_provedor(request, from_body=True)
+    if err:
+        return err
+    provedor, _profile = ctx
+
+    cpf = _digits(request.data.get('cpf') or '')
+    message_id = _digits(request.data.get('message_id') or '')
+    if not cpf or not message_id:
+        return Response({'error': 'cpf e message_id são obrigatórios.'}, status=400)
+
+    payload = {
+        'cpf': cpf,
+        'message_id': message_id,
+        'emoji': (request.data.get('emoji') or '').strip()[:10],
+        'provedor_id': provedor.id,
+    }
+    ok, error, body = post_tenant_app_mobile(provedor, payload, path='reactions/')
+    if not ok:
+        return Response({'error': error or 'Falha ao enviar reação.'}, status=502)
+    return Response(body if isinstance(body, dict) else {'success': True})
 
 
 @api_view(['POST'])

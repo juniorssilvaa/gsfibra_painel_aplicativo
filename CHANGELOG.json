@@ -1,6 +1,26 @@
 {
-  "current_version": "2.78.2",
+  "current_version": "2.78.3",
   "versions": [
+    {
+      "version": "2.78.3",
+      "version_type": "patch",
+      "date": "2026-10-12",
+      "title": "Novo modelo de mensagem e melhorias na tela de atendimento",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Modelos de Mensagem",
+          "title": "Novo modelo de mensagem adicionado na galeria de modelos",
+          "description": "Novo modelo \"Fatura vencida\" na galeria de modelos, para avisar o cliente sobre fatura em atraso, com a fatura em PDF anexada e os botões de pagamento (PIX e boleto)."
+        },
+        {
+          "type": "improvement",
+          "module": "Atendimento",
+          "title": "Melhorias na tela do chat de atendimento",
+          "description": "O botão Atender agora só aparece quando a conversa ainda não tem atendente. Novo ícone de notificações, com destaque e contador quando há notificações não lidas, e botão Sair com o nome visível no topo."
+        }
+      ]
+    },
     {
       "version": "2.78.2",
       "version_type": "patch",
