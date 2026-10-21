@@ -1,6 +1,20 @@
 {
-  "current_version": "2.78.3",
+  "current_version": "2.78.4",
   "versions": [
+    {
+      "version": "2.78.4",
+      "version_type": "patch",
+      "date": "2026-10-20",
+      "title": "Contrato e endereço na busca do cliente",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Atendimento",
+          "title": "Busca do cliente mostra o contrato e o endereço",
+          "description": "Ao identificar o cliente pelo CPF/CNPJ no painel, o seletor de contratos passa a exibir o ID do contrato e o endereço resumido (rua e número) de cada um, para distinguir contratos do mesmo titular."
+        }
+      ]
+    },
     {
       "version": "2.78.3",
       "version_type": "patch",

@@ -5096,17 +5096,23 @@ export default function ProviderAppPanel({ onLogout }) {
   }
 
   const saveSgpCredentials = async (data) => {
-    const res = await axios.post(
-      '/api/mobile-app/panel/integrations/sgp/credentials/',
-      {
-        erp_type: data.erp_type || 'sgp',
-        sgp_url: data.sgp_url,
-        sgp_token: data.sgp_token,
-        sgp_app_name: data.sgp_app_name,
-        app_default_team_id: data.app_default_team_id || null,
-      },
-      { headers: authHeaders() },
-    )
+    let res
+    try {
+      res = await axios.post(
+        '/api/mobile-app/panel/integrations/sgp/credentials/',
+        {
+          erp_type: data.erp_type || 'sgp',
+          sgp_url: data.sgp_url,
+          sgp_token: data.sgp_token,
+          sgp_app_name: data.sgp_app_name,
+          app_default_team_id: data.app_default_team_id || null,
+        },
+        { headers: authHeaders() },
+      )
+    } catch (err) {
+      toast.apiError(err, 'Não foi possível salvar as credenciais do ERP.')
+      return
+    }
     setMessage(res.data.message || 'Configurações atualizadas com sucesso!')
     await loadSgp()
   }

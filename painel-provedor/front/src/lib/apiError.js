@@ -5,6 +5,14 @@ export const WHATSAPP_CALL_REJECTED_MSG = 'WhatsApp rejeitou a ligação de form
 
 const DEFAULT_FALLBACK = 'Ocorreu um erro. Tente novamente.';
 
+/** Requisição que nem saiu do navegador (axios "Network Error"). */
+export function networkErrorMessage() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return 'Sem acesso à internet. Verifique sua conexão e tente novamente.';
+  }
+  return 'Falha de conexão. Verifique sua internet e tente novamente.';
+}
+
 function looksLikeHtml(text) {
   const t = String(text || '').trim();
   if (!t) return false;
@@ -120,7 +128,7 @@ export function friendlyApiError(error, fallback = DEFAULT_FALLBACK) {
   }
 
   if (error.message === 'Network Error' || !error.response) {
-    return 'Sem conexão com o servidor. Verifique sua internet e tente novamente.';
+    return networkErrorMessage();
   }
 
   const rawMessage = typeof error.message === 'string' ? error.message.trim() : '';

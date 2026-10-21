@@ -31,6 +31,7 @@ import LocationMessageCard, { getMessageLocation } from './LocationMessageCard';
 import { useNioHubVoiceCall } from '../hooks/useNioHubVoiceCall';
 import axios from 'axios';
 import { toast } from '../lib/notify';
+import { friendlyApiError } from '../lib/apiError';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogPortal, DialogOverlay } from './ui/dialog';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import whatsappIcon from '../assets/whatsapp.png';
@@ -1998,9 +1999,8 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       } else if (e.response?.data?.detail) {
         // Mensagem de erro detalhada
         errorMessage = e.response.data.detail;
-      } else if (e.message) {
-        // Mensagem de erro do axios
-        errorMessage = e.message;
+      } else {
+        errorMessage = friendlyApiError(e, errorMessage);
       }
 
       // Verificar se é erro de janela de 24 horas (código 131047)
@@ -2234,7 +2234,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       setRecordingTime(0);
 
     } catch (error) {
-      setError('Erro ao enviar áudio: ' + error.message);
+      setError('Erro ao enviar áudio: ' + friendlyApiError(error, 'tente novamente.'));
     }
   };
 
@@ -2442,9 +2442,8 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       } else if (e.response?.data?.detail) {
         // Mensagem de erro detalhada
         errorMessage = e.response.data.detail;
-      } else if (e.message) {
-        // Mensagem de erro do axios
-        errorMessage = e.message;
+      } else {
+        errorMessage = friendlyApiError(e, errorMessage);
       }
 
       // Verificar se é erro de janela de 24 horas (código 131047)
@@ -2837,7 +2836,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       } else if (error.response?.status === 400) {
         errorMessage = error.response.data?.error || 'Dados inválidos.';
       } else {
-        errorMessage = error.response?.data?.error || error.message;
+        errorMessage = friendlyApiError(error, errorMessage);
       }
 
       toast.error(errorMessage);
@@ -2893,7 +2892,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       } else if (error.response?.status === 400) {
         errorMessage = error.response.data?.error || 'Dados inválidos.';
       } else {
-        errorMessage = error.response?.data?.error || error.message;
+        errorMessage = friendlyApiError(error, errorMessage);
       }
 
       toast.error(errorMessage);
@@ -3016,7 +3015,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
       } else if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
       } else {
-        errorMessage = error.message || 'Erro desconhecido';
+        errorMessage = friendlyApiError(error, errorMessage);
       }
       setError(errorMessage);
     } finally {
@@ -3082,7 +3081,7 @@ const ChatArea = ({ conversation, onConversationClose, onConversationUpdate, use
         setError('Erro ao enviar template: ' + (response.data.error || 'Erro desconhecido'));
       }
     } catch (error) {
-      const errorMessage = 'Erro ao enviar template: ' + (error.response?.data?.error || error.message);
+      const errorMessage = 'Erro ao enviar template: ' + friendlyApiError(error, 'tente novamente.');
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {

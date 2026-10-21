@@ -96,6 +96,53 @@ const getPppoeLogin = (c) => {
   return '';
 };
 
+const cleanAddrPart = (value) => {
+  const text = value == null ? '' : String(value).trim();
+  if (!text || ['none', 'null', 'undefined'].includes(text.toLowerCase())) return '';
+  return text;
+};
+
+const getContratoEnderecoCurto = (c) => {
+  if (!c) return '';
+  const tipo = cleanAddrPart(c.endereco_tipo_logradouro);
+  const rua = cleanAddrPart(c.endereco_logradouro || c.logradouro || c.rua);
+  const numero = cleanAddrPart(c.endereco_numero || c.numero);
+  const ruaLinha = [tipo, rua].filter(Boolean).join(' ');
+  if (ruaLinha) return [ruaLinha, numero].filter(Boolean).join(', ');
+  return cleanAddrPart(c.endereco_bairro || c.bairro || c.endereco_cidade || c.cidade);
+};
+
+const parseFaturaVencimento = (fatura) => {
+  const raw = fatura?.vencimento_br || fatura?.vencimento || fatura?.data_vencimento || '';
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (text.includes('/')) {
+    const [d, m, y] = text.split('/');
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (text.includes('-')) {
+    const [y, m, d] = text.split('-');
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+};
+
+const getFaturaStatusKind = (fatura) => {
+  const label = String(fatura?.status_label || fatura?.status || '').toLowerCase();
+  if (label.includes('atraso') || label.includes('vencid') || label.includes('overdue')) return 'atraso';
+  const venc = parseFaturaVencimento(fatura);
+  if (venc) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    venc.setHours(0, 0, 0, 0);
+    if (venc < today) return 'atraso';
+  }
+  if (!label || label.includes('aberto')) return 'aberto';
+  return 'outro';
+};
+
 const formatDateTime = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -672,7 +719,7 @@ const SgpSidebar = ({
       className={`${SGP_SELECT} ${className || ''}`}
       value={getContratoId(selectedContrato)}
       onChange={(e) => {
-        const c = clienteData.contratos.find((cnt) => getContratoId(cnt) == e.target.value);
+        const c = clienteData.contratos.find((cnt) => String(getContratoId(cnt)) === String(e.target.value));
         selecionarContrato(
           c,
           documento || clienteData.cpfCnpj,
@@ -683,11 +730,12 @@ const SgpSidebar = ({
       {clienteData.contratos.map((c) => {
         const cId = getContratoId(c);
         const planoLabel = getPlanoNome(c);
+        const endereco = getContratoEnderecoCurto(c);
         return (
           <option key={cId || Math.random()} value={cId}>
             {isAsaas
               ? (planoLabel || `Cliente ${cId}`)
-              : (planoLabel ? `${planoLabel} — Contrato ${cId}` : `Contrato ${cId}`)}
+              : (endereco ? `Contrato ${cId} - ${endereco}` : `Contrato ${cId}`)}
           </option>
         );
       })}
@@ -1059,9 +1107,30 @@ const SgpSidebar = ({
                           </div>
                           <div className="p-3 flex flex-col items-center justify-center">
                             <span className={`text-[10px] ${SGP_MUTED} block mb-1`}>Status</span>
-                            <span className="bg-amber-100 text-amber-900 text-[10px] px-2 py-0.5 rounded-full font-semibold border border-amber-200 dark:bg-[#fff3cd] dark:text-[#856404] dark:border-[#ffeeba]">
-                              {currentFatura.status_label || 'Em aberto'}
-                            </span>
+                            {(() => {
+                              const kind = getFaturaStatusKind(currentFatura);
+                              if (kind === 'atraso') {
+                                return (
+                                  <span className="bg-red-600 text-white text-[10px] px-2.5 py-1 rounded-md font-bold leading-tight text-center inline-flex flex-col items-center justify-center min-w-[3.25rem]">
+                                    <span>Em</span>
+                                    <span>atraso</span>
+                                  </span>
+                                );
+                              }
+                              if (kind === 'aberto') {
+                                return (
+                                  <span className="bg-yellow-400 text-yellow-950 text-[10px] px-2.5 py-1 rounded-md font-bold leading-tight text-center inline-flex flex-col items-center justify-center min-w-[3.25rem]">
+                                    <span>Em</span>
+                                    <span>aberto</span>
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="bg-muted text-foreground text-[10px] px-2 py-0.5 rounded-md font-bold">
+                                  {currentFatura.status_label}
+                                </span>
+                              );
+                            })()}
                           </div>
                         </div>
 

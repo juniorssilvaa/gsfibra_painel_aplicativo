@@ -1,12 +1,24 @@
 """Endpoints de integração SGP do painel (Superadmin ou admin do provedor)."""
+import logging
 import os
 
+from django.db import IntegrityError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import MobileAppProfile
 from .services import ensure_mobile_app_for_provedor
+
+logger = logging.getLogger(__name__)
+
+
+def _duplicate_token_message(request, owner) -> str:
+    user = request.user
+    is_sa = getattr(user, 'user_type', '') == 'superadmin' or user.is_superuser
+    if is_sa and owner is not None:
+        return f'Este token do ERP já está cadastrado no provedor "{owner.provedor.nome}". Remova de lá ou use outro token.'
+    return 'Este token do ERP já está cadastrado em outro provedor. Confira o token ou fale com o suporte.'
 
 
 def _resolve_profile(request):
@@ -124,6 +136,12 @@ def save_sgp_credentials(request):
         update_fields.append('sgp_url')
     if 'sgp_token' in data:
         token = (data.get('sgp_token') or '').strip()
+        owner = (
+            MobileAppProfile.objects.filter(sgp_token=token).exclude(pk=profile.pk).select_related('provedor').first()
+            if token else None
+        )
+        if owner:
+            return Response({'error': _duplicate_token_message(request, owner)}, status=400)
         profile.sgp_token = token or None
         update_fields.append('sgp_token')
     if 'sgp_app_name' in data:
@@ -153,8 +171,15 @@ def save_sgp_credentials(request):
 
     try:
         profile.save(update_fields=list(dict.fromkeys(update_fields)))
-    except Exception as exc:
-        return Response({'error': f'Erro ao salvar configurações: {exc}'}, status=400)
+    except IntegrityError:
+        logger.warning('[PainelApp] Token do ERP duplicado ao salvar o perfil %s', profile.id)
+        return Response({'error': _duplicate_token_message(request, None)}, status=400)
+    except Exception:
+        logger.exception('[PainelApp] Falha ao salvar credenciais do perfil %s', profile.id)
+        return Response(
+            {'error': 'Não foi possível salvar as configurações. Confira os dados e tente novamente.'},
+            status=400,
+        )
 
     return Response({
         'message': 'Configurações atualizadas com sucesso!',

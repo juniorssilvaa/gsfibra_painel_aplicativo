@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import AppNotifyCard from '../components/ui/AppNotifyCard';
-import { friendlyApiError } from './apiError';
+import { friendlyApiError, networkErrorMessage } from './apiError';
 import '../styles/app-notify.css';
 
 let toasts = [];
@@ -13,12 +13,19 @@ function emit() {
   listeners.forEach((listener) => listener());
 }
 
+const AXIOS_ENGLISH = [
+  [/network error/gi, networkErrorMessage],
+  [/timeout of \d+ms exceeded/gi, () => 'A conexão demorou demais para responder. Tente novamente.'],
+  [/request aborted/gi, () => 'O envio foi interrompido. Tente novamente.'],
+  [/request failed with status code (\d+)/gi, (_, code) => `Não foi possível concluir a ação (código ${code}). Tente novamente.`],
+];
+
 function normalizeMessage(message) {
   const text =
     typeof message === 'string'
       ? message
       : message?.message || message?.detail || '';
-  return String(text || '').trim();
+  return AXIOS_ENGLISH.reduce((out, [pattern, pt]) => out.replace(pattern, pt), String(text || '').trim());
 }
 
 function clearTimer(id) {
