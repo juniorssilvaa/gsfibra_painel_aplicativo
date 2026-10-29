@@ -1,6 +1,20 @@
 {
-  "current_version": "2.78.4",
+  "current_version": "2.78.5",
   "versions": [
+    {
+      "version": "2.78.5",
+      "version_type": "patch",
+      "date": "2026-10-29",
+      "title": "Mensagem de erro quando o número não está conectado",
+      "changes": [
+        {
+          "type": "fix",
+          "module": "WhatsApp Oficial",
+          "title": "Mensagem clara quando o número não está conectado",
+          "description": "Quando o envio pela API oficial da Meta falha porque o token está inválido ou o número não está conectado, o painel passa a exibir uma mensagem em português pedindo para reconectar o canal WhatsApp Oficial, em vez do erro genérico 400 da Meta."
+        }
+      ]
+    },
     {
       "version": "2.78.4",
       "version_type": "patch",

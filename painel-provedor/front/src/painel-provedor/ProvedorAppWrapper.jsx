@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 // Lazy loading components
 const DashboardPrincipal = lazy(() => import('../components/DashboardPrincipal'));
 const ConversasDashboard = lazy(() => import('../components/ConversasDashboard'));
+const RelatorioPage = lazy(() => import('../components/RelatorioPage'));
 const Contacts = lazy(() => import('../components/Contacts2'));
 const ConversationsPage = lazy(() => import('../components/ConversationsPage'));
 const Settings = lazy(() => import('../components/Settings'));
@@ -154,7 +155,7 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
 
   // Proteção de rotas baseada no papel do usuário
   const isAdminRoute = (path) => {
-    const adminRoutes = ['dashboard', 'users', 'equipes', 'audit', 'companies', 'integracoes', 'dados-provedor', 'horario-provedor', 'regras-atendimento', 'marketing', 'campanhas'];
+    const adminRoutes = ['dashboard', 'users', 'equipes', 'audit', 'companies', 'integracoes', 'dados-provedor', 'horario-provedor', 'regras-atendimento', 'marketing', 'campanhas', 'relatorio'];
     return adminRoutes.some(route => path.includes(route));
   };
 
@@ -200,8 +201,9 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
                 <Route path="dashboard" element={<DashboardPrincipal provedorId={resolvedProvedorId} />} />
                 <Route path="conversas" element={<ConversasDashboard provedorId={resolvedProvedorId} />} />
                 <Route path="conversas-dashboard" element={<ConversasDashboard provedorId={resolvedProvedorId} />} />
+                <Route path="relatorio" element={<RelatorioPage provedorId={resolvedProvedorId} />} />
+                <Route path="reports" element={<Navigate to="relatorio" replace />} />
                 <Route path="contacts" element={<Contacts provedorId={resolvedProvedorId} />} />
-                <Route path="reports" element={<DashboardPrincipal provedorId={resolvedProvedorId} />} />
                 <Route path="settings" element={<Settings provedorId={resolvedProvedorId} />} />
                 <Route path="users" element={<UserManagement provedorId={resolvedProvedorId} />} />
                 <Route path="equipes" element={<TeamsPage />} />

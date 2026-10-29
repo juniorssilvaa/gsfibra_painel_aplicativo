@@ -56,6 +56,15 @@ def translate_whatsapp_error(error_code: int, error_subcode: Optional[int] = Non
     Returns:
         str: Mensagem de erro traduzida em português
     """
+    msg_l = (error_message or '').lower()
+    if error_code == 100 and (
+        'authorization' in msg_l or 'oauth' in msg_l or 'access token' in msg_l
+    ):
+        return (
+            "Token do WhatsApp inválido ou expirado. "
+            "Reconecte o canal WhatsApp Oficial no painel."
+        )
+
     # Erros comuns da API do WhatsApp
     error_translations = {
         # Erros de autenticação e permissão
@@ -703,6 +712,7 @@ def send_via_whatsapp_cloud_api(
             error_code = error_data.get('code', response.status_code)
             error_subcode = error_data.get('error_subcode')
             error_message = error_data.get('message', response.text)
+            error_type = error_data.get('type', '')
             error_details = error_data.get('error_data', {}).get('details', '')
             
             # Traduzir o erro para português
@@ -710,7 +720,9 @@ def send_via_whatsapp_cloud_api(
 
             try:
                 from integrations.whatsapp_oficial_status import maybe_disconnect_on_graph_error
-                maybe_disconnect_on_graph_error(canal, error_code, error_message or '')
+                maybe_disconnect_on_graph_error(
+                    canal, error_code, error_message or '', error_type=error_type or ''
+                )
             except Exception:
                 pass
             
@@ -875,6 +887,13 @@ def send_typing_indicator(canal: Canal, message_id: str) -> Tuple[bool, Optional
                 f"[WhatsAppTypingIndicator] Falha ao enviar indicador (HTTP {response.status_code}): "
                 f"{translated_error} (code: {error_code}, type: {error_type})"
             )
+            try:
+                from integrations.whatsapp_oficial_status import maybe_disconnect_on_graph_error
+                maybe_disconnect_on_graph_error(
+                    canal, error_code, error_message or '', error_type=error_type or ''
+                )
+            except Exception:
+                pass
             return False, translated_error
             
     except requests.exceptions.Timeout:
@@ -1050,10 +1069,18 @@ def send_template_message(
             error_code = error_data.get('code', response.status_code)
             error_subcode = error_data.get('error_subcode')
             error_message = error_data.get('message', response.text)
+            error_type = error_data.get('type', '')
             error_details = error_data.get('error_data', {}).get('details', '')
             
             # Traduzir o erro para português
             translated_error = translate_whatsapp_error(error_code, error_subcode, error_message, error_details)
+            try:
+                from integrations.whatsapp_oficial_status import maybe_disconnect_on_graph_error
+                maybe_disconnect_on_graph_error(
+                    canal, error_code, error_message or '', error_type=error_type or ''
+                )
+            except Exception:
+                pass
             
             logger.error(f"[WhatsAppCloud] Erro ao enviar template: HTTP {response.status_code} - Código: {error_code} - {translated_error}")
             return False, translated_error, None

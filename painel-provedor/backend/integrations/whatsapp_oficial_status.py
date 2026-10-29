@@ -24,6 +24,24 @@ AUTH_DISCONNECT_CODES = frozenset({
     467,   # Invalid access token
 })
 
+
+def is_graph_auth_error(error_code: Any, error_message: str = '', error_type: str = '') -> bool:
+    """True se a Graph recusou por token/sessão (não por parâmetro de mensagem)."""
+    try:
+        code = int(error_code)
+    except (TypeError, ValueError):
+        code = None
+    if code in AUTH_DISCONNECT_CODES:
+        return True
+    msg = (error_message or '').lower()
+    etype = (error_type or '').lower()
+    if 'authorization error' in msg or 'access token' in msg or 'session has expired' in msg or 'invalid oauth' in msg:
+        return True
+    # Código 100 é genérico (Invalid parameter); só é auth se a Meta classificar como OAuth
+    if code == 100 and etype == 'oauthexception':
+        return True
+    return False
+
 DISCONNECT_ACCOUNT_EVENTS = frozenset({
     'PARTNER_APP_UNINSTALLED',
     'PARTNER_REMOVED',
@@ -155,21 +173,20 @@ def mark_whatsapp_oficial_connected(canal, *, reason: str = 'connected') -> bool
     return True
 
 
-def maybe_disconnect_on_graph_error(canal, error_code: Any, error_message: str = '') -> bool:
+def maybe_disconnect_on_graph_error(
+    canal,
+    error_code: Any,
+    error_message: str = '',
+    error_type: str = '',
+) -> bool:
     """Se o erro Graph indicar auth inválida, marca desconectado."""
-    try:
-        code = int(error_code)
-    except (TypeError, ValueError):
+    if not is_graph_auth_error(error_code, error_message, error_type):
         return False
-    if code not in AUTH_DISCONNECT_CODES:
-        msg = (error_message or '').lower()
-        if 'access token' not in msg and 'session has expired' not in msg and 'invalid oauth' not in msg:
-            return False
     return mark_whatsapp_oficial_disconnected(
         canal,
         reason=f'graph_error_{error_code}',
         event=str(error_code),
-        status='expired' if str(error_code) == '190' else 'disconnected',
+        status='expired' if str(error_code) in ('190', '100') else 'disconnected',
     )
 
 

@@ -27,6 +27,7 @@ import {
   SlidersHorizontal, // Regras de atendimento
   Sparkles, // Estúdio de Marketing
   Megaphone, // Campanhas
+  BarChart3, // Relatório
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -107,6 +108,7 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
       { id: 'dashboard', icon: LayoutGrid, label: t('dashboard'), path: `/app/accounts/${resolvedProvedorId}/dashboard` },
       { id: 'atendimento', icon: Headphones, label: 'Atendimento', path: `/${resolvedProvedorId}/chat` },
       { id: 'conversas', icon: MessagesSquare, label: 'Conversas', path: `/app/accounts/${resolvedProvedorId}/conversas` },
+      { id: 'relatorio', icon: BarChart3, label: 'Relatório', path: `/app/accounts/${resolvedProvedorId}/relatorio` },
       { id: 'reminders', icon: Clock, label: 'Lembretes', path: '#', onClick: onRemindersClick },
       { id: 'contacts', icon: Notebook, label: t('contacts'), path: contactsPath, permission: 'manage_contacts' },
       { id: 'users', icon: Users, label: t('users'), path: `/app/accounts/${resolvedProvedorId}/users` },
