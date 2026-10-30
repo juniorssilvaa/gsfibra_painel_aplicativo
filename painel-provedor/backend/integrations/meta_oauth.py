@@ -255,7 +255,7 @@ def meta_callback(request):
         if is_billing_superadmin:
             return redirect(f"{frontUrl}/app/superadmin/configuracoes?oauth_error=no_code")
         if is_provider_flow:
-            return redirect(f"{frontUrl}/app/accounts/{provider_id}/integracoes?oauth_error=no_code")
+            return redirect(f"{frontUrl}/app/accounts/{provider_id}/canais/configurar?oauth_error=no_code")
         return redirect(f"{frontUrl}/app/superadmin/configuracoes?oauth_error=no_code")
     
     if is_provider_flow and not is_billing_superadmin:
@@ -263,7 +263,7 @@ def meta_callback(request):
         try:
             provedor = Provedor.objects.get(id=provider_id)
         except Provedor.DoesNotExist:
-            return redirect(f"{frontUrl}/app/accounts/1/integracoes?oauth_error=provider_not_found")
+            return redirect(f"{frontUrl}/app/accounts/1/canais/configurar?oauth_error=provider_not_found")
 
         # Verificar se já existe canal conectado (caso de retry)
         try:
@@ -276,7 +276,7 @@ def meta_callback(request):
 
             if canal_existente:
                 # Se já está conectado, redirecionar sem parâmetros (card já mostra connected)
-                return redirect(f"{frontUrl}/app/accounts/{provider_id}/integracoes")
+                return redirect(f"{frontUrl}/app/accounts/{provider_id}/canais/configurar")
         except Exception:
             pass
     

@@ -1,6 +1,26 @@
 {
-  "current_version": "2.78.5",
+  "current_version": "2.78.6",
   "versions": [
+    {
+      "version": "2.78.6",
+      "version_type": "patch",
+      "date": "2026-10-30",
+      "title": "Relatório de atendentes e Pesquisa de Satisfação",
+      "changes": [
+        {
+          "type": "feature",
+          "module": "Relatório",
+          "title": "Nova tela de Relatório com evolução dos atendentes",
+          "description": "Novo Relatório no menu, com visão geral da equipe: gráfico de evolução por atendente no período, participação percentual, TMA, média diária e exportação em PDF com gráfico colorido e leitura se o volume de cada um aumentou, diminuiu ou ficou estável."
+        },
+        {
+          "type": "improvement",
+          "module": "Pesquisa de Satisfação",
+          "title": "CSAT passa a se chamar Pesquisa de Satisfação",
+          "description": "O item CSAT saiu do menu lateral. As avaliações, gráficos e últimos feedbacks (com botão Ver para o histórico do atendimento) ficam em Relatório → Pesquisa de Satisfação. A configuração da pesquisa foi para Regras de Atendimento, no card Pesquisa de satisfação."
+        }
+      ]
+    },
     {
       "version": "2.78.5",
       "version_type": "patch",

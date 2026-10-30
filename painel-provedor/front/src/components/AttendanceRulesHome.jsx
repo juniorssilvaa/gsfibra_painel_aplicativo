@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Clock3, CalendarDays, SlidersHorizontal, Settings2 } from 'lucide-react';
+import { ChevronRight, Clock3, CalendarDays, SlidersHorizontal, Settings2, Smile } from 'lucide-react';
 
 const cards = [
   {
@@ -38,6 +38,15 @@ const cards = [
     badgeClass: 'bg-emerald-500 text-white',
     title: 'Configurações gerais',
     description: 'Contrato suspenso, horário após comprovante, filtro de mensagens e nome do bot.',
+  },
+  {
+    key: 'csat',
+    icon: Smile,
+    iconClass: 'bg-teal-500 text-white',
+    badge: 'CSAT',
+    badgeClass: 'bg-teal-500 text-white',
+    title: 'Pesquisa de satisfação',
+    description: 'Tempo de disparo, envio no encerramento por inatividade e intervalo mínimo entre pesquisas.',
   },
 ];
 

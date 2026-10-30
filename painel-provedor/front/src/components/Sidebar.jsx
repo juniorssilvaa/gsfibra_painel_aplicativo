@@ -14,7 +14,6 @@ import {
   Headphones, // Ícone para Atendimento
   Brain, // Ícone para Desempenho da IA
   Lightbulb, // Ícone para Sugestões
-  Smile, // Ícone para CSAT
   PlugZap, // Ícone para Integrações
   ScrollText, // Ícone para Auditoria
   Bot, // Ícone para Construtor de Chatbot
@@ -27,11 +26,11 @@ import {
   SlidersHorizontal, // Regras de atendimento
   Sparkles, // Estúdio de Marketing
   Megaphone, // Campanhas
-  BarChart3, // Relatório
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import { useLanguage } from '../contexts/LanguageContext';
 import FlowIcon from './icons/FlowIcon';
+import ReportIcon from './icons/ReportIcon';
 import useAgentMode from '../hooks/useAgentMode';
 
 // Context para compartilhar estado do sidebar
@@ -48,7 +47,7 @@ const NewBadge = () => (
   </span>
 );
 
-const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOpen, onClose, provedorId, onCollapseChange, onRemindersClick, isChatPage = false }) => {
+function Sidebar({ userRole = 'agent', userPermissions = [], mobileOpen, onClose, provedorId, onCollapseChange, onRemindersClick, isChatPage = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
@@ -82,8 +81,11 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
 
   // Função para verificar se um item do menu está ativo
   const isActive = (item) => {
-    if (item?.id === 'csat' && resolvedProvedorId) {
-      return currentPath.startsWith(`/app/accounts/${resolvedProvedorId}/csat`);
+    if (item?.id === 'relatorio' && resolvedProvedorId) {
+      return currentPath.startsWith(`/app/accounts/${resolvedProvedorId}/relatorio`);
+    }
+    if (item?.id === 'regras-atendimento' && resolvedProvedorId) {
+      return currentPath.startsWith(`/app/accounts/${resolvedProvedorId}/regras-atendimento`);
     }
     if (isChatPage && item.id === 'contacts') {
       const searchParams = new URLSearchParams(currentSearch);
@@ -108,7 +110,7 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
       { id: 'dashboard', icon: LayoutGrid, label: t('dashboard'), path: `/app/accounts/${resolvedProvedorId}/dashboard` },
       { id: 'atendimento', icon: Headphones, label: 'Atendimento', path: `/${resolvedProvedorId}/chat` },
       { id: 'conversas', icon: MessagesSquare, label: 'Conversas', path: `/app/accounts/${resolvedProvedorId}/conversas` },
-      { id: 'relatorio', icon: BarChart3, label: 'Relatório', path: `/app/accounts/${resolvedProvedorId}/relatorio` },
+      { id: 'relatorio', icon: ReportIcon, label: 'Relatório', path: `/app/accounts/${resolvedProvedorId}/relatorio` },
       { id: 'reminders', icon: Clock, label: 'Lembretes', path: '#', onClick: onRemindersClick },
       { id: 'contacts', icon: Notebook, label: t('contacts'), path: contactsPath, permission: 'manage_contacts' },
       { id: 'users', icon: Users, label: t('users'), path: `/app/accounts/${resolvedProvedorId}/users` },
@@ -116,7 +118,6 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
       { id: 'audit', icon: ScrollText, label: t('audit'), path: `/app/accounts/${resolvedProvedorId}/audit` },
       { id: 'chatbot-builder', icon: FlowIcon, label: 'Fluxo de Atendimento', path: `/app/accounts/${resolvedProvedorId}/chatbot-manager` },
       { id: 'planos', icon: Wifi, label: t('planos'), path: `/app/accounts/${resolvedProvedorId}/planos` },
-      { id: 'csat', icon: Smile, label: t('csat'), path: `/app/accounts/${resolvedProvedorId}/csat` },
       { id: 'respostas-rapidas', icon: Zap, label: 'Respostas Rápidas', path: `/app/accounts/${resolvedProvedorId}/respostas-rapidas` },
       { id: 'galeria', icon: ImageIcon, label: 'Galeria', path: `/app/accounts/${resolvedProvedorId}/galeria` },
       ...(agentMode === 'support'
@@ -367,7 +368,7 @@ const Sidebar = React.memo(({ userRole = 'agent', userPermissions = [], mobileOp
       </aside>
     </SidebarContext.Provider>
   );
-});
+}
 
 export default Sidebar;
 

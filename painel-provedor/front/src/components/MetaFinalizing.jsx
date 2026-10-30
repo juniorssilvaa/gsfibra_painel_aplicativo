@@ -21,6 +21,12 @@ const META_CONNECT_MSG = {
   FINISH_RESULT: 'META_CONNECT_FINISH_RESULT',
 };
 
+function channelsAfterConnectPath(providerId, channelId) {
+  const qs = new URLSearchParams({ whatsapp_connected: '1' });
+  if (channelId) qs.set('channel_id', String(channelId));
+  return `/app/accounts/${providerId}/canais/configurar?${qs.toString()}`;
+}
+
 /**
  * SDK Meta em iframe oculto (origem connect). Evita popup-in-popup; o diálogo da Meta abre à parte.
  * O iframe não é exibido — só mantém o bridge de token e o FB.login.
@@ -49,6 +55,16 @@ function MetaFinalizingWithConnectIframe() {
     debug: false,
     apiOrigin: null,
   });
+
+  const returnToChannels = React.useCallback(() => {
+    navigate(channelsAfterConnectPath(providerId, channelId), { replace: true });
+  }, [channelId, navigate, providerId]);
+
+  useEffect(() => {
+    if (step !== 'success') return undefined;
+    const timer = window.setTimeout(returnToChannels, 900);
+    return () => window.clearTimeout(timer);
+  }, [returnToChannels, step]);
 
   const connectOrigin = getMetaConnectOrigin();
   const connectOriginNorm = React.useMemo(
@@ -256,7 +272,7 @@ function MetaFinalizingWithConnectIframe() {
           </p>
           <button
             type="button"
-            onClick={() => navigate(`/app/accounts/${providerId}/integracoes`)}
+            onClick={returnToChannels}
             style={{
               backgroundColor: '#22c55e',
               color: 'white',
@@ -267,7 +283,7 @@ function MetaFinalizingWithConnectIframe() {
               width: '100%',
             }}
           >
-            Voltar para Integrações
+            Voltar para Canais
           </button>
         </div>
       )}
@@ -317,6 +333,16 @@ function MetaFinalizingInline() {
   const processingRef = useRef(false);
 
   const hasToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
+
+  const returnToChannels = React.useCallback(() => {
+    navigate(channelsAfterConnectPath(providerId, channelId), { replace: true });
+  }, [channelId, navigate, providerId]);
+
+  useEffect(() => {
+    if (step !== 'success') return undefined;
+    const timer = window.setTimeout(returnToChannels, 900);
+    return () => window.clearTimeout(timer);
+  }, [returnToChannels, step]);
 
   const { sendFinishToBackend } = useMetaEmbeddedSignupListener({
     providerId,
@@ -567,7 +593,7 @@ function MetaFinalizingInline() {
 
             <button
               type="button"
-              onClick={() => navigate(`/app/accounts/${providerId}/integracoes`)}
+              onClick={returnToChannels}
               style={{
                 backgroundColor: '#22c55e',
                 color: 'white',
@@ -578,7 +604,7 @@ function MetaFinalizingInline() {
                 width: '100%',
               }}
             >
-              Voltar para Integrações
+              Voltar para Canais
             </button>
           </>
         )}

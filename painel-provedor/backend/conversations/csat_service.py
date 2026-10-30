@@ -692,7 +692,7 @@ class CSATService:
             emoji_by_rating = {1: '😡', 2: '😕', 3: '😐', 4: '🙂', 5: '🤩'}
 
             # Últimos 10 feedbacks (já estão ordenados por feedback_sent_at desc)
-            recent_feedbacks_raw = feedbacks_supabase[:10]
+            recent_feedbacks_raw = feedbacks_supabase[:50]
 
             recent_feedbacks = []
             for fb in recent_feedbacks_raw:

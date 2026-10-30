@@ -1296,18 +1296,21 @@ export default function Integrations({ provedorId, mode = 'full' }) {
     const urlParams = new URLSearchParams(window.location.search);
     const igSuccess = urlParams.get('instagram_oauth_success');
     const igError = urlParams.get('instagram_oauth_error');
+    const waConnected = urlParams.get('whatsapp_connected');
 
-    if (!igSuccess && !igError) return;
+    if (!igSuccess && !igError && waConnected !== '1') return;
 
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
     if (!token) return;
 
-    if (igSuccess === '1') {
+    if (igSuccess === '1' || waConnected === '1') {
       fetchCanais(token).then(res => {
         setChannels(Array.isArray(res.data) ? res.data : res.data.results || []);
         pushToast({
           show: true,
-          message: 'Instagram conectado com sucesso!',
+          message: waConnected === '1'
+            ? 'WhatsApp Oficial conectado com sucesso!'
+            : 'Instagram conectado com sucesso!',
           type: 'success',
         });
         setTimeout(() => pushToast({ show: false, message: '', type: 'success' }), 5000);

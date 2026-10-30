@@ -7,11 +7,11 @@ import Changelog from '../components/Changelog';
 import RemindersModal from '../components/RemindersModal';
 import { parseRouteProvedorId, getEffectiveProvedorId } from '../utils/effectiveProvedorId';
 import { useAuth } from '../contexts/AuthContext';
+import RelatorioPage from '../components/RelatorioPage';
 
 // Lazy loading components
 const DashboardPrincipal = lazy(() => import('../components/DashboardPrincipal'));
 const ConversasDashboard = lazy(() => import('../components/ConversasDashboard'));
-const RelatorioPage = lazy(() => import('../components/RelatorioPage'));
 const Contacts = lazy(() => import('../components/Contacts2'));
 const ConversationsPage = lazy(() => import('../components/ConversationsPage'));
 const Settings = lazy(() => import('../components/Settings'));
@@ -23,8 +23,6 @@ const MarketingStudioPage = lazy(() => import('../components/MarketingStudioPage
 const CampaignsPage = lazy(() => import('../components/CampaignsPage'));
 const SuggestionsPage = lazy(() => import('../components/SuggestionsPage'));
 const CompanyManagement = lazy(() => import('../components/CompanyManagement'));
-const CSATDashboard = lazy(() => import('../components/CSATDashboard'));
-const CSATHome = lazy(() => import('../components/CSATHome'));
 const CSATConfig = lazy(() => import('../components/CSATConfig'));
 const ChatbotManager = lazy(() => import('../components/ChatbotManager'));
 const ChatbotBuilder = lazy(() => import('../components/ChatbotBuilder'));
@@ -201,7 +199,7 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
                 <Route path="dashboard" element={<DashboardPrincipal provedorId={resolvedProvedorId} />} />
                 <Route path="conversas" element={<ConversasDashboard provedorId={resolvedProvedorId} />} />
                 <Route path="conversas-dashboard" element={<ConversasDashboard provedorId={resolvedProvedorId} />} />
-                <Route path="relatorio" element={<RelatorioPage provedorId={resolvedProvedorId} />} />
+                <Route path="relatorio/*" element={<RelatorioPage provedorId={resolvedProvedorId} />} />
                 <Route path="reports" element={<Navigate to="relatorio" replace />} />
                 <Route path="contacts" element={<Contacts provedorId={resolvedProvedorId} />} />
                 <Route path="settings" element={<Settings provedorId={resolvedProvedorId} />} />
@@ -212,9 +210,9 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
                 <Route path="marketing" element={<MarketingStudioPage provedorId={resolvedProvedorId} />} />
                 <Route path="suggestions" element={<SuggestionsPage provedorId={resolvedProvedorId} />} />
                 <Route path="companies" element={<CompanyManagement provedorId={resolvedProvedorId} />} />
-                <Route path="csat" element={<CSATHome provedorId={resolvedProvedorId} />} />
-                <Route path="csat/avaliacoes" element={<CSATDashboard provedorId={resolvedProvedorId} />} />
-                <Route path="csat/configurar" element={<CSATConfig provedorId={resolvedProvedorId} />} />
+                <Route path="csat" element={<Navigate to="relatorio/satisfacao/dashboard" replace />} />
+                <Route path="csat/avaliacoes" element={<Navigate to="relatorio/satisfacao/dashboard" replace />} />
+                <Route path="csat/configurar" element={<Navigate to="regras-atendimento/csat" replace />} />
                 <Route path="chatbot-manager" element={<ChatbotManager />} />
                 <Route path="chatbot-builder" element={<ChatbotBuilder />} />
                 <Route path="chatbot-builder/:flowId" element={<ChatbotBuilder />} />
@@ -252,6 +250,7 @@ export default function ProvedorAppWrapper({ user: propUser, userRole, handleLog
                 <Route path="regras-atendimento/automacao" element={<AttendanceAutomationSettings provedorId={resolvedProvedorId} />} />
                 <Route path="regras-atendimento/feriados" element={<AttendanceHolidaySettings provedorId={resolvedProvedorId} />} />
                 <Route path="regras-atendimento/geral" element={<AttendanceRulesSettings provedorId={resolvedProvedorId} />} />
+                <Route path="regras-atendimento/csat" element={<CSATConfig provedorId={resolvedProvedorId} />} />
                 <Route path="contrato-suspenso" element={<Navigate to="regras-atendimento/geral" replace />} />
                 <Route path="conversations" element={<Navigate to={`/${resolvedProvedorId}/chat`} replace />} />
                 <Route path="*" element={<Navigate to={`/app/accounts/${resolvedProvedorId}/dashboard`} replace />} />

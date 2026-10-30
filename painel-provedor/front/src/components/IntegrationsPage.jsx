@@ -28,7 +28,15 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (!params.get('instagram_oauth_success') && !params.get('instagram_oauth_error')) {
+    const bounceToChannels = [
+      'instagram_oauth_success',
+      'instagram_oauth_error',
+      'oauth_success',
+      'oauth_error',
+      'whatsapp_connected',
+      'code',
+    ].some((key) => params.get(key));
+    if (!bounceToChannels) {
       return;
     }
     const pid = provedorId || '1';

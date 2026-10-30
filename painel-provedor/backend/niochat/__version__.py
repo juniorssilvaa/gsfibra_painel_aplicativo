@@ -1,4 +1,4 @@
-__version__ = "2.78.5"
+__version__ = "2.78.6"
 
 # Alias para facilitar imports
-VERSION = "2.78.5"
+VERSION = "2.78.6"

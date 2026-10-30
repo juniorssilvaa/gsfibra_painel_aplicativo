@@ -9,7 +9,7 @@ import axios from 'axios';
  * 1. Meta redireciona para esta página com code e state
  * 2. Esta página envia code e state para o backend
  * 3. Backend processa e retorna redirect_url
- * 4. Esta página redireciona para /app/accounts/{provider_id}/integracoes
+ * 4. Esta página redireciona para /app/accounts/{provider_id}/canais/configurar
  */
 function OAuthCallback() {
   const [searchParams] = useSearchParams();
@@ -27,7 +27,7 @@ function OAuthCallback() {
       const providerId = state ? state.replace('provider_', '') : '1';
       setError(`Erro na autenticação: ${errorParam}`);
       setTimeout(() => {
-        navigate(`/app/accounts/${providerId}/integracoes?oauth_error=${errorParam}`, { replace: true });
+        navigate(`/app/accounts/${providerId}/canais/configurar?oauth_error=${errorParam}`, { replace: true });
       }, 2000);
       return;
     }
@@ -36,7 +36,7 @@ function OAuthCallback() {
     if (!code || !state) {
       setError('Parâmetros OAuth inválidos (code ou state ausentes)');
       setTimeout(() => {
-        navigate('/app/accounts/1/integracoes?oauth_error=invalid_params', { replace: true });
+        navigate('/app/accounts/1/canais/configurar?oauth_error=invalid_params', { replace: true });
       }, 2000);
       return;
     }
@@ -50,13 +50,10 @@ function OAuthCallback() {
       }
     }
 
-    // Não precisa enviar para o backend - o backend já processou quando recebeu do Meta
-    // Apenas redirecionar diretamente para integracoes mantendo code e state
-    setStatus('Redirecionando para integrações...');
-    
-    // Redirecionar diretamente para a página de integrações mantendo code e state
-    // O componente Integrations.jsx vai detectar e processar
-    const redirectUrl = `/app/accounts/${providerId}/integracoes?code=${code}&state=${state}`;
+    setStatus('Redirecionando para canais...');
+
+    // Manter code e state para o componente de canais processar o retorno OAuth
+    const redirectUrl = `/app/accounts/${providerId}/canais/configurar?code=${code}&state=${state}`;
     
     // Usar window.location.replace para garantir redirecionamento completo
     // Isso evita que o SafeRedirect interfira e remove a página intermediária do histórico

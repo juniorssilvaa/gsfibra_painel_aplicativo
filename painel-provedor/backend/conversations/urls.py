@@ -42,6 +42,7 @@ from .recovery_views import (
     update_recovery_settings
 )
 from .ad_referral_views import ad_referrals_report
+from .relatorio_views import RelatorioAtendentesVisaoGeralView, RelatorioCanaisView, RelatorioSatisfacaoView
 from .ai_learning_views import (
     ai_learning_export,
     ai_learning_item_detail,
@@ -133,6 +134,21 @@ urlpatterns = [
     path('ai-learning/items/<int:pk>/', ai_learning_item_detail, name='ai-learning-item-detail'),
     path('ai-learning/export/', ai_learning_export, name='ai-learning-export'),
     path('ad-referrals/report/', ad_referrals_report, name='ad-referrals-report'),
+    path(
+        'relatorios/atendentes/visao-geral/',
+        RelatorioAtendentesVisaoGeralView.as_view(),
+        name='relatorio-atendentes-visao-geral',
+    ),
+    path(
+        'relatorios/canais/',
+        RelatorioCanaisView.as_view(),
+        name='relatorio-canais',
+    ),
+    path(
+        'relatorios/satisfacao/',
+        RelatorioSatisfacaoView.as_view(),
+        name='relatorio-satisfacao',
+    ),
 
 ]
 
