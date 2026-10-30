@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { Brain, RefreshCw, Lightbulb, CheckCircle, ArrowRightLeft, UserX } from 'lucide-react';
 import AILearningKnowledge from './AILearningKnowledge';
 import ConversationRecovery from './ConversationRecovery';
+import { useBotMode } from '../hooks/useAgentMode';
 
 const TABS = [
   { id: 'learning', label: 'Aprendizado da IA', Icon: Brain },
@@ -256,6 +258,11 @@ function AILearningTab({ provedorId }) {
 
 export default function AIPerformancePage({ provedorId }) {
   const [activeTab, setActiveTab] = useState('learning');
+  const botMode = useBotMode();
+
+  if (botMode && botMode !== 'ia') {
+    return <Navigate to={`/app/accounts/${provedorId}/dashboard`} replace />;
+  }
 
   return (
     <div className="p-6">

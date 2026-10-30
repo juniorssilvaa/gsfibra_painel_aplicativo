@@ -119,6 +119,37 @@ def run_chatbot_inactivity_scan() -> None:
                 conv.contact.phone,
             )
 
+            delay_until_raw = state.get("chatbot_delay_until")
+            delay_token = state.get("chatbot_delay_token")
+            delay_node_id = state.get("chatbot_node_id")
+            if delay_until_raw and delay_token and delay_node_id:
+                try:
+                    until_dt = datetime.fromisoformat(str(delay_until_raw).replace("Z", "+00:00"))
+                    if timezone.is_naive(until_dt):
+                        until_dt = timezone.make_aware(until_dt, timezone.get_current_timezone())
+                    if timezone.now() >= until_dt:
+                        logger.info(
+                            "[TIMEOUT] Delay vencido conv=%s nó=%s — avançando fluxo.",
+                            conv.id,
+                            delay_node_id,
+                        )
+                        ChatbotEngine.continue_after_delay_sync(
+                            provedor_id, conv.id, delay_node_id, delay_token
+                        )
+                    else:
+                        logger.debug(
+                            "[TIMEOUT] Conv %s em delay até %s — inatividade ignorada.",
+                            conv.id,
+                            until_dt,
+                        )
+                    continue
+                except Exception as delay_err:
+                    logger.warning(
+                        "[TIMEOUT] Falha ao retomar delay conv=%s: %s",
+                        conv.id,
+                        delay_err,
+                    )
+
             node_id = state.get("chatbot_node_id")
 
             canal_pk = _canal_pk_from_inbox_for_flow(conv)

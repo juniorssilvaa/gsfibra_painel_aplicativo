@@ -31,7 +31,7 @@ import logo from '../assets/logo.png';
 import { useLanguage } from '../contexts/LanguageContext';
 import FlowIcon from './icons/FlowIcon';
 import ReportIcon from './icons/ReportIcon';
-import useAgentMode from '../hooks/useAgentMode';
+import useAgentMode, { useBotMode } from '../hooks/useAgentMode';
 
 // Context para compartilhar estado do sidebar
 const SidebarContext = createContext({

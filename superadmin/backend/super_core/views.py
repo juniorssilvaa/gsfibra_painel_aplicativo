@@ -390,13 +390,23 @@ class ProvedorSerializer(serializers.ModelSerializer):
     acs_enabled = serializers.SerializerMethodField()
     plano_nome = serializers.ReadOnlyField(source='plano.nome')
     limites = serializers.SerializerMethodField()
+    payment_promise_active = serializers.SerializerMethodField()
 
     class Meta:
         model = Provedor
         exclude = ('panel_bootstrap_password_ciphertext', 'integration_token')
+        read_only_fields = (
+            'payment_promise_until',
+            'payment_promise_note',
+            'payment_promise_created_at',
+            'payment_promise_created_by',
+        )
 
     def get_limites(self, obj):
         return obj.plan_limits()
+
+    def get_payment_promise_active(self, obj):
+        return bool(obj.has_active_payment_promise())
 
     def get_users_count(self, obj):
         try:
@@ -928,24 +938,22 @@ def _sync_niohub_in_tenant(provedor):
     Deve ser chamado após criar um novo Provedor no superadmin.
     """
     try:
-        subdomain = getattr(provedor, 'subdomain', None) or ''
-        if not subdomain:
-            logger.warning(f"[sync-niohub] Provedor id={provedor.id} sem subdomain — a saltar.")
-            return
-
         provider_token = (getattr(provedor, 'integration_token', '') or '').strip()
-        if not provider_token:
-            logger.warning("[sync-niohub] Token não configurado — a saltar.")
+        url = _tenant_admin_url(provedor, 'sync-niohub')
+        if not provider_token or not url:
+            logger.warning(
+                "[sync-niohub] Provedor id=%s sem token/URL — a saltar.",
+                getattr(provedor, 'id', None),
+            )
             return
 
-        url = f"https://{subdomain.rstrip('/')}/api/webhooks/admin/sync-niohub/"
         payload = {"provedor_id": provedor.id}
         headers = {"Authorization": f"Bearer {provider_token}"}
         resp = requests.post(url, json=payload, headers=headers, timeout=10)
         if resp.ok:
-            logger.info(f"[sync-niohub] niohub sincronizado em {subdomain} → provedor_id={provedor.id}")
+            logger.info(f"[sync-niohub] niohub sincronizado em {url} → provedor_id={provedor.id}")
         else:
-            logger.warning(f"[sync-niohub] Resposta inesperada de {subdomain}: {resp.status_code} {resp.text[:200]}")
+            logger.warning(f"[sync-niohub] Resposta inesperada de {url}: {resp.status_code} {resp.text[:200]}")
     except Exception as exc:
         logger.warning(f"[sync-niohub] Erro ao sincronizar niohub no tenant: {exc}")
 
@@ -953,13 +961,14 @@ def _sync_niohub_in_tenant(provedor):
 def _sync_bot_mode_to_tenant(provedor):
     """Envia bot_mode e agent_mode ao tenant via webhook provider-status."""
     try:
-        subdomain = (getattr(provedor, 'subdomain', None) or '').strip()
-        if not subdomain:
-            return
         token = (getattr(provedor, 'integration_token', '') or '').strip()
-        if not token:
+        url = _tenant_admin_url(provedor, 'provider-status')
+        if not token or not url:
+            logger.warning(
+                "[sync-bot-mode] Provedor %s sem token/URL.",
+                getattr(provedor, 'id', None),
+            )
             return
-        url = f"https://{subdomain.rstrip('/')}/api/webhooks/admin/provider-status/"
         payload = {
             "provedor_id": provedor.id,
             "is_active": provedor.is_active,
@@ -974,13 +983,13 @@ def _sync_bot_mode_to_tenant(provedor):
                 "[sync-bot-mode] bot_mode=%s agent_mode=%s enviado ao tenant %s (HTTP %s)",
                 provedor.bot_mode,
                 payload['agent_mode'],
-                subdomain,
+                url,
                 resp.status_code,
             )
         else:
             logger.warning(
                 "[sync-bot-mode] Falha ao enviar bot_mode ao tenant %s: %s %s",
-                subdomain, resp.status_code, resp.text[:200],
+                url, resp.status_code, resp.text[:200],
             )
     except Exception as exc:
         logger.warning("[sync-bot-mode] Erro: %s", exc)
@@ -989,13 +998,16 @@ def _sync_bot_mode_to_tenant(provedor):
 def _tenant_admin_url(provedor, path: str):
     """URL de um webhook admin no painel do provedor (TENANT_WEBHOOK_BASE_URL só vale em DEBUG para localhost)."""
     import os
+    from django.conf import settings as dj_settings
 
-    local_base = (os.environ.get('TENANT_WEBHOOK_BASE_URL') or '').strip().rstrip('/')
+    local_base = (
+        str(getattr(dj_settings, 'TENANT_WEBHOOK_BASE_URL', '') or '')
+        or (os.environ.get('TENANT_WEBHOOK_BASE_URL') or '')
+    ).strip().rstrip('/')
     if local_base and any(
         h in local_base.lower()
         for h in ('://127.0.0.1', '://localhost', '://0.0.0.0')
     ):
-        from django.conf import settings as dj_settings
         if not getattr(dj_settings, 'DEBUG', False):
             local_base = ''
     if local_base:
@@ -1549,6 +1561,12 @@ class ProvedorViewSet(viewsets.ModelViewSet):
         new_bot_mode = updated_instance.bot_mode
         new_agent_mode = getattr(updated_instance, 'agent_mode', 'isp')
 
+        # Suspensão manual cancela a promessa, senão o auto-block reativa no ciclo seguinte.
+        if old_active and not new_active and updated_instance.payment_promise_until:
+            from .billing_auto_block import PAYMENT_PROMISE_FIELDS, clear_payment_promise_fields
+            if clear_payment_promise_fields(updated_instance):
+                updated_instance.save(update_fields=list(PAYMENT_PROMISE_FIELDS))
+
         if old_status != new_status or old_active != new_active:
             # Espelha is_active no perfil do app mobile (bloqueia clientes)
             try:
@@ -1782,13 +1800,42 @@ class ProvedorViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
+        from .billing_auto_block import (
+            PAYMENT_PROMISE_FIELDS,
+            clear_payment_promise_fields,
+            payment_promise_is_active,
+        )
+
+        # Promessa vigente: não bloqueia (e reativa se estiver suspenso)
+        if has_overdue and days_late >= min_days and payment_promise_is_active(provedor):
+            if (not provedor.is_active) or provedor.status == 'suspenso':
+                provedor.is_active = True
+                provedor.status = 'ativo'
+                provedor.save(update_fields=['is_active', 'status'])
+                _sync_mobile_app(True)
+                _sync_acs(True)
+                try:
+                    import threading
+                    threading.Thread(
+                        target=notify_provider_panel,
+                        args=(provedor.id, True, 'ativo'),
+                        daemon=True,
+                    ).start()
+                except Exception:
+                    pass
+            return
+
         # Bloqueia quando em atraso e passou do threshold
         if has_overdue and days_late >= min_days:
+            promise_cleared = clear_payment_promise_fields(provedor)
             if provedor.is_active or provedor.status != 'suspenso':
                 provedor.is_active = False
                 provedor.status = 'suspenso'
                 provedor.subscription_status = (subscription_status or provedor.subscription_status or 'OVERDUE')
-                provedor.save(update_fields=['is_active', 'status', 'subscription_status'])
+                update = ['is_active', 'status', 'subscription_status']
+                if promise_cleared:
+                    update.extend(PAYMENT_PROMISE_FIELDS)
+                provedor.save(update_fields=update)
                 _sync_mobile_app(False)
                 _sync_acs(False)
                 reason = (
@@ -1806,16 +1853,22 @@ class ProvedorViewSet(viewsets.ModelViewSet):
                     ).start()
                 except Exception:
                     pass
+            elif promise_cleared:
+                provedor.save(update_fields=list(PAYMENT_PROMISE_FIELDS))
             return
 
         # Se não há atraso e a assinatura está ativa, reabilita apenas quando o bloqueio aparenta ser financeiro.
         # (Evita desfazer suspensão manual sem sinal de billing.)
         if (not has_overdue) and (subscription_status or '').upper() == 'ACTIVE':
+            promise_cleared = clear_payment_promise_fields(provedor)
             if (not provedor.is_active) and provedor.status == 'suspenso' and (provedor.subscription_status or '').upper() in ('OVERDUE', 'INACTIVE', 'CANCELLED', 'PENDING'):
                 provedor.is_active = True
                 provedor.status = 'ativo'
                 provedor.subscription_status = 'ACTIVE'
-                provedor.save(update_fields=['is_active', 'status', 'subscription_status'])
+                update = ['is_active', 'status', 'subscription_status']
+                if promise_cleared:
+                    update.extend(PAYMENT_PROMISE_FIELDS)
+                provedor.save(update_fields=update)
                 _sync_mobile_app(True)
                 _sync_acs(True)
                 try:
@@ -1827,6 +1880,8 @@ class ProvedorViewSet(viewsets.ModelViewSet):
                     ).start()
                 except Exception:
                     pass
+            elif promise_cleared:
+                provedor.save(update_fields=list(PAYMENT_PROMISE_FIELDS))
 
     @action(detail=True, methods=['post'], url_path='sync_asaas')
     def sync_asaas(self, request, pk=None):
@@ -1953,6 +2008,114 @@ class ProvedorViewSet(viewsets.ModelViewSet):
             return Response({'success': True, 'subscription_id': sub_id, 'billing_provider': 'asaas'})
         except Exception as exc:
             return Response({'success': False, 'error': str(exc)}, status=400)
+
+    def _payment_promise_payload(self, provedor: Provedor) -> dict:
+        until = provedor.payment_promise_until
+        return {
+            'success': True,
+            'is_active': provedor.is_active,
+            'status': provedor.status,
+            'payment_promise_until': until.isoformat() if until else None,
+            'payment_promise_note': provedor.payment_promise_note or '',
+            'payment_promise_created_at': (
+                provedor.payment_promise_created_at.isoformat()
+                if provedor.payment_promise_created_at
+                else None
+            ),
+            'payment_promise_created_by': provedor.payment_promise_created_by or '',
+            'payment_promise_active': provedor.has_active_payment_promise(),
+        }
+
+    @action(detail=True, methods=['post'], url_path='payment-promise')
+    def payment_promise(self, request, pk=None):
+        """
+        POST /api/provedores/<id>/payment-promise/
+        Body: { until: 'YYYY-MM-DD', note?: str }
+        Libera o provedor suspenso até a data. No vencimento, o auto-block reavalia.
+        """
+        try:
+            self._require_superadmin(request)
+        except PermissionError:
+            return Response({'error': 'Forbidden'}, status=403)
+
+        from datetime import date as date_cls
+        from .billing_auto_block import PAYMENT_PROMISE_FIELDS
+
+        provedor = self.get_object()
+        payload = request.data if isinstance(request.data, dict) else {}
+        until_raw = str(payload.get('until') or '').strip()
+        note = str(payload.get('note') or '').strip()[:255]
+        try:
+            y, m, d = [int(x) for x in until_raw.split('-')[:3]]
+            until = date_cls(y, m, d)
+        except Exception:
+            return Response(
+                {'success': False, 'error': 'Informe uma data válida (AAAA-MM-DD).'},
+                status=400,
+            )
+        if until < timezone.localdate():
+            return Response(
+                {'success': False, 'error': 'A data da promessa deve ser hoje ou futura.'},
+                status=400,
+            )
+
+        user = getattr(request, 'user', None)
+        created_by = ''
+        if user:
+            created_by = (getattr(user, 'email', None) or getattr(user, 'username', '') or '')[:150]
+
+        provedor.payment_promise_until = until
+        provedor.payment_promise_note = note
+        provedor.payment_promise_created_at = timezone.now()
+        provedor.payment_promise_created_by = created_by
+        provedor.is_active = True
+        provedor.status = 'ativo'
+        provedor.save(update_fields=['is_active', 'status', *PAYMENT_PROMISE_FIELDS])
+
+        try:
+            from mobile_app.models import MobileAppProfile
+            MobileAppProfile.objects.filter(provedor_id=provedor.id).update(is_active=True)
+        except Exception:
+            pass
+        try:
+            from acs.services import sync_acs_access
+            sync_acs_access(provedor, True, source='billing')
+        except Exception:
+            pass
+        threading.Thread(
+            target=notify_provider_panel,
+            args=(provedor.id, True, 'ativo'),
+            daemon=True,
+        ).start()
+
+        return Response(self._payment_promise_payload(provedor))
+
+    @action(detail=True, methods=['post'], url_path='cancel-payment-promise')
+    def payment_promise_cancel(self, request, pk=None):
+        """Cancela a promessa. Se a fatura ainda estiver vencida, bloqueia de novo."""
+        try:
+            self._require_superadmin(request)
+        except PermissionError:
+            return Response({'error': 'Forbidden'}, status=403)
+
+        from .billing_auto_block import (
+            PAYMENT_PROMISE_FIELDS,
+            clear_payment_promise_fields,
+            sync_provedor_billing_block,
+        )
+
+        provedor = self.get_object()
+        if not clear_payment_promise_fields(provedor):
+            return Response(self._payment_promise_payload(provedor))
+
+        provedor.save(update_fields=list(PAYMENT_PROMISE_FIELDS))
+        try:
+            sync_provedor_billing_block(provedor)
+            provedor.refresh_from_db()
+        except Exception as exc:
+            logger.warning('[payment-promise] reavaliação após cancelar provedor=%s: %s', provedor.id, exc)
+
+        return Response(self._payment_promise_payload(provedor))
 
     @action(detail=True, methods=['post'], url_path='verify_asaas')
     def verify_asaas(self, request, pk=None):

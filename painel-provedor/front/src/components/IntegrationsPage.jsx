@@ -25,6 +25,7 @@ export default function IntegrationsPage() {
   const navigate = useNavigate();
   const { provedorId } = useParams();
   const [agentMode, setAgentMode] = useState('isp');
+  const [botMode, setBotMode] = useState(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

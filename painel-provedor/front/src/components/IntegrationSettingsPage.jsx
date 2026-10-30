@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import Integrations from './Integrations';
+import { useBotMode } from '../hooks/useAgentMode';
 
 const SECTIONS = {
   ai: {
@@ -27,7 +28,12 @@ const SECTIONS = {
 
 export default function IntegrationSettingsPage({ provedorId, section = 'ai' }) {
   const navigate = useNavigate();
+  const botMode = useBotMode();
   const config = SECTIONS[section] || SECTIONS.ai;
+
+  if (section === 'ai' && botMode && botMode !== 'ia') {
+    return <Navigate to={`/app/accounts/${provedorId}/integracoes`} replace />;
+  }
 
   return (
     <div className="min-h-screen bg-background text-white overflow-y-auto">

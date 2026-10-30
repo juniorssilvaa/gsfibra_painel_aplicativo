@@ -19,8 +19,37 @@ const NODE_TYPES = {
     planos: { label: 'Planos de Internet', color: 'text-slate-400', icon: Wifi },
     menu: { label: 'Lista Interativa (WhatsApp)', color: 'text-slate-400', icon: List },
     galeria: { label: 'Galeria', color: 'text-slate-400', icon: LucideImage },
+    delay: { label: 'Delay', color: 'text-slate-400', icon: Clock },
     transfer: { label: 'Transferir Atendimento', color: 'text-slate-400', icon: Share2 },
     close: { label: 'Encerrar Atendimento', color: 'text-slate-400', icon: XCircle },
+};
+
+const delayMaxForUnit = (unit) => {
+    if (unit === 'days') return 30;
+    if (unit === 'hours') return 72;
+    if (unit === 'seconds') return 120;
+    return 1440;
+};
+
+const delaySecondsFromData = (data) => {
+    const n = Number(data?.delayValue);
+    const unit = data?.delayUnit || 'minutes';
+    if (!Number.isFinite(n) || n <= 0) return 60;
+    const value = Math.max(1, Math.round(n));
+    if (unit === 'days') return Math.min(delayMaxForUnit('days'), value) * 86400;
+    if (unit === 'hours') return Math.min(delayMaxForUnit('hours'), value) * 3600;
+    if (unit === 'seconds') return Math.min(delayMaxForUnit('seconds'), value);
+    return Math.min(delayMaxForUnit('minutes'), value) * 60;
+};
+
+const formatDelayLabel = (data) => {
+    const n = Number(data?.delayValue);
+    const value = Number.isFinite(n) && n > 0 ? n : 1;
+    const unit = data?.delayUnit || 'minutes';
+    if (unit === 'days') return value === 1 ? '1 dia' : `${value} dias`;
+    if (unit === 'hours') return value === 1 ? '1 hora' : `${value} horas`;
+    if (unit === 'seconds') return value === 1 ? '1 segundo' : `${value} segundos`;
+    return value === 1 ? '1 minuto' : `${value} minutos`;
 };
 
 const DEFAULT_AUTOCLOSE_PLACEHOLDER =
@@ -244,7 +273,8 @@ const ChatbotBuilder = () => {
             data: {
                 label: NODE_TYPES[type].label,
                 content: '',
-                buttons: []
+                buttons: [],
+                ...(type === 'delay' ? { delayValue: 1, delayUnit: 'minutes' } : {}),
             }
         };
         setNodes(curr => [...curr, newNode]);
@@ -444,6 +474,14 @@ const ChatbotBuilder = () => {
                         }
                     }]);
                     setCurrentNodeId(nextNode.id);
+                } else if (nextNode.type === 'delay') {
+                    const waitMs = Math.min(delaySecondsFromData(nextNode.data), 10) * 1000;
+                    setSimMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Aguardando ${formatDelayLabel(nextNode.data)}...`
+                    }]);
+                    setCurrentNodeId(nextNode.id);
+                    setTimeout(() => processNextStep(nextNode.id), waitMs);
                 } else if (nextNode.type === 'transfer') {
                     setSimMessages(prev => [...prev, {
                         role: 'bot',
@@ -611,6 +649,17 @@ const ChatbotBuilder = () => {
                         </div>
                     ))
                 }
+
+                {!node.data.isCollapsed && node.type === 'delay' && (
+                    <div className="px-3 py-2">
+                        <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-1.5">
+                            <Clock size={12} className="text-amber-400 shrink-0" />
+                            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
+                                {formatDelayLabel(node.data)}
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Conteúdo Preview (Opcional) */}
                 {
@@ -825,28 +874,8 @@ const ChatbotBuilder = () => {
                                                                 maxInvalidAttemptsMessage: type === 'menu' ? 'Não consegui identificar a opção informada. Vou seguir com o atendimento humano.' : undefined,
                                                                 maxInvalidAction: type === 'menu' ? 'repeat_menu' : undefined,
                                                                 maxInvalidActionTeamId: type === 'menu' ? '' : undefined,
-                                                                ...(type === 'planos' ? { useDynamicPlanos: true } : {})
-                                                            }
-                                                        };
-                                                        setNodes(prev => [...prev, newNode]);
-                                                        if (contextMenu.type === 'connection' && contextMenu.targetId) {
-                                                            setEdges(prev => {
-                                                                const cleaned = prev.filter(e => !(
-                                                                    e.source == contextMenu.targetId &&
-                                                                    e.sourceHandle == contextMenu.sourceHandle
-                                                                ));
-                                                                return [...cleaned, {
-                                                                    id: `edge_${Date.now()}`,
-                                                                    source: contextMenu.targetId,
-                                                                    target: newNodeId,
-                                                                    sourceHandle: contextMenu.sourceHandle
-                                                                }];
-                                                            });
-                                                        }
-                                                        setSelectedNode(newNodeId);
-                                                        setIsEditorOpen(true);
-                                                        setContextMenu({ show: false, x: 0, y: 0, type: null, targetId: null });
-                                                    }}
+                                                                ...(type === 'planos' ? { useDynamicPlanos: true } : {}),
+                                                                ...(type === 'delay' ? { delayValue: 1, delayUnit: 'minutes' } : {}),
                                                     className="w-full flex items-center gap-3 p-2.5 hover:bg-white/5 rounded-xl transition-all text-left group"
                                                 >
                                                     <div className={`${config.color} group-hover:scale-110 transition-transform`}>
@@ -1564,42 +1593,43 @@ const ChatbotBuilder = () => {
                                                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Endpoint / Ação</label>
                                                         <select
                                                             value={sgpAction}
-                                                            onChange={(e) => updateNodeData(selectedNode, { sgpAction: e.target.value })}
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all text-slate-800 dark:text-white"
+                                                        Você escolhe quanto esperar (minutos, horas ou dias). Quando o tempo acabar, o bot envia o próximo bloco ligado na saída.
+                                                    </p>
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tempo</label>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max={delayMaxForUnit(nodes.find(n => n.id === selectedNode)?.data.delayUnit || 'minutes')}
+                                                            value={nodes.find(n => n.id === selectedNode)?.data.delayValue ?? 1}
+                                                            onChange={(e) => {
+                                                                const raw = e.target.value;
+                                                                const parsed = parseInt(raw, 10);
+                                                                updateNodeData(selectedNode, {
+                                                                    delayValue: Number.isFinite(parsed) ? parsed : '',
+                                                                });
+                                                            }}
+                                                            className="w-full bg-white dark:bg-background border border-slate-200 dark:border-border rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-primary"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Unidade</label>
+                                                        <select
+                                                            value={nodes.find(n => n.id === selectedNode)?.data.delayUnit || 'minutes'}
+                                                            onChange={(e) => updateNodeData(selectedNode, { delayUnit: e.target.value })}
+                                                            className="w-full bg-white dark:bg-background border border-slate-200 dark:border-border rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-primary"
                                                         >
-                                                            {SGP_ENDPOINTS.map(ep => (
-                                                                <option key={ep.value} value={ep.value}>{ep.label}</option>
-                                                            ))}
+                                                            <option value="minutes">Minutos</option>
+                                                            <option value="hours">Horas</option>
+                                                            <option value="days">Dias</option>
                                                         </select>
                                                     </div>
-
-                                                    <div>
-                                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                                                            Variável de Entrada: <span className="text-purple-500 font-black">&#123;&#123;{selectedEndpoint.input}&#125;&#125;</span>
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={sgpNode?.data.inputVar || selectedEndpoint.input}
-                                                            onChange={(e) => updateNodeData(selectedNode, { inputVar: e.target.value })}
-                                                            placeholder={`Nome da variável (ex: ${selectedEndpoint.input})`}
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all"
-                                                        />
-                                                        <p className="text-[9px] text-slate-400 mt-1 px-1 italic">Nome da variável de contexto que será usada como entrada.</p>
-                                                    </div>
-
-                                                    <div>
-                                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Mensagem de Erro (opcional)</label>
-                                                        <input
-                                                            type="text"
-                                                            value={sgpNode?.data.errorMessage || ''}
-                                                            onChange={(e) => updateNodeData(selectedNode, { errorMessage: e.target.value })}
-                                                            placeholder="Ex: Cliente não encontrado no sistema."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all"
-                                                        />
-                                                    </div>
-
-                                                    {sgpAction === 'criar_chamado' && (
-                                                        <div className="space-y-4">
+                                                </div>
+                                                <p className="text-[9px] text-muted-foreground">
+                                                    Até 1440 minutos, 72 horas ou 30 dias. Ligue a bolinha da direita no menu que deve ir depois da espera.
                                                             <div>
                                                                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tipo de Ocorrência (ocorrenciatipo)</label>
                                                                 <input

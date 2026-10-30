@@ -5,7 +5,7 @@
       "version": "2.78.6",
       "version_type": "patch",
       "date": "2026-10-30",
-      "title": "Relatório de atendentes e Pesquisa de Satisfação",
+      "title": "Relatório de atendentes, ficha do provedor e delay no chatbot",
       "changes": [
         {
           "type": "feature",
@@ -18,6 +18,24 @@
           "module": "Pesquisa de Satisfação",
           "title": "CSAT passa a se chamar Pesquisa de Satisfação",
           "description": "O item CSAT saiu do menu lateral. As avaliações, gráficos e últimos feedbacks (com botão Ver para o histórico do atendimento) ficam em Relatório → Pesquisa de Satisfação. A configuração da pesquisa foi para Regras de Atendimento, no card Pesquisa de satisfação."
+        },
+        {
+          "type": "feature",
+          "module": "Superadmin",
+          "title": "Ficha do provedor e promessa de pagamento",
+          "description": "A ficha do provedor abre pelo ícone Wi-Fi ou pelo nome, com abas Cadastro, Financeiro, Plano e Atualização. No Financeiro dá para registrar uma promessa de pagamento: o acesso fica liberado até a data; se não pagar, o bloqueio volta sozinho."
+        },
+        {
+          "type": "feature",
+          "module": "Chatbot",
+          "title": "Bloco Delay no fluxo de atendimento",
+          "description": "No Adicionar bloco há Delay: o provedor escolhe minutos, horas ou dias. Quando o tempo acaba, o fluxo envia o próximo menu ou mensagem ligado na saída."
+        },
+        {
+          "type": "fix",
+          "module": "Painel do provedor",
+          "title": "Telas de IA só no modo IA",
+          "description": "Com o provedor em chatbot, somem Desempenho da IA, o card Configurar Agente de IA e a Consulta de viabilidade pela IA. A troca IA/chatbot feita no Superadmin passa a valer no painel local."
         }
       ]
     },

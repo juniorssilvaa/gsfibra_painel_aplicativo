@@ -4401,7 +4401,7 @@ export default function Integrations({ provedorId, mode = 'full' }) {
                 required
               />
             </div>
-            {(sgp.erp_system || 'sgp') === 'sgp' && (
+            {(sgp.erp_system || 'sgp') === 'sgp' && providerConfig?.bot_mode === 'ia' && (
               <>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-sm font-semibold text-foreground">

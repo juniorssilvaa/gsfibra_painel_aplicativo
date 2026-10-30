@@ -7,14 +7,14 @@ function currentToken() {
   return localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
 }
 
-function fetchAgentMode(token) {
+function fetchProviderConfig(token) {
   if (!cache.has(token)) {
     const request = axios
       .get('/api/provider/config/', {
         headers: token ? { Authorization: `Token ${token}` } : {},
         skipErrorToast: true,
       })
-      .then((res) => String(res.data?.agent_mode || 'isp').toLowerCase())
+      .then((res) => res.data || {})
       .catch(() => {
         cache.delete(token);
         return null;
@@ -32,8 +32,27 @@ export default function useAgentMode() {
     const token = currentToken();
     if (!token) return undefined;
     let alive = true;
-    fetchAgentMode(token).then((value) => {
-      if (alive && value) setMode(value);
+    fetchProviderConfig(token).then((data) => {
+      if (alive && data) setMode(String(data.agent_mode || 'isp').toLowerCase());
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return mode;
+}
+
+/** Modo de atendimento ('ia' ou 'chatbot'); null enquanto carrega. */
+export function useBotMode() {
+  const [mode, setMode] = useState(null);
+
+  useEffect(() => {
+    const token = currentToken();
+    if (!token) return undefined;
+    let alive = true;
+    fetchProviderConfig(token).then((data) => {
+      if (alive && data) setMode(String(data.bot_mode || 'ia').toLowerCase());
     });
     return () => {
       alive = false;

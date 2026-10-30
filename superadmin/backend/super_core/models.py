@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from django.utils import timezone
 
 class VpsServer(models.Model):
     name = models.CharField(max_length=100)
@@ -166,6 +167,12 @@ class Provedor(models.Model):
     canais_extras = models.PositiveIntegerField(default=0)
     usuarios_extras = models.PositiveIntegerField(default=0)
 
+    # Promessa de pagamento: libera provedor suspenso até esta data; depois o auto-block reavalia.
+    payment_promise_until = models.DateField(null=True, blank=True)
+    payment_promise_note = models.CharField(max_length=255, blank=True, default='')
+    payment_promise_created_at = models.DateTimeField(null=True, blank=True)
+    payment_promise_created_by = models.CharField(max_length=150, blank=True, default='')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -182,6 +189,13 @@ class Provedor(models.Model):
             'max_usuarios': (plano.max_usuarios + self.usuarios_extras) if plano.max_usuarios else None,
             'plano_nome': plano.nome,
         }
+
+    def has_active_payment_promise(self) -> bool:
+        """True se a data da promessa ainda não venceu (hoje incluso)."""
+        until = self.payment_promise_until
+        if not until:
+            return False
+        return until >= timezone.localdate()
 
 
 class ProvedorHealth(models.Model):

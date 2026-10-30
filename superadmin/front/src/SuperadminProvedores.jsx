@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Wifi, Search, Edit, Trash2, MoreVertical, Plus, Eye, Users, MessageCircle, TrendingUp, Database, Trash, FileText, CheckCircle2, RefreshCw, Zap, KeyRound, Copy, X, Calendar, Bell, Globe2, CreditCard, ExternalLink, Smartphone, MessageSquare, ChevronsUpDown, Router, Layers } from 'lucide-react';
+import { Wifi, Search, Edit, Trash2, MoreVertical, Plus, Eye, Users, MessageCircle, TrendingUp, Database, Trash, FileText, CheckCircle2, RefreshCw, Zap, KeyRound, Copy, X, Calendar, Bell, Globe2, CreditCard, ExternalLink, Smartphone, MessageSquare, ChevronsUpDown, Router } from 'lucide-react';
 import axios from 'axios';
 import ReactDOM from 'react-dom';
 import { toast } from './lib/notify';
+import ProvedorCadastroModal from './ProvedorCadastroModal';
 
 const FALLBACK_VPS_POOL = [];
 
@@ -114,7 +115,7 @@ const planLimitLabel = (base, extra) => (Number(base) > 0 ? Number(base) + (Numb
 function PlanoFields({ form, setForm, planos, usage, hasSubscription }) {
   const selected = planos.find((p) => String(p.id) === String(form.plano || ''));
   const visible = planos.filter((p) => p.ativo || String(p.id) === String(form.plano || ''));
-  const fieldClass = 'w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border';
+  const fieldClass = 'w-full px-4 py-2 rounded-md border border-input bg-background text-foreground';
 
   const choose = (value) => {
     const plano = planos.find((p) => String(p.id) === String(value));
@@ -137,20 +138,18 @@ function PlanoFields({ form, setForm, planos, usage, hasSubscription }) {
     const limit = planLimitLabel(base, extra);
     const over = typeof limit === 'number' && used != null && used > limit;
     return (
-      <div className="rounded-lg border border-border bg-[#181b20] px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">{label}</p>
-        <p className={`text-sm font-semibold ${over ? 'text-amber-300' : 'text-white'}`}>
+      <p className="text-sm">
+        <span className="text-muted-foreground">{label}: </span>
+        <span className={over ? 'font-medium text-amber-700 dark:text-amber-300' : 'text-foreground'}>
           {used != null ? `${used} de ${limit}` : limit}
-        </p>
-      </div>
+        </span>
+      </p>
     );
   };
 
   return (
     <div>
-      <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
-        <Layers className="w-5 h-5" /> Plano
-      </h3>
+      <h3 className="mb-4 text-sm font-semibold text-foreground">Plano</h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Plano</label>
@@ -173,7 +172,7 @@ function PlanoFields({ form, setForm, planos, usage, hasSubscription }) {
         </div>
       </div>
       {selected && (
-        <div className="mt-3 grid grid-cols-2 gap-3 md:max-w-md">
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1">
           {usageLine('Canais', usage?.canais, selected.max_canais, form.canais_extras)}
           {usageLine('Usuários', usage?.usuarios, selected.max_usuarios, form.usuarios_extras)}
         </div>
@@ -324,6 +323,7 @@ export default function SuperadminProvedores() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [subscriptionEdit, setSubscriptionEdit] = useState(null);
   const [savingSubscription, setSavingSubscription] = useState(false);
+  const [savingPromise, setSavingPromise] = useState(false);
   const [asaasSandbox, setAsaasSandbox] = useState(true);
   const [vpsPool, setVpsPool] = useState(FALLBACK_VPS_POOL);
   const [sortKey, setSortKey] = useState('id');
@@ -903,6 +903,11 @@ export default function SuperadminProvedores() {
       plano: provedor.plano ? String(provedor.plano) : '',
       canais_extras: provedor.canais_extras || 0,
       usuarios_extras: provedor.usuarios_extras || 0,
+      payment_promise_until: provedor.payment_promise_until || '',
+      payment_promise_note: provedor.payment_promise_note || '',
+      payment_promise_created_at: provedor.payment_promise_created_at || '',
+      payment_promise_created_by: provedor.payment_promise_created_by || '',
+      payment_promise_active: !!provedor.payment_promise_active,
     });
     setSubscriptionPayments([]);
     setPaymentEdit(null);
@@ -989,6 +994,13 @@ export default function SuperadminProvedores() {
       const originalProvedor = provedoresState.find(p => p.id === payload.id);
       const ext = originalProvedor?.integracoes_externas || {};
       
+      delete payload.created_at;
+      delete payload.payment_promise_until;
+      delete payload.payment_promise_note;
+      delete payload.payment_promise_created_at;
+      delete payload.payment_promise_created_by;
+      delete payload.payment_promise_active;
+
       payload.integracoes_externas = {
         ...ext,
         chat_enabled: enableChat,
@@ -1063,7 +1075,6 @@ export default function SuperadminProvedores() {
       const response = await axios.post(`/api/provedores/${editProvedorForm.id}/sync_asaas/`, editProvedorForm, {
         headers: { Authorization: `Token ${token}` }
       });
-
       if (response.data.success) {
         toast.success('Provedor sincronizado com sucesso no Asaas.');
         
@@ -1086,6 +1097,68 @@ export default function SuperadminProvedores() {
       toast.apiError(err, 'Erro ao sincronizar cliente. Verifique o CPF/CNPJ e outros dados.');
     } finally {
       setLoadingEdit(false);
+    }
+  };
+
+  const applyPromiseResponse = (data) => {
+    const fields = {
+      is_active: data.is_active,
+      status: data.status,
+      payment_promise_until: data.payment_promise_until || '',
+      payment_promise_note: data.payment_promise_note || '',
+      payment_promise_created_at: data.payment_promise_created_at || '',
+      payment_promise_created_by: data.payment_promise_created_by || '',
+      payment_promise_active: !!data.payment_promise_active,
+    };
+    setEditProvedorForm((prev) => ({ ...prev, ...fields }));
+    setProvedoresState((prev) =>
+      prev.map((p) => (p.id === editProvedorForm.id ? { ...p, ...fields } : p))
+    );
+  };
+
+  const handleApplyPromise = async ({ until, note }) => {
+    if (!editProvedorForm.id || !until) return;
+    setSavingPromise(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(
+        `/api/provedores/${editProvedorForm.id}/payment-promise/`,
+        { until, note: note || '' },
+        { headers: { Authorization: `Token ${token}` } }
+      );
+      applyPromiseResponse(res.data);
+      const [y, m, d] = String(until).split('-');
+      toast.success(`Acesso liberado até ${d}/${m}/${y}. Se não pagar, o sistema bloqueia de novo.`);
+    } catch (err) {
+      toast.apiError(err, 'Não foi possível registrar a promessa de pagamento.');
+    } finally {
+      setSavingPromise(false);
+    }
+  };
+
+  const handleCancelPromise = async () => {
+    if (!editProvedorForm.id) return;
+    if (!window.confirm('Cancelar a promessa? Se a fatura ainda estiver vencida, o acesso será bloqueado de novo.')) {
+      return;
+    }
+    setSavingPromise(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(
+        `/api/provedores/${editProvedorForm.id}/cancel-payment-promise/`,
+        {},
+        { headers: { Authorization: `Token ${token}` } }
+      );
+      applyPromiseResponse(res.data);
+      toast.success(
+        res.data.is_active
+          ? 'Promessa cancelada.'
+          : 'Promessa cancelada. O acesso foi bloqueado novamente.'
+      );
+    } catch (err) {
+      toast.apiError(err, 'Não foi possível cancelar a promessa.');
+    } finally {
+      setSavingPromise(false);
     }
   };
 
@@ -1944,733 +2017,44 @@ export default function SuperadminProvedores() {
         </div>
       )}
 
-      {/* Modal de editar provedor */}
-      {showEditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="flex w-full max-w-4xl max-h-[92vh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1a1d24] shadow-2xl shadow-black/50">
-            <div className="relative border-b border-white/10 bg-gradient-to-r from-[#1f232b] via-[#1a1d24] to-[#1f232b] px-6 py-5">
-              <div className="flex items-start justify-between gap-4 pr-10">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-primary/90">Provedor</p>
-                  <h2 className="mt-1 text-xl font-bold text-white sm:text-2xl">
-                    {editProvedorForm.nome || 'Editar provedor'}
-                  </h2>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Atualize dados, assinatura {isInterBilling(editProvedorForm) ? 'Inter' : 'Asaas'} e preferências de cobrança.
-                  </p>
-                </div>
-                <div className="hidden shrink-0 items-center gap-2 sm:flex">
-                  {isInterBilling(editProvedorForm) ? (
-                    <span className="rounded-full border border-orange-500/25 bg-orange-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-orange-300">
-                      Portador Inter
-                    </span>
-                  ) : editProvedorForm.asaas_customer_id ? (
-                    <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
-                      Cliente Asaas
-                    </span>
-                  ) : null}
-                  {editProvedorForm.id && (
-                    <button
-                      type="button"
-                      onClick={() => openProviderAppPanel(editProvedorForm.id)}
-                      disabled={openingAppPanelId === editProvedorForm.id}
-                      className="rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-primary transition hover:bg-primary/25 disabled:opacity-50"
-                    >
-                      {openingAppPanelId === editProvedorForm.id ? 'Abrindo…' : 'Painel do App'}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="absolute right-4 top-4 rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white"
-                onClick={() => setShowEditModal(false)}
-                aria-label="Fechar"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="flex flex-1 flex-col overflow-hidden">
-              <div className="flex-1 space-y-8 overflow-y-auto px-6 py-6 sm:px-8">
-              {/* Seção 1: Dados Básicos */}
-              <div>
-                <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
-                  <Eye className="w-5 h-5" /> Informações Básicas
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Nome do Provedor *</label>
-                    <input type="text" name="nome" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.nome} onChange={handleEditProvedorChange} required />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">CPF ou CNPJ *</label>
-                    <input type="text" name="cpf_cnpj" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.cpf_cnpj} onChange={handleEditProvedorChange} required placeholder="Apenas números" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Site Oficial</label>
-                    <input type="url" name="site_oficial" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.site_oficial} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">E-mail de Contato</label>
-                    <input type="email" name="email_contato" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.email_contato} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Telefone Celular</label>
-                    <input type="text" name="mobile_phone" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.mobile_phone} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <p className="block text-xs font-semibold text-gray-400 uppercase mb-2">Soluções *</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${editProvedorForm.enable_chat ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-[#14161c]/50 hover:border-white/20'}`}>
-                        <input
-                          type="checkbox"
-                          name="enable_chat"
-                          checked={!!editProvedorForm.enable_chat}
-                          onChange={handleEditProvedorChange}
-                          className="mt-0.5 h-4 w-4 rounded border-border bg-[#181b20] text-primary focus:ring-primary/20"
-                        />
-                        <span>
-                          <span className="flex items-center gap-2 text-sm font-semibold text-white">
-                            <MessageSquare className="w-4 h-4 text-primary" />
-                            Chat
-                          </span>
-                          <span className="block text-xs text-muted-foreground mt-1">
-                            Multi-atendimento (painel do provedor).
-                          </span>
-                        </span>
-                      </label>
-                      <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${editProvedorForm.enable_mobile_app ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-[#14161c]/50 hover:border-white/20'}`}>
-                        <input
-                          type="checkbox"
-                          name="enable_mobile_app"
-                          checked={!!editProvedorForm.enable_mobile_app}
-                          onChange={handleEditProvedorChange}
-                          className="mt-0.5 h-4 w-4 rounded border-border bg-[#181b20] text-primary focus:ring-primary/20"
-                        />
-                        <span>
-                          <span className="flex items-center gap-2 text-sm font-semibold text-white">
-                            <Smartphone className="w-4 h-4 text-primary" />
-                            App Mobile
-                          </span>
-                          <span className="block text-xs text-muted-foreground mt-1">
-                            Aplicativo do cliente.
-                          </span>
-                        </span>
-                      </label>
-                      <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${editProvedorForm.enable_acs ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-[#14161c]/50 hover:border-white/20'}`}>
-                        <input
-                          type="checkbox"
-                          name="enable_acs"
-                          checked={!!editProvedorForm.enable_acs}
-                          onChange={handleEditProvedorChange}
-                          className="mt-0.5 h-4 w-4 rounded border-border bg-[#181b20] text-primary focus:ring-primary/20"
-                        />
-                        <span>
-                          <span className="flex items-center gap-2 text-sm font-semibold text-white">
-                            <Router className="w-4 h-4 text-primary" />
-                            ACS
-                          </span>
-                          <span className="block text-xs text-muted-foreground mt-1">
-                            Painel GenieACS com licença e bloqueio.
-                          </span>
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-                  {editProvedorForm.enable_chat && (
-                    <>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Modo de Atendimento *</label>
-                    <select name="bot_mode" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.bot_mode} onChange={handleEditProvedorChange} required={!!editProvedorForm.enable_chat}>
-                      <option value="ia">Inteligência Artificial (IA)</option>
-                      <option value="chatbot">Fluxo de Chatbot</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Modo do Agente de IA *</label>
-                    <select name="agent_mode" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.agent_mode || 'isp'} onChange={handleEditProvedorChange} required={!!editProvedorForm.enable_chat}>
-                      <option value="isp">Provedor de Internet (ISP)</option>
-                      <option value="support">Suporte da Plataforma (NioHub)</option>
-                    </select>
-                    <p className="text-[11px] text-muted-foreground mt-1">
-                      Use Suporte da Plataforma no painel que atende clientes e leads do NioHub.
-                    </p>
-                  </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <PlanoFields
-                form={editProvedorForm}
-                setForm={setEditProvedorForm}
-                planos={planos}
-                usage={planUsage}
-                hasSubscription={!!editProvedorForm.asaas_subscription_id}
-              />
-
-              {/* Seção 2: Endereço */}
-              <div>
-                <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
-                  <Database className="w-5 h-5" /> Localização
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">CEP</label>
-                    <input type="text" name="postal_code" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.postal_code} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Logradouro (Endereço)</label>
-                    <input type="text" name="endereco" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.endereco} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Número</label>
-                    <input type="text" name="address_number" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.address_number} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Bairro</label>
-                    <input type="text" name="province" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.province} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Complemento</label>
-                    <input type="text" name="complement" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.complement} onChange={handleEditProvedorChange} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Seção 3: Faturamento */}
-              <div>
-                <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5" /> Detalhes Financeiros ({isInterBilling(editProvedorForm) ? 'Inter' : 'Asaas'})
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">
-                      Nome da Empresa {isInterBilling(editProvedorForm) ? '(pagador)' : '(Asaas)'}
-                    </label>
-                    <input type="text" name="company" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.company} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Grupo</label>
-                    <input type="text" name="group_name" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.group_name} onChange={handleEditProvedorChange} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">E-mails Adicionais (separados por vírgula)</label>
-                    <input type="text" name="additional_emails" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.additional_emails} onChange={handleEditProvedorChange} />
-                  </div>
-
-                  {/* Seção 4: Configurações de Update */}
-                  <div className="md:col-span-2 pt-4 border-t border-border">
-                    <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
-                      <Zap className="w-5 h-5" /> Canal de Atualização
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Canal de Release</label>
-                        <select name="release_channel" className="w-full px-4 py-2 rounded bg-[#181b20] text-white border border-border" value={editProvedorForm.release_channel} onChange={handleEditProvedorChange}>
-                          <option value="beta">Beta (Atualização Automática)</option>
-                          <option value="stable">Estável (Atualização Controlada)</option>
-                          <option value="manual">Manual</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Versão Atual</label>
-                        <input type="text" className="w-full px-4 py-2 rounded bg-[#181b20] text-gray-500 border border-border cursor-not-allowed" value={editProvedorForm.current_version && editProvedorForm.current_version !== '1.0.0' ? editProvedorForm.current_version : 'Aguardando relatório do painel'} disabled />
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Bloco de Assinatura */}
-                  <div className="md:col-span-2 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[#14161c]/80">
-                    <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-gradient-to-r from-primary/10 to-transparent px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                          <CreditCard className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-white">Assinatura recorrente</h4>
-                          <p className="text-xs text-gray-500">
-                            {isInterBilling(editProvedorForm)
-                              ? 'Portador Banco Inter — cobranças emitidas pelo Superadmin'
-                              : 'Sincronizado com o Asaas em tempo real'}
-                            {isInterBilling(editProvedorForm) ? (
-                              <span className="ml-1.5 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-orange-300">
-                                INTER
-                              </span>
-                            ) : asaasSandbox ? (
-                              <span className="ml-1.5 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">
-                                SANDBOX
-                              </span>
-                            ) : (
-                              <span className="ml-1.5 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
-                                PRODUÇÃO
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {editProvedorForm.asaas_subscription_id && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleClearAsaasSubscription(true)}
-                              disabled={loadingEdit}
-                              className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 transition hover:border-red-500/50 hover:bg-red-500/20 disabled:opacity-50"
-                            >
-                              {(isInterBilling(editProvedorForm)
-                                ? 'Cancelar no Inter'
-                                : 'Cancelar no Asaas')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleClearAsaasSubscription(false)}
-                              disabled={loadingEdit}
-                              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-gray-400 transition hover:border-white/20 hover:bg-white/10 hover:text-gray-200 disabled:opacity-50"
-                              title={
-                                isInterBilling(editProvedorForm)
-                                  ? 'Remove só o vínculo no NioHub; cobranças abertas podem permanecer no Inter'
-                                  : 'Remove só o vínculo no NioHub; a assinatura permanece no Asaas'
-                              }
-                            >
-                              Desvincular local
-                            </button>
-                          </>
-                        )}
-                        <button
-                          type="button"
-                          onClick={handleVerifyAsaas}
-                          disabled={loadingEdit}
-                          className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-gray-300 transition hover:border-primary/30 hover:bg-primary/10 hover:text-white disabled:opacity-50"
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 ${loadingEdit ? 'animate-spin' : ''}`} />
-                          Atualizar
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="p-5">
-                    {editProvedorForm.asaas_subscription_id ? (
-                      <div className="flex flex-col gap-5">
-                        {(() => {
-                          const ui = subscriptionStatusUi(editProvedorForm.subscription_status);
-                          return (
-                            <div className={`rounded-xl border border-white/10 bg-gradient-to-br ${ui.accent} p-5`}>
-                              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                                <div className="min-w-0 flex-1 space-y-3">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${ui.pill}`}>
-                                      {ui.label}
-                                    </span>
-                                    {ui.live && (
-                                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400/90">
-                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                                        Em dia no {isInterBilling(editProvedorForm) ? 'Inter' : 'Asaas'}
-                                      </span>
-                                    )}
-                                    <span className="inline-flex items-center rounded-full border border-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-300">
-                                      {isInterBilling(editProvedorForm) ? 'Inter' : 'Asaas'}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-gray-500">
-                                    {isInterBilling(editProvedorForm)
-                                      ? 'Assinatura local (cobranças emitidas no Banco Inter)'
-                                      : 'ID da assinatura no Asaas (cobrança recorrente)'}
-                                  </p>
-                                  <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2">
-                                    <code className="truncate text-xs text-gray-300">{editProvedorForm.asaas_subscription_id}</code>
-                                    <button
-                                      type="button"
-                                      className="shrink-0 rounded-md p-1.5 text-gray-500 hover:bg-white/10 hover:text-white"
-                                      title="Copiar ID"
-                                      onClick={() => navigator.clipboard?.writeText(editProvedorForm.asaas_subscription_id)}
-                                    >
-                                      <Copy className="h-3.5 w-3.5" />
-                                    </button>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                                    <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2.5">
-                                      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Valor</p>
-                                      <p className="mt-0.5 text-sm font-semibold text-white">
-                                        R$ {Number(editProvedorForm.subscription_value || 0).toFixed(2)}
-                                      </p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2.5">
-                                      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Ciclo</p>
-                                      <p className="mt-0.5 text-sm font-semibold text-white" title={editProvedorForm.subscription_cycle}>
-                                        {subscriptionCycleLabel(editProvedorForm.subscription_cycle)}
-                                      </p>
-                                    </div>
-                                    <div className="col-span-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2.5 sm:col-span-1">
-                                      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Próx. venc.</p>
-                                      <p className="mt-0.5 text-sm font-semibold text-white">
-                                        {editProvedorForm.subscription_next_due_date
-                                          ? new Date(editProvedorForm.subscription_next_due_date + 'T12:00:00').toLocaleDateString('pt-BR')
-                                          : '—'}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  {!isInterBilling(editProvedorForm) && !subscriptionEdit && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSubscriptionEdit({
-                                        value: editProvedorForm.subscription_value || '',
-                                        cycle: editProvedorForm.subscription_cycle || 'MONTHLY',
-                                        billingType: editProvedorForm.subscription_billing_type || 'BOLETO',
-                                        nextDueDate: editProvedorForm.subscription_next_due_date || '',
-                                        updatePendingPayments: false,
-                                      })}
-                                      className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-gray-200 transition hover:border-primary/40 hover:bg-primary/10 hover:text-white"
-                                    >
-                                      <Edit className="h-3.5 w-3.5" /> Editar assinatura
-                                    </button>
-                                  )}
-                                  {subscriptionEdit && (
-                                    <div className="space-y-3 rounded-lg border border-primary/30 bg-black/30 p-4">
-                                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                        <div>
-                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Valor</label>
-                                          <input type="number" step="0.01" min="0.01" className={inputClass} value={subscriptionEdit.value}
-                                            onChange={(e) => setSubscriptionEdit((s) => ({ ...s, value: e.target.value }))} />
-                                        </div>
-                                        <div>
-                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Ciclo</label>
-                                          <select className={inputClass} value={subscriptionEdit.cycle}
-                                            onChange={(e) => setSubscriptionEdit((s) => ({ ...s, cycle: e.target.value }))}>
-                                            <option value="MONTHLY">Mensal</option>
-                                            <option value="BIMONTHLY">Bimestral</option>
-                                            <option value="QUARTERLY">Trimestral</option>
-                                            <option value="SEMIANNUALLY">Semestral</option>
-                                            <option value="YEARLY">Anual</option>
-                                          </select>
-                                        </div>
-                                        <div>
-                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Pagamento</label>
-                                          <select className={inputClass} value={subscriptionEdit.billingType}
-                                            onChange={(e) => setSubscriptionEdit((s) => ({ ...s, billingType: e.target.value }))}>
-                                            <option value="BOLETO">Boleto</option>
-                                            <option value="PIX">PIX</option>
-                                            <option value="CREDIT_CARD">Cartão de Crédito</option>
-                                            <option value="UNDEFINED">Cliente escolhe</option>
-                                          </select>
-                                        </div>
-                                        <div>
-                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Próx. vencimento</label>
-                                          <input type="date" min={todayIso()} className={inputClass} value={subscriptionEdit.nextDueDate}
-                                            onChange={(e) => setSubscriptionEdit((s) => ({ ...s, nextDueDate: e.target.value }))} />
-                                        </div>
-                                      </div>
-                                      <label className="flex items-start gap-2 text-xs text-gray-300">
-                                        <input type="checkbox" className="mt-0.5" checked={subscriptionEdit.updatePendingPayments}
-                                          onChange={(e) => setSubscriptionEdit((s) => ({ ...s, updatePendingPayments: e.target.checked }))} />
-                                        <span>
-                                          Aplicar também às cobranças já geradas que estão pendentes.
-                                          <span className="block text-[11px] text-gray-500">
-                                            Sem marcar, vale só para as próximas. O vencimento de faturas já geradas se altera na própria cobrança, no histórico abaixo.
-                                          </span>
-                                        </span>
-                                      </label>
-                                      <div className="flex justify-end gap-2">
-                                        <button type="button" onClick={() => setSubscriptionEdit(null)} disabled={savingSubscription}
-                                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-400 hover:bg-white/5 hover:text-white">
-                                          Cancelar
-                                        </button>
-                                        <button type="button" onClick={handleSaveSubscription} disabled={savingSubscription}
-                                          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-1.5 text-xs font-bold text-white hover:bg-primary/90 disabled:opacity-50">
-                                          {savingSubscription && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-                                          Salvar no Asaas
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                  {!ui.live && (
-                                    <p className="text-xs leading-relaxed text-amber-200/80">
-                                      {isInterBilling(editProvedorForm)
-                                        ? 'Assinatura Inter pendente/vencida. Atualize o status ou aguarde o pagamento.'
-                                        : 'Assinatura inativa no Asaas. Atualize o status ou crie uma nova recorrência abaixo.'}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className={`hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl border sm:flex ${ui.live ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
-                                  <CheckCircle2 className={`h-7 w-7 ${ui.live ? 'text-emerald-400' : 'text-amber-400'}`} />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        <div>
-                          <div className="mb-3 flex items-center justify-between">
-                            <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500">Histórico de cobranças</h5>
-                            {subscriptionPayments.length > 0 && (
-                              <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-gray-400">
-                                {subscriptionPayments.length} fatura{subscriptionPayments.length !== 1 ? 's' : ''}
-                              </span>
-                            )}
-                          </div>
-
-                          {loadingPayments ? (
-                            <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 py-10 text-gray-500">
-                              <RefreshCw className="h-6 w-6 animate-spin text-primary/70" />
-                              <span className="text-xs">
-                                {isInterBilling(editProvedorForm)
-                                  ? 'Consultando cobranças Inter...'
-                                  : 'Consultando Asaas...'}
-                              </span>
-                            </div>
-                          ) : subscriptionPayments.length > 0 ? (
-                            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-                              {subscriptionPayments.map((payment) => {
-                                const ps = paymentStatusUi(payment.status);
-                                const canEdit = !isInterBilling(editProvedorForm) && ASAAS_EDITABLE_PAYMENT.includes(payment.status);
-                                const editing = paymentEdit?.id === payment.id;
-                                return (
-                                  <div key={payment.id} className="space-y-2">
-                                  <div
-                                    className="group flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-[#0f1115] px-4 py-3 transition hover:border-primary/25 hover:bg-[#12151a]"
-                                  >
-                                    <div className="flex min-w-0 items-center gap-3">
-                                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${ps.icon}`}>
-                                        <Calendar className="h-4 w-4" />
-                                      </div>
-                                      <div className="min-w-0">
-                                        <p className="truncate text-sm font-medium text-white" title={payment.description || undefined}>
-                                          {payment.description || `Cobrança ${payment.id}`}
-                                        </p>
-                                        <p className="text-xs text-gray-500">
-                                          Venc. {new Date(payment.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
-                                          {' · '}R$ {payment.value} · {payment.billingType}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="flex shrink-0 items-center gap-2">
-                                      <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${ps.pill}`}>
-                                        {ps.label}
-                                      </span>
-                                      {canEdit && !editing && (
-                                        <button
-                                          type="button"
-                                          className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white"
-                                          title="Alterar valor ou vencimento"
-                                          onClick={() => setPaymentEdit({
-                                            id: payment.id,
-                                            value: payment.value ?? '',
-                                            dueDate: payment.dueDate || '',
-                                            billingType: payment.billingType || 'BOLETO',
-                                            description: payment.description || '',
-                                          })}
-                                        >
-                                          <Edit className="h-4 w-4" />
-                                        </button>
-                                      )}
-                                      {(payment.bankSlipUrl || payment.invoiceUrl) && (
-                                        <a
-                                          href={payment.bankSlipUrl || payment.invoiceUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="rounded-lg p-2 text-primary transition hover:bg-primary/10"
-                                          title="Abrir fatura"
-                                        >
-                                          <ExternalLink className="h-4 w-4" />
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {editing && (
-                                    <div className="space-y-3 rounded-xl border border-primary/30 bg-black/30 p-4">
-                                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                        <div>
-                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Valor</label>
-                                          <input type="number" step="0.01" min="0.01" className={inputClass} value={paymentEdit.value}
-                                            onChange={(e) => setPaymentEdit((p) => ({ ...p, value: e.target.value }))} />
-                                        </div>
-                                        <div>
-                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Vencimento</label>
-                                          <input type="date" min={todayIso()} className={inputClass} value={paymentEdit.dueDate}
-                                            onChange={(e) => setPaymentEdit((p) => ({ ...p, dueDate: e.target.value }))} />
-                                        </div>
-                                        <div>
-                                          <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Pagamento</label>
-                                          <select className={inputClass} value={paymentEdit.billingType}
-                                            onChange={(e) => setPaymentEdit((p) => ({ ...p, billingType: e.target.value }))}>
-                                            <option value="BOLETO">Boleto</option>
-                                            <option value="PIX">PIX</option>
-                                            <option value="CREDIT_CARD">Cartão de Crédito</option>
-                                            <option value="UNDEFINED">Cliente escolhe</option>
-                                          </select>
-                                        </div>
-                                      </div>
-                                      <div>
-                                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Descrição</label>
-                                        <input type="text" maxLength={500} className={inputClass} value={paymentEdit.description}
-                                          onChange={(e) => setPaymentEdit((p) => ({ ...p, description: e.target.value }))} />
-                                      </div>
-                                      <div className="flex justify-end gap-2">
-                                        <button type="button" onClick={() => setPaymentEdit(null)} disabled={savingPayment}
-                                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-400 hover:bg-white/5 hover:text-white">
-                                          Cancelar
-                                        </button>
-                                        <button type="button" onClick={handleSavePayment} disabled={savingPayment}
-                                          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-1.5 text-xs font-bold text-white hover:bg-primary/90 disabled:opacity-50">
-                                          {savingPayment && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-                                          Salvar no Asaas
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="rounded-xl border border-dashed border-white/10 py-8 text-center text-sm text-gray-500">
-                              Nenhuma cobrança encontrada para esta assinatura.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-5">
-                        <p className="text-sm text-gray-500">
-                          Nenhuma assinatura vinculada. Escolha o portador (Asaas ou Banco Inter) e configure a mensalidade.
-                        </p>
-                        <div>
-                          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-gray-500">
-                            Portador da cobrança
-                          </label>
-                          <select
-                            name="billing_provider"
-                            className={inputClass}
-                            value={editProvedorForm.billing_provider || 'asaas'}
-                            onChange={handleEditProvedorChange}
-                          >
-                            <option value="asaas">Asaas</option>
-                            <option value="inter">Banco Inter</option>
-                          </select>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {isInterBilling(editProvedorForm)
-                              ? 'O Superadmin emite a cobrança no Inter a cada ciclo (boleto + Pix).'
-                              : 'O Asaas gerencia a assinatura recorrente automaticamente.'}
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                          <div>
-                            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Valor mensalidade</label>
-                            <input type="number" name="subscription_value" className={inputClass} value={editProvedorForm.subscription_value} onChange={handleEditProvedorChange} placeholder="0.00" />
-                          </div>
-                          <div>
-                            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Ciclo</label>
-                            <select name="subscription_cycle" className={inputClass} value={editProvedorForm.subscription_cycle} onChange={handleEditProvedorChange}>
-                              <option value="MONTHLY">Mensal</option>
-                              <option value="QUARTERLY">Trimestral</option>
-                              <option value="SEMIANNUALLY">Semestral</option>
-                              <option value="YEARLY">Anual</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-gray-500">1º vencimento</label>
-                            <input type="date" name="subscription_next_due_date" className={inputClass} value={editProvedorForm.subscription_next_due_date} onChange={handleEditProvedorChange} />
-                          </div>
-                          <div>
-                            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-gray-500">Pagamento</label>
-                            <select name="subscription_billing_type" className={inputClass} value={editProvedorForm.subscription_billing_type} onChange={handleEditProvedorChange}>
-                              <option value="BOLETO">Boleto</option>
-                              <option value="PIX">PIX</option>
-                              {!isInterBilling(editProvedorForm) && (
-                                <option value="CREDIT_CARD">Cartão de Crédito</option>
-                              )}
-                            </select>
-                          </div>
-                        </div>
-                        {isInterBilling(editProvedorForm) || editProvedorForm.asaas_customer_id ? (
-                          <button
-                            type="button"
-                            onClick={handleCreateSubscription}
-                            disabled={loadingEdit}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-50"
-                          >
-                            <TrendingUp className="h-4 w-4" />
-                            {loadingEdit
-                              ? 'Processando...'
-                              : isInterBilling(editProvedorForm)
-                                ? 'Criar assinatura no Banco Inter'
-                                : 'Criar assinatura recorrente'}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={handleSyncAsaas}
-                            disabled={loadingEdit}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 py-3 text-sm font-bold text-sky-200 transition hover:bg-sky-500/20 disabled:opacity-50"
-                          >
-                            <RefreshCw className={`h-4 w-4 ${loadingEdit ? 'animate-spin' : ''}`} />
-                            {loadingEdit ? 'Sincronizando...' : 'Sincronizar cliente com Asaas'}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${editProvedorForm.notification_disabled ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-[#14161c]/50 hover:border-white/20'}`}>
-                      <input type="checkbox" name="notification_disabled" checked={editProvedorForm.notification_disabled} onChange={handleEditProvedorChange} className="mt-0.5 h-4 w-4 rounded border-border bg-[#181b20] text-primary focus:ring-primary/20" />
-                      <span className="flex-1">
-                        <span className="flex items-center gap-2 text-sm font-medium text-white">
-                          <Bell className="h-4 w-4 text-primary" />
-                          {isInterBilling(editProvedorForm)
-                            ? 'Desativar notificações de cobrança'
-                            : 'Desativar notificações Asaas'}
-                        </span>
-                        <span className="mt-1 block text-xs text-gray-500">Não envia e-mail/SMS de cobrança ao cliente.</span>
-                      </span>
-                    </label>
-                    <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${editProvedorForm.foreign_customer ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-[#14161c]/50 hover:border-white/20'}`}>
-                      <input type="checkbox" name="foreign_customer" checked={editProvedorForm.foreign_customer} onChange={handleEditProvedorChange} className="mt-0.5 h-4 w-4 rounded border-border bg-[#181b20] text-primary focus:ring-primary/20" />
-                      <span className="flex-1">
-                        <span className="flex items-center gap-2 text-sm font-medium text-white">
-                          <Globe2 className="h-4 w-4 text-primary" />
-                          Cliente estrangeiro
-                        </span>
-                        <span className="mt-1 block text-xs text-gray-500">
-                          {isInterBilling(editProvedorForm)
-                            ? 'Cadastro sem CPF/CNPJ brasileiro (Inter exige documento nacional).'
-                            : 'Cadastro sem CPF/CNPJ brasileiro no Asaas.'}
-                        </span>
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              {errorMsg && (
-                <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                  {errorMsg}
-                </div>
-              )}
-              </div>
-
-              <div className="flex shrink-0 items-center justify-end gap-3 border-t border-white/10 bg-[#15181f]/95 px-6 py-4 backdrop-blur sm:px-8">
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="rounded-xl px-5 py-2.5 text-sm font-semibold text-gray-400 transition hover:bg-white/5 hover:text-white"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-primary px-8 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/25 transition hover:bg-primary/90 disabled:opacity-50"
-                  disabled={loadingEdit}
-                >
-                  {loadingEdit ? 'Salvando...' : 'Salvar alterações'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ProvedorCadastroModal
+        open={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        form={editProvedorForm}
+        onChange={handleEditProvedorChange}
+        onSubmit={handleSaveEdit}
+        planoFields={(
+          <PlanoFields
+            form={editProvedorForm}
+            setForm={setEditProvedorForm}
+            planos={planos}
+            usage={planUsage}
+            hasSubscription={!!editProvedorForm.asaas_subscription_id}
+          />
+        )}
+        loadingEdit={loadingEdit}
+        errorMsg={errorMsg}
+        asaasSandbox={asaasSandbox}
+        subscriptionPayments={subscriptionPayments}
+        loadingPayments={loadingPayments}
+        paymentEdit={paymentEdit}
+        setPaymentEdit={setPaymentEdit}
+        savingPayment={savingPayment}
+        handleSavePayment={handleSavePayment}
+        subscriptionEdit={subscriptionEdit}
+        setSubscriptionEdit={setSubscriptionEdit}
+        savingSubscription={savingSubscription}
+        handleSaveSubscription={handleSaveSubscription}
+        handleVerifyAsaas={handleVerifyAsaas}
+        handleClearAsaasSubscription={handleClearAsaasSubscription}
+        handleCreateSubscription={handleCreateSubscription}
+        handleSyncAsaas={handleSyncAsaas}
+        openProviderAppPanel={openProviderAppPanel}
+        openingAppPanelId={openingAppPanelId}
+        onApplyPromise={handleApplyPromise}
+        onCancelPromise={handleCancelPromise}
+        savingPromise={savingPromise}
+      />
 
       {/* Tabela de provedores modernizada */}
       <div className="bg-card rounded-xl shadow-lg border border-border overflow-hidden">
@@ -2680,7 +2064,7 @@ export default function SuperadminProvedores() {
               <Users className="w-5 h-5 text-slate-400" />
               Lista de Provedores
             </h3>
-            <button 
+            <button
               onClick={() => {
                 setReleaseJob(null);
                 setUpdateForm((f) => ({ ...f, version: '' }));
@@ -2754,13 +2138,23 @@ export default function SuperadminProvedores() {
                   </td>
                   <td className="px-6 py-4 min-w-[220px] align-middle">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-900 flex items-center justify-center">
+                      <button
+                        type="button"
+                        title="Abrir ficha do provedor"
+                        onClick={() => handleEditProvedor(provedor)}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-900 transition hover:ring-2 hover:ring-primary/60"
+                      >
                         <Wifi className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-card-foreground">{provedor.nome}</div>
+                      </button>
+                      <button
+                        type="button"
+                        title="Abrir ficha do provedor"
+                        onClick={() => handleEditProvedor(provedor)}
+                        className="min-w-0 text-left"
+                      >
+                        <div className="font-semibold text-card-foreground hover:text-primary">{provedor.nome}</div>
                         <div className="text-xs text-muted-foreground">{provedor.site_oficial || provedor.email_contato}</div>
-                      </div>
+                      </button>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-center align-middle text-foreground">
@@ -2877,34 +2271,43 @@ export default function SuperadminProvedores() {
                     })()}
                   </td>
                   <td className="px-6 py-4 text-center align-middle">
-                    <button
-                      className={`px-3 py-1 rounded-full text-xs font-semibold focus:outline-none transition-colors duration-200 ${provedor.is_active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
-                      style={{ cursor: 'pointer' }}
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try {
-                          const token = localStorage.getItem('token');
-                          const nextActive = provedor.is_active === false;
-                          await axios.patch(
-                            `/api/provedores/${provedor.id}/`,
-                            {
-                              is_active: nextActive,
-                              status: nextActive ? 'ativo' : 'suspenso',
-                            },
-                            { headers: { Authorization: `Token ${token}` } }
-                          );
-                          // Atualizar lista após toggle
-                          const res = await axios.get('/api/provedores/', {
-                            headers: { Authorization: `Token ${token}` }
-                          });
-                          setProvedoresState(res.data.results || res.data);
-                        } catch (err) {
-                          alert('Erro ao alterar status do provedor!');
-                        }
-                      }}
-                    >
-                      {provedor.is_active !== false ? 'Ativo' : 'Suspenso'}
-                    </button>
+                    <div className="flex flex-col items-center gap-1">
+                      <button
+                        className={`px-3 py-1 rounded-full text-xs font-semibold focus:outline-none transition-colors duration-200 ${provedor.is_active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
+                        style={{ cursor: 'pointer' }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            const token = localStorage.getItem('token');
+                            const nextActive = provedor.is_active === false;
+                            await axios.patch(
+                              `/api/provedores/${provedor.id}/`,
+                              {
+                                is_active: nextActive,
+                                status: nextActive ? 'ativo' : 'suspenso',
+                              },
+                              { headers: { Authorization: `Token ${token}` } }
+                            );
+                            const res = await axios.get('/api/provedores/', {
+                              headers: { Authorization: `Token ${token}` }
+                            });
+                            setProvedoresState(res.data.results || res.data);
+                          } catch (err) {
+                            alert('Erro ao alterar status do provedor!');
+                          }
+                        }}
+                      >
+                        {provedor.is_active !== false ? 'Ativo' : 'Suspenso'}
+                      </button>
+                      {provedor.payment_promise_active && provedor.payment_promise_until ? (
+                        <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+                          Promessa {(() => {
+                            const [y, m, d] = String(provedor.payment_promise_until).slice(0, 10).split('-');
+                            return d && m ? `${d}/${m}` : '';
+                          })()}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-center align-middle relative" style={{ overflow: 'visible' }}>
                     <button ref={el => (menuBtnRefs.current[provedor.id] = el)} className="p-1 hover:bg-muted rounded" onClick={handleOpenMenu(provedor.id)}>

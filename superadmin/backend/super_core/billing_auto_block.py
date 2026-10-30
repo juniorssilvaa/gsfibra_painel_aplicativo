@@ -38,6 +38,41 @@ def _compute_days_late(due_date_iso: str) -> int:
         return 0
 
 
+PAYMENT_PROMISE_FIELDS = (
+    'payment_promise_until',
+    'payment_promise_note',
+    'payment_promise_created_at',
+    'payment_promise_created_by',
+)
+
+
+def payment_promise_is_active(prov: Provedor) -> bool:
+    fn = getattr(prov, 'has_active_payment_promise', None)
+    if callable(fn):
+        return bool(fn())
+    until = getattr(prov, 'payment_promise_until', None)
+    if not until:
+        return False
+    return until >= timezone.localdate()
+
+
+def clear_payment_promise_fields(prov: Provedor) -> bool:
+    """Zera a promessa no objeto (não salva). True se havia algo a limpar."""
+    had = bool(
+        getattr(prov, 'payment_promise_until', None)
+        or getattr(prov, 'payment_promise_note', '')
+        or getattr(prov, 'payment_promise_created_at', None)
+        or getattr(prov, 'payment_promise_created_by', '')
+    )
+    if not had:
+        return False
+    prov.payment_promise_until = None
+    prov.payment_promise_note = ''
+    prov.payment_promise_created_at = None
+    prov.payment_promise_created_by = ''
+    return True
+
+
 def _block_reason_text(days_late: int, min_days: int) -> str:
     return (
         f'Acesso suspenso: fatura vencida há {days_late} dia(s) '
@@ -114,7 +149,42 @@ def sync_provedor_billing_block(prov: Provedor, *, asaas: AsaasService | None = 
 
     has_blocking = _provider_has_blocking_overdue(prov, asaas, min_days)
 
+    if has_blocking and payment_promise_is_active(prov):
+        if (not prov.is_active) or prov.status == 'suspenso':
+            prov.is_active = True
+            prov.status = 'ativo'
+            prov.save(update_fields=['is_active', 'status'])
+            try:
+                from mobile_app.models import MobileAppProfile
+                MobileAppProfile.objects.filter(provedor_id=prov.id).update(is_active=True)
+            except Exception:
+                pass
+            try:
+                from acs.services import sync_acs_access
+                sync_acs_access(prov, True, source='billing')
+            except Exception:
+                pass
+            until_label = (
+                prov.payment_promise_until.strftime('%d/%m/%Y')
+                if prov.payment_promise_until
+                else ''
+            )
+            try:
+                notify_provider_panel(prov.id, True, 'ativo')
+                cache.delete(f'auto_block_tenant_sync:{prov.id}')
+            except Exception as exc:
+                logger.warning('[AutoBlock] promise notify provedor=%s: %s', prov.id, exc)
+            logger.info(
+                '[AutoBlock] Provedor %s (%s) liberado por promessa até %s',
+                prov.id,
+                prov.nome,
+                until_label,
+            )
+            return {'changed': True, 'action': 'promise_hold', 'provedor_id': prov.id}
+        return {'changed': False, 'action': 'promise_active', 'provedor_id': prov.id}
+
     if has_blocking:
+        promise_cleared = clear_payment_promise_fields(prov)
         if not ((not prov.is_active) and prov.status == 'suspenso'):
             days_late = 0
             if is_inter:
@@ -137,7 +207,10 @@ def sync_provedor_billing_block(prov: Provedor, *, asaas: AsaasService | None = 
             prov.is_active = False
             prov.status = 'suspenso'
             prov.subscription_status = 'OVERDUE'
-            prov.save(update_fields=['is_active', 'status', 'subscription_status'])
+            update = ['is_active', 'status', 'subscription_status']
+            if promise_cleared:
+                update.extend(PAYMENT_PROMISE_FIELDS)
+            prov.save(update_fields=update)
             try:
                 from mobile_app.models import MobileAppProfile
                 MobileAppProfile.objects.filter(provedor_id=prov.id).update(is_active=False)
@@ -156,14 +229,20 @@ def sync_provedor_billing_block(prov: Provedor, *, asaas: AsaasService | None = 
             logger.info('[AutoBlock] Bloqueado provedor %s (%s) via sync', prov.id, prov.nome)
             return {'changed': True, 'action': 'blocked', 'provedor_id': prov.id}
 
+        if promise_cleared:
+            prov.save(update_fields=list(PAYMENT_PROMISE_FIELDS))
         return {'changed': False, 'action': 'already_blocked', 'provedor_id': prov.id}
 
+    promise_cleared = clear_payment_promise_fields(prov)
     if (not prov.is_active) and prov.status == 'suspenso':
         prov.is_active = True
         prov.status = 'ativo'
         if (prov.subscription_status or '').upper() == 'OVERDUE':
             prov.subscription_status = 'ACTIVE'
-        prov.save(update_fields=['is_active', 'status', 'subscription_status'])
+        update = ['is_active', 'status', 'subscription_status']
+        if promise_cleared:
+            update.extend(PAYMENT_PROMISE_FIELDS)
+        prov.save(update_fields=update)
         try:
             from mobile_app.models import MobileAppProfile
             MobileAppProfile.objects.filter(provedor_id=prov.id).update(is_active=True)
@@ -182,6 +261,10 @@ def sync_provedor_billing_block(prov: Provedor, *, asaas: AsaasService | None = 
         logger.info('[AutoBlock] Reativado provedor %s (%s) — sem fatura OVERDUE ativa', prov.id, prov.nome)
         return {'changed': True, 'action': 'released', 'provedor_id': prov.id}
 
+    if promise_cleared:
+        prov.save(update_fields=list(PAYMENT_PROMISE_FIELDS))
+        return {'changed': True, 'action': 'promise_cleared', 'provedor_id': prov.id}
+
     return {'changed': False, 'action': 'ok', 'provedor_id': prov.id}
 
 
@@ -191,6 +274,7 @@ def _release_provedores_without_active_overdue(asaas: AsaasService, min_days: in
     qs = Provedor.objects.filter(is_active=False, status='suspenso').only(
         'id', 'nome', 'subdomain', 'integration_token', 'subscription_status',
         'asaas_subscription_id', 'is_active', 'status',
+        *PAYMENT_PROMISE_FIELDS,
     )
     for prov in qs.iterator():
         if _provider_has_blocking_overdue(prov, asaas, min_days):
@@ -222,6 +306,7 @@ def run_billing_auto_block_cycle() -> dict[str, Any]:
             'id', 'nome', 'asaas_subscription_id', 'billing_provider',
             'is_active', 'status', 'subscription_status',
             'subdomain', 'integration_token',
+            *PAYMENT_PROMISE_FIELDS,
         )
     )
 

@@ -3,10 +3,12 @@ import json
 import requests
 import re
 import uuid
-from datetime import datetime, date
+import threading
+from datetime import datetime, date, timedelta
 from typing import Any, Dict, Optional, List, Tuple
-from asgiref.sync import sync_to_async
+from asgiref.sync import async_to_sync, sync_to_async
 from django.conf import settings
+from django.utils import timezone as dj_timezone
 from .models import ChatbotFlow, Provedor
 from .redis_memory_service import redis_memory_service
 from integrations.whatsapp_cloud_send import send_via_whatsapp_cloud_api
@@ -19,6 +21,23 @@ DEFAULT_AUTOCLOSE_MESSAGE = (
     "Atendimento encerrado. Obrigado pelo contato! "
     "Se precisar de algo, envie uma nova mensagem."
 )
+
+
+def _delay_seconds_from_node_data(node_data: Optional[dict]) -> int:
+    data = node_data or {}
+    try:
+        value = int(float(str(data.get('delayValue', 1)).strip().replace(',', '.')))
+    except (TypeError, ValueError):
+        value = 1
+    value = max(1, value)
+    unit = str(data.get('delayUnit') or 'minutes').strip().lower()
+    if unit in ('day', 'days', 'dia', 'dias', 'd'):
+        return min(30, value) * 86400
+    if unit in ('hour', 'hours', 'hora', 'horas', 'h'):
+        return min(72, value) * 3600
+    if unit in ('second', 'seconds', 'segundo', 'segundos', 's'):
+        return min(120, value)
+    return min(1440, value) * 60
 
 
 def _copy_provider_gallery_to_conversation_media(conv, gallery_image) -> str:
@@ -577,6 +596,31 @@ class ChatbotEngine:
             current_node = next((n for n in nodes if n.get('id') == current_node_id), None)
             current_node_data = current_node.get('data', {}) if current_node else {}
 
+            if current_node and current_node.get('type') == 'delay':
+                until_raw = current_state.get('chatbot_delay_until')
+                token = current_state.get('chatbot_delay_token')
+                still_waiting = False
+                if until_raw:
+                    try:
+                        until_dt = datetime.fromisoformat(str(until_raw).replace('Z', '+00:00'))
+                        if dj_timezone.is_naive(until_dt):
+                            until_dt = dj_timezone.make_aware(until_dt, dj_timezone.get_current_timezone())
+                        still_waiting = dj_timezone.now() < until_dt
+                    except (TypeError, ValueError):
+                        still_waiting = bool(token)
+                if still_waiting:
+                    logger.info(
+                        "[ChatbotEngine] Conv %s em delay (nó %s). Mensagem ignorada até o tempo acabar.",
+                        conversation_id,
+                        current_node_id,
+                    )
+                    return True, "Aguardando delay"
+                if token:
+                    await ChatbotEngine.continue_after_delay(
+                        provedor_id, conversation_id, current_node_id, token
+                    )
+                    return True, "Delay concluído"
+
             # Se o nó atual é interativo, só deve avançar com opção válida.
             is_interactive_node = bool(
                 current_node and (
@@ -873,6 +917,111 @@ class ChatbotEngine:
         return False, "Nenhum nó seguinte encontrado"
 
     @staticmethod
+    def _next_node_from(flow: ChatbotFlow, node_id: str) -> Optional[Dict[str, Any]]:
+        edge = next((e for e in (flow.edges or []) if e.get('source') == node_id), None)
+        if not edge:
+            return None
+        return next((n for n in (flow.nodes or []) if n.get('id') == edge.get('target')), None)
+
+    @staticmethod
+    def _schedule_delay_continue(
+        provedor_id: int,
+        conversation_id: int,
+        node_id: str,
+        delay_token: str,
+        seconds: int,
+    ) -> None:
+        def _run_timer():
+            from django.db import close_old_connections
+            close_old_connections()
+            try:
+                ChatbotEngine.continue_after_delay_sync(
+                    provedor_id, conversation_id, node_id, delay_token
+                )
+            except Exception:
+                logger.exception(
+                    "[ChatbotEngine][Delay] Timer falhou conv=%s node=%s",
+                    conversation_id,
+                    node_id,
+                )
+            finally:
+                close_old_connections()
+
+        wait = max(1.0, float(seconds))
+        timer = threading.Timer(wait, _run_timer)
+        timer.daemon = True
+        timer.start()
+        logger.info(
+            "[ChatbotEngine][Delay] Timer %ss conv=%s node=%s",
+            wait,
+            conversation_id,
+            node_id,
+        )
+
+    @staticmethod
+    def continue_after_delay_sync(provedor_id: int, conversation_id: int, node_id: str, delay_token: str):
+        return async_to_sync(ChatbotEngine.continue_after_delay)(
+            provedor_id, conversation_id, node_id, delay_token
+        )
+
+    @staticmethod
+    async def continue_after_delay(
+        provedor_id: int,
+        conversation_id: int,
+        node_id: str,
+        delay_token: str,
+    ):
+        current_state = await redis_memory_service.get_ai_state(
+            provedor_id, conversation_id, "whatsapp", "unknown"
+        )
+        if current_state.get('chatbot_delay_token') != delay_token:
+            logger.info(
+                "[ChatbotEngine][Delay] Token inválido/expirado conv=%s — ignorando.",
+                conversation_id,
+            )
+            return
+        if current_state.get('chatbot_node_id') != node_id:
+            logger.info(
+                "[ChatbotEngine][Delay] Nó mudou conv=%s — ignorando continuação.",
+                conversation_id,
+            )
+            return
+
+        current_state['chatbot_delay_token'] = None
+        current_state['chatbot_delay_until'] = None
+        await redis_memory_service.update_ai_state(
+            provedor_id, conversation_id, current_state, "whatsapp", "unknown"
+        )
+
+        flow_id = current_state.get('flow_id')
+        flow = None
+        if flow_id:
+            flow = await ChatbotFlow.objects.filter(id=flow_id, provedor_id=provedor_id).afirst()
+        if not flow:
+            flow = await ChatbotFlow.objects.filter(provedor_id=provedor_id).order_by('-updated_at').afirst()
+        if not flow:
+            logger.warning("[ChatbotEngine][Delay] Fluxo não encontrado conv=%s", conversation_id)
+            return
+
+        next_node = ChatbotEngine._next_node_from(flow, node_id)
+        if not next_node:
+            logger.warning(
+                "[ChatbotEngine][Delay] Sem próximo bloco após delay %s conv=%s",
+                node_id,
+                conversation_id,
+            )
+            return
+
+        logger.info(
+            "[ChatbotEngine][Delay] Conv %s seguindo de %s para %s (%s)",
+            conversation_id,
+            node_id,
+            next_node.get('id'),
+            next_node.get('type'),
+        )
+        await ChatbotEngine.execute_node(provedor_id, conversation_id, next_node, flow)
+
+    @staticmethod
     async def execute_node(provedor_id: int, conversation_id: int, node: Dict[str, Any], flow: ChatbotFlow):
         """
         Executa a ação de um nó específico (ex: enviar mensagem).
@@ -1094,6 +1243,42 @@ class ChatbotEngine:
                 next_node = next((n for n in nodes if n.get('id') == edge.get('target')), None)
                 if next_node:
                     await ChatbotEngine.execute_node(provedor_id, conversation_id, next_node, flow)
+
+        elif node_type == 'delay':
+            try:
+                seconds = _delay_seconds_from_node_data(node_data)
+                token = str(uuid.uuid4())
+                until = dj_timezone.now() + timedelta(seconds=seconds)
+                existing_state = await redis_memory_service.get_ai_state(
+                    provedor_id, conversation_id, "whatsapp", "unknown"
+                )
+                existing_state['chatbot_node_id'] = node_id
+                existing_state['flow_id'] = flow.id
+                existing_state['chatbot_delay_token'] = token
+                existing_state['chatbot_delay_until'] = until.isoformat()
+                await redis_memory_service.update_ai_state(
+                    provedor_id, conversation_id, existing_state, "whatsapp", "unknown"
+                )
+                logger.info(
+                    "[ChatbotEngine][Delay] Conv %s espera %ss no nó %s até %s",
+                    conversation_id,
+                    seconds,
+                    node_id,
+                    until.isoformat(),
+                )
+                # Minutos curtos: timer na hora. Horas/dias: o monitor retoma pelo horário salvo.
+                if seconds <= 600:
+                    ChatbotEngine._schedule_delay_continue(
+                        provedor_id, conversation_id, node_id, token, seconds
+                    )
+            except Exception as e:
+                logger.error(
+                    "[ChatbotEngine][Delay] Erro no nó %s conv=%s: %s",
+                    node_id,
+                    conversation_id,
+                    e,
+                    exc_info=True,
+                )
 
         elif node_type == 'sgp':
             try:
