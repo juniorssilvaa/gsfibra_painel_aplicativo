@@ -876,6 +876,27 @@ const ChatbotBuilder = () => {
                                                                 maxInvalidActionTeamId: type === 'menu' ? '' : undefined,
                                                                 ...(type === 'planos' ? { useDynamicPlanos: true } : {}),
                                                                 ...(type === 'delay' ? { delayValue: 1, delayUnit: 'minutes' } : {}),
+                                                            }
+                                                        };
+                                                        setNodes(prev => [...prev, newNode]);
+                                                        if (contextMenu.type === 'connection' && contextMenu.targetId) {
+                                                            setEdges(prev => {
+                                                                const cleaned = prev.filter(e => !(
+                                                                    e.source == contextMenu.targetId &&
+                                                                    e.sourceHandle == contextMenu.sourceHandle
+                                                                ));
+                                                                return [...cleaned, {
+                                                                    id: `edge_${Date.now()}`,
+                                                                    source: contextMenu.targetId,
+                                                                    target: newNodeId,
+                                                                    sourceHandle: contextMenu.sourceHandle
+                                                                }];
+                                                            });
+                                                        }
+                                                        setSelectedNode(newNodeId);
+                                                        setIsEditorOpen(true);
+                                                        setContextMenu({ show: false, x: 0, y: 0, type: null, targetId: null });
+                                                    }}
                                                     className="w-full flex items-center gap-3 p-2.5 hover:bg-white/5 rounded-xl transition-all text-left group"
                                                 >
                                                     <div className={`${config.color} group-hover:scale-110 transition-transform`}>
@@ -1567,32 +1588,11 @@ const ChatbotBuilder = () => {
                                             </div>
                                         )}
 
-                                        {nodes.find(n => n.id === selectedNode)?.type === 'sgp' && (() => {
-                                            const sgpNode = nodes.find(n => n.id === selectedNode);
-                                            const sgpAction = sgpNode?.data.sgpAction || 'consultar_cliente';
-                                            const SGP_ENDPOINTS = [
-                                                { value: 'consultar_cliente', label: 'Consultar Cliente (CPF/CNPJ)', input: 'cpf', desc: 'Retorna dados e contratos do cliente. Variáveis: {{nome}}, {{contratos}}' },
-                                                { value: 'verifica_acesso', label: 'Verificar Acesso (Contrato)', input: 'contrato', desc: 'Verifica status da conexão do contrato. Variável: {{status_acesso}}' },
-                                                { value: 'listar_contratos', label: 'Listar Contratos (Cliente ID)', input: 'cliente_id', desc: 'Lista todos os contratos do cliente. Variável: {{contratos}}' },
-                                                { value: 'listar_titulos', label: 'Enviar 2 Via Fatura', input: 'cpf', desc: 'Lista faturas seguindo a nova priorização. Variável: {{titulos}}' },
-                                                { value: 'liberar_por_confianca', label: 'Liberar por Confiança (Contrato)', input: 'contrato', desc: 'Faz liberação por promessa de pagamento. Variável: {{sucesso}}' },
-                                                { value: 'criar_chamado', label: 'Criar Chamado Técnico (Contrato)', input: 'contrato', desc: 'Abre chamado no SGP. Variável: {{protocolo}}' },
-                                                { value: 'listar_manutencoes', label: 'Listar Manutenções (CPF)', input: 'cpf', desc: 'Lista manutenções na área do cliente. Variável: {{manutencoes}}' },
-                                            ];
-                                            const selectedEndpoint = SGP_ENDPOINTS.find(e => e.value === sgpAction) || SGP_ENDPOINTS[0];
-                                            return (
-                                                <div className="space-y-5">
-                                                    <div className="p-4 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-800/30 rounded-2xl">
-                                                        <p className="text-[10px] text-purple-700 dark:text-purple-400 font-bold uppercase tracking-widest mb-1">Bloco SGP</p>
-                                                        <p className="text-[10px] text-purple-700/70 dark:text-purple-400/70 leading-relaxed">
-                                                            Este bloco consulta a API do seu SGP e salva o resultado no contexto do fluxo, disponível nos próximos blocos.
-                                                        </p>
-                                                    </div>
-
-                                                    <div>
-                                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Endpoint / Ação</label>
-                                                        <select
-                                                            value={sgpAction}
+                                        {nodes.find(n => n.id === selectedNode)?.type === 'delay' && (
+                                            <div className="space-y-5">
+                                                <div className="p-4 bg-muted/20 border border-border rounded-xl">
+                                                    <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest mb-1.5">Bloco Delay</p>
+                                                    <p className="text-xs text-muted-foreground leading-relaxed">
                                                         Você escolhe quanto esperar (minutos, horas ou dias). Quando o tempo acabar, o bot envia o próximo bloco ligado na saída.
                                                     </p>
                                                 </div>
@@ -1630,6 +1630,72 @@ const ChatbotBuilder = () => {
                                                 </div>
                                                 <p className="text-[9px] text-muted-foreground">
                                                     Até 1440 minutos, 72 horas ou 30 dias. Ligue a bolinha da direita no menu que deve ir depois da espera.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {nodes.find(n => n.id === selectedNode)?.type === 'sgp' && (() => {
+                                            const sgpNode = nodes.find(n => n.id === selectedNode);
+                                            const sgpAction = sgpNode?.data.sgpAction || 'consultar_cliente';
+                                            const SGP_ENDPOINTS = [
+                                                { value: 'consultar_cliente', label: 'Consultar Cliente (CPF/CNPJ)', input: 'cpf', desc: 'Retorna dados e contratos do cliente. Variáveis: {{nome}}, {{contratos}}' },
+                                                { value: 'verifica_acesso', label: 'Verificar Acesso (Contrato)', input: 'contrato', desc: 'Verifica status da conexão do contrato. Variável: {{status_acesso}}' },
+                                                { value: 'listar_contratos', label: 'Listar Contratos (Cliente ID)', input: 'cliente_id', desc: 'Lista todos os contratos do cliente. Variável: {{contratos}}' },
+                                                { value: 'listar_titulos', label: 'Enviar 2 Via Fatura', input: 'cpf', desc: 'Lista faturas seguindo a nova priorização. Variável: {{titulos}}' },
+                                                { value: 'liberar_por_confianca', label: 'Liberar por Confiança (Contrato)', input: 'contrato', desc: 'Faz liberação por promessa de pagamento. Variável: {{sucesso}}' },
+                                                { value: 'criar_chamado', label: 'Criar Chamado Técnico (Contrato)', input: 'contrato', desc: 'Abre chamado no SGP. Variável: {{protocolo}}' },
+                                                { value: 'listar_manutencoes', label: 'Listar Manutenções (CPF)', input: 'cpf', desc: 'Lista manutenções na área do cliente. Variável: {{manutencoes}}' },
+                                            ];
+                                            const selectedEndpoint = SGP_ENDPOINTS.find(e => e.value === sgpAction) || SGP_ENDPOINTS[0];
+                                            return (
+                                                <div className="space-y-5">
+                                                    <div className="p-4 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-800/30 rounded-2xl">
+                                                        <p className="text-[10px] text-purple-700 dark:text-purple-400 font-bold uppercase tracking-widest mb-1">Bloco SGP</p>
+                                                        <p className="text-[10px] text-purple-700/70 dark:text-purple-400/70 leading-relaxed">
+                                                            Este bloco consulta a API do seu SGP e salva o resultado no contexto do fluxo, disponível nos próximos blocos.
+                                                        </p>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Endpoint / Ação</label>
+                                                        <select
+                                                            value={sgpAction}
+                                                            onChange={(e) => updateNodeData(selectedNode, { sgpAction: e.target.value })}
+                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all text-slate-800 dark:text-white"
+                                                        >
+                                                            {SGP_ENDPOINTS.map(ep => (
+                                                                <option key={ep.value} value={ep.value}>{ep.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                                                            Variável de Entrada: <span className="text-purple-500 font-black">&#123;&#123;{selectedEndpoint.input}&#125;&#125;</span>
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={sgpNode?.data.inputVar || selectedEndpoint.input}
+                                                            onChange={(e) => updateNodeData(selectedNode, { inputVar: e.target.value })}
+                                                            placeholder={`Nome da variável (ex: ${selectedEndpoint.input})`}
+                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all"
+                                                        />
+                                                        <p className="text-[9px] text-slate-400 mt-1 px-1 italic">Nome da variável de contexto que será usada como entrada.</p>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Mensagem de Erro (opcional)</label>
+                                                        <input
+                                                            type="text"
+                                                            value={sgpNode?.data.errorMessage || ''}
+                                                            onChange={(e) => updateNodeData(selectedNode, { errorMessage: e.target.value })}
+                                                            placeholder="Ex: Cliente não encontrado no sistema."
+                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 text-xs font-bold outline-none focus:border-purple-500 transition-all"
+                                                        />
+                                                    </div>
+
+                                                    {sgpAction === 'criar_chamado' && (
+                                                        <div className="space-y-4">
                                                             <div>
                                                                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tipo de Ocorrência (ocorrenciatipo)</label>
                                                                 <input
