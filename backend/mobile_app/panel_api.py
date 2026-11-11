@@ -65,7 +65,7 @@ def _resolve_profile(request):
 
 
 def _default_webhook_url(request):
-    """Webhook SGP → push. Preferência: api.niohub.com.br/v1/webhooks/push/"""
+    """Webhook SGP → push. Preferência: painelapp.gsfibra.com:8443/v1/webhooks/push/"""
     public_base = (os.environ.get('MOBILE_API_PUBLIC_BASE') or '').rstrip('/')
     if public_base:
         return f'{public_base}/webhooks/push/'
@@ -75,7 +75,7 @@ def _default_webhook_url(request):
         scheme = 'https' if request.is_secure() else 'http'
         return f'{scheme}://{host}/v1/webhooks/push/'
 
-    webhook_host = os.environ.get('WEBHOOK_HOST', 'api.niohub.com.br')
+    webhook_host = os.environ.get('WEBHOOK_HOST', 'painelapp.gsfibra.com:8443')
     return f'https://{webhook_host}/v1/webhooks/push/'
 
 

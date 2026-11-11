@@ -49,11 +49,11 @@ class AppConfig {
     return uri.replace(queryParameters: q.isEmpty ? null : q).toString();
   }
   static const String supportPhone = '+558597095195';
-  /// API pública de produção.
+  /// API do painel GSFibra (mesmo host do painel, porta 8443).
   /// Local: --dart-define=API_BASE_URL=http://127.0.0.1:8010/v1/
   static const String _envApiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://api.niohub.com.br/v1/',
+    defaultValue: 'https://painelapp.gsfibra.com:8443/v1/',
   );
 
   static String get apiBaseUrl {

@@ -1,5 +1,5 @@
 """
-API pública limpa do App Mobile — base: https://api.niohub.com.br/v1/
+API pública limpa do App Mobile — base: https://painelapp.gsfibra.com:8443/v1/
 
 Exemplos:
   POST /v1/auth/login

@@ -8,7 +8,7 @@ from super_core.views import operator_app_legal
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    # API pública do App Mobile (api.niohub.com.br/v1/...)
+    # API pública do App Mobile (painelapp.gsfibra.com:8443/v1/...)
     path('v1/', include('mobile_app.v1_urls')),
     # Compatível com app Flutter legado (app_provedor): /api/sgp/... e /api/public/...
     path('api/sgp/<path:endpoint>', proxy_sgp_request, name='legacy-sgp-proxy'),

@@ -37,5 +37,5 @@ export function getBackendAbsoluteBase() {
     if (cleaned.endsWith('/api')) cleaned = cleaned.slice(0, -4)
     return cleaned
   }
-  return 'https://api.niohub.com.br'
+  return 'https://painelapp.gsfibra.com:8443'
 }
