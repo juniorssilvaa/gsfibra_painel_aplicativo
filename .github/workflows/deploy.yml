@@ -1,4 +1,4 @@
-name: Deploy NioChat to Production
+name: Deploy GSFibra
 
 on:
   push:
@@ -8,400 +8,94 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: niohub-chat-${{ github.workflow }}-${{ github.ref }}
+  group: gsfibra-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: juniorssilvaa/niohub_chat
 
 jobs:
   test:
     runs-on: ubuntu-latest
-
-    env:
-      DRAMATIQ_BROKER_URL: ${{ secrets.DRAMATIQ_BROKER_URL }}
-
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: niochat_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6380:6379
-
-      rabbitmq:
-        image: rabbitmq:3-management
-        env:
-          RABBITMQ_DEFAULT_USER: niochat
-          RABBITMQ_DEFAULT_PASS: ccf9e819f70a54bb790487f2438da6ee
-        ports:
-          - 5672:5672
-          - 15672:15672
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-        cache: pip
-        cache-dependency-path: painel-provedor/backend/requirements.txt
-
-    - name: Install pnpm
-      uses: pnpm/action-setup@v4
+    - uses: pnpm/action-setup@v4
       with:
         version: 10.4.1
         run_install: false
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: pnpm
-        cache-dependency-path: |
-          painel-provedor/front/pnpm-lock.yaml
-          superadmin/front/pnpm-lock.yaml
+        cache-dependency-path: front/pnpm-lock.yaml
 
-    - name: Install ffmpeg
-      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-
-    - name: Python dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r painel-provedor/backend/requirements.txt
-
-    - name: Node dependencies
-      run: |
-        pnpm --dir painel-provedor/front install --no-frozen-lockfile
-        pnpm --dir superadmin/front install --no-frozen-lockfile
-
-    - name: Run backend tests
+    - name: Install and build front
       env:
-        SECRET_KEY: test-secret-key
-        DEBUG: True
-        ENVIRONMENT: test
-        ALLOWED_HOSTS: localhost
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/niochat_test
-        DRAMATIQ_BROKER_URL: ${{ secrets.DRAMATIQ_BROKER_URL }}
-        CI: true
-        GITHUB_ACTIONS: true
+        VITE_API_URL: "https://gsfibra.niohub.com.br"
+        VITE_WS_URL: "wss://gsfibra.niohub.com.br/ws"
+        VITE_GSFIBRA_APP_URL: "https://gsfibra.niohub.com.br"
       run: |
-        cd painel-provedor/backend
-        python manage.py migrate
-        python manage.py test
-
-    - name: Build frontend (painel provedor)
-      env:
-        VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        VITE_API_URL: "https://api.niohub.com.br/api"
-        VITE_WS_URL: "wss://api.niohub.com.br/ws"
-        VITE_SUPERADMIN_APP_URL: ${{ secrets.VITE_SUPERADMIN_APP_URL }}
-        VITE_META_CONNECT_ORIGIN: ""
-      run: pnpm --dir painel-provedor/front build
-
-    - name: Build Superadmin app
-      env:
-        VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        VITE_API_URL: "https://api.niohub.com.br/api"
-        VITE_WS_URL: "wss://api.niohub.com.br/ws"
-        VITE_META_CONNECT_ORIGIN: "https://connect.niohub.com.br"
-      run: pnpm --dir superadmin/front build
-
+        pnpm --dir front install --no-frozen-lockfile
+        pnpm --dir front build
 
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-
     permissions:
       contents: read
       packages: write
-
     strategy:
       fail-fast: false
       matrix:
         include:
-          - id: backend
-            name: backend
-            file: ./painel-provedor/Dockerfile.backend
-            context: .
-            tag_set: tenant
-            vite_profile: none
-
           - id: frontend
-            name: frontend
-            file: ./painel-provedor/Dockerfile.frontend
-            context: .
-            tag_set: tenant
-            vite_profile: painel
-
-          - id: dramatiq
-            name: dramatiq
-            file: ./painel-provedor/Dockerfile.dramatiq
-            context: .
-            tag_set: tenant
-            vite_profile: none
-
-          - id: calls
-            name: calls
-            file: ./services/niohub-telefonia/Dockerfile
-            context: ./services/niohub-telefonia
-            tag_set: tenant
-            vite_profile: none
-
-          - id: superadmin
-            name: superadmin
-            file: ./superadmin/Dockerfile.frontend
-            context: .
-            tag_set: admin
-            vite_profile: superadmin
-
-          - id: superadmin-backend
-            name: superadmin-backend
-            file: ./superadmin/Dockerfile.backend
-            context: .
-            tag_set: admin
-            vite_profile: none
-
-          - id: docs
-            name: docs
-            file: ./Dockerfile.docs
-            context: .
-            tag_set: docs
-            vite_profile: none
-            platforms: linux/amd64
-
+            image: juniorssilvaa/gsfibra_painel_aplicativo
+            file: ./Dockerfile.frontend
+            vite: true
+          - id: backend
+            image: juniorssilvaa/gsfibra_painel_aplicativo-backend
+            file: ./Dockerfile.backend
+            vite: false
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Read app version
-      id: ver
-      run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+    - uses: docker/setup-buildx-action@v3
 
-    - name: Setup Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Login GHCR
-      uses: docker/login-action@v3
+    - uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GHCR_TOKEN || github.token }}
 
-    - name: Compose image tags
-      id: tags
-      run: |
-        set -euo pipefail
-        REG="${{ env.REGISTRY }}"
-        IMG="${{ env.IMAGE_NAME }}-${{ matrix.name }}"
-        VER="${{ steps.ver.outputs.version }}"
-        SHA="${{ github.sha }}"
-        TAG_SET="${{ matrix.tag_set }}"
-        {
-          case "$TAG_SET" in
-            tenant)
-              echo "${REG}/${IMG}:latest"
-              echo "${REG}/${IMG}:beta-prov"
-              echo "${REG}/${IMG}:${VER}"
-              echo "${REG}/${IMG}:${SHA}"
-              ;;
-            admin)
-              echo "${REG}/${IMG}:latest"
-              echo "${REG}/${IMG}:admin"
-              echo "${REG}/${IMG}:${SHA}"
-              ;;
-            docs)
-              echo "${REG}/${IMG}:latest"
-              echo "${REG}/${IMG}:${SHA}"
-              ;;
-            *)
-              echo "tag_set desconhecido: $TAG_SET" >&2
-              exit 1
-              ;;
-          esac
-        } > /tmp/tags.txt
-        echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-        cat /tmp/tags.txt >> "$GITHUB_OUTPUT"
-        echo "EOF" >> "$GITHUB_OUTPUT"
-        echo "Tags:"
-        cat /tmp/tags.txt
-
-    - name: Resolve Vite build-args
+    - name: Build args
       id: vite
       run: |
-        set -euo pipefail
-        PROFILE="${{ matrix.vite_profile }}"
-        case "$PROFILE" in
-          painel)
-            {
-              echo "VITE_SUPABASE_URL=${{ secrets.SUPABASE_URL }}"
-              echo "VITE_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}"
-              echo "VITE_API_URL=https://api.niohub.com.br/api"
-              echo "VITE_WS_URL=wss://api.niohub.com.br/ws"
-              echo "VITE_SUPERADMIN_APP_URL=${{ secrets.VITE_SUPERADMIN_APP_URL }}"
-              echo "VITE_META_CONNECT_ORIGIN=https://connect.niohub.com.br"
-            } > /tmp/vite.args
-            ;;
-          superadmin)
-            {
-              echo "VITE_SUPABASE_URL=${{ secrets.SUPABASE_URL }}"
-              echo "VITE_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}"
-              echo "VITE_API_URL=https://app.niohub.com.br/api"
-              echo "VITE_WS_URL=wss://app.niohub.com.br/ws"
-              echo "VITE_SUPERADMIN_APP_URL=https://app.niohub.com.br"
-              echo "VITE_META_CONNECT_ORIGIN=https://connect.niohub.com.br"
-            } > /tmp/vite.args
-            ;;
-          *)
-            : > /tmp/vite.args
-            ;;
-        esac
+        if [ "${{ matrix.vite }}" = "true" ]; then
+          {
+            # Mesmo origin (Caddy encaminha /api e /v1) — instalador provedor :8443
+            echo "VITE_API_URL="
+            echo "VITE_WS_URL="
+            echo "VITE_GSFIBRA_APP_URL="
+          } > /tmp/vite.args
+        else
+          : > /tmp/vite.args
+        fi
         echo "args<<EOF" >> "$GITHUB_OUTPUT"
         cat /tmp/vite.args >> "$GITHUB_OUTPUT"
         echo "EOF" >> "$GITHUB_OUTPUT"
 
-    - name: Build & push
-      uses: docker/build-push-action@v5
+    - uses: docker/build-push-action@v5
       with:
-        context: ${{ matrix.context }}
+        context: .
         file: ${{ matrix.file }}
         push: true
-        tags: ${{ steps.tags.outputs.tags }}
+        tags: |
+          ${{ env.REGISTRY }}/${{ matrix.image }}:latest
+          ${{ env.REGISTRY }}/${{ matrix.image }}:${{ github.sha }}
         build-args: ${{ steps.vite.outputs.args }}
-        platforms: ${{ matrix.platforms || '' }}
         provenance: false
-        cache-from: type=gha,scope=niohub-${{ matrix.id }}
-        cache-to: type=gha,mode=max,scope=niohub-${{ matrix.id }}
-
-    - name: Resumo — tags deste pacote
-      run: |
-        {
-          echo "### \`${{ env.IMAGE_NAME }}-${{ matrix.name }}\`"
-          echo ""
-          echo '```'
-          echo "${{ steps.tags.outputs.tags }}"
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
-
-
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Deploy to Portainer
-      env:
-        PORTAINER_URL: ${{ vars.PORTAINER_URL }}
-        PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
-        STACK_NAME: superadmin
-        DEFAULT_ENDPOINT_ID: "1"
-      run: |
-        set -euo pipefail
-
-        if [ -z "${PORTAINER_URL:-}" ] || [ -z "${PORTAINER_API_KEY:-}" ]; then
-          echo "::warning::PORTAINER_URL ou PORTAINER_API_KEY não configurados. Pulando deploy."
-          exit 0
-        fi
-
-        STACKS=$(curl -sS -H "X-API-Key: $PORTAINER_API_KEY" "$PORTAINER_URL/api/stacks" || true)
-        if ! echo "$STACKS" | jq -e 'type == "array"' >/dev/null 2>&1; then
-          echo "::warning::Resposta inválida do Portainer. Pulando deploy automático."
-          echo "$STACKS"
-          exit 0
-        fi
-
-        STACK_ID=$(echo "$STACKS" | jq -r --arg NAME "$STACK_NAME" '.[] | select(.Name == $NAME) | .Id' | head -n 1)
-        ENDPOINT_ID=$(echo "$STACKS" | jq -r --arg NAME "$STACK_NAME" '.[] | select(.Name == $NAME) | .EndpointId' | head -n 1)
-
-        if [ -z "$STACK_ID" ] || [ "$STACK_ID" = "null" ]; then
-          echo "::warning::Stack '$STACK_NAME' não encontrada no Portainer. Pulando deploy (stack pode estar em outro servidor)."
-          exit 0
-        fi
-
-        if [ -z "$ENDPOINT_ID" ] || [ "$ENDPOINT_ID" = "null" ]; then
-          ENDPOINT_ID="$DEFAULT_ENDPOINT_ID"
-        fi
-
-        echo "Atualizando stack '$STACK_NAME' (ID: $STACK_ID) no Portainer..."
-        COMPOSE=$(cat superadmin/docker-compose.superadmin.yml)
-        PAYLOAD=$(jq -n --arg content "$COMPOSE" '{StackFileContent: $content, pullImage: true, prune: true}')
-
-        RESPONSE=$(curl -sS -X PUT \
-          -H "X-API-Key: $PORTAINER_API_KEY" \
-          -H "Content-Type: application/json" \
-          --data "$PAYLOAD" \
-          "$PORTAINER_URL/api/stacks/$STACK_ID?endpointId=$ENDPOINT_ID&pullImage=true&forceRecreate=true")
-
-        if echo "$RESPONSE" | jq -e '.message? and (.message | type == "string")' >/dev/null 2>&1; then
-          echo "::warning::Resposta do Portainer: $(echo "$RESPONSE" | jq -r '.message')"
-        else
-          echo "Deploy concluido com sucesso!"
-        fi
-
-    - name: Redeploy automático dos provedores Beta
-      env:
-        SUPERADMIN_API_URL: ${{ vars.SUPERADMIN_API_URL }}
-        SUPERADMIN_CI_TOKEN: ${{ secrets.SUPERADMIN_CI_TOKEN }}
-        ADMIN_WEBHOOK_SECRET: ${{ secrets.ADMIN_WEBHOOK_SECRET }}
-      run: |
-        set -euo pipefail
-        TOKEN="${SUPERADMIN_CI_TOKEN:-${ADMIN_WEBHOOK_SECRET:-}}"
-        if [ -z "$TOKEN" ]; then
-          echo "::warning::SUPERADMIN_CI_TOKEN / ADMIN_WEBHOOK_SECRET ausente. Pulando redeploy beta."
-          exit 0
-        fi
-        VERSION=$(tr -d '[:space:]' < VERSION)
-        API="${SUPERADMIN_API_URL:-https://app.niohub.com.br}"
-        API="${API%/}"
-        URL="$API/api/system-updates/release/"
-        echo "Disparando release beta $VERSION em $URL"
-        # Tenta na hora; só espera entre retries (antes era sleep 20 sempre).
-        DELAYS="0 8 15 25 40 60"
-        i=0
-        for DELAY in $DELAYS; do
-          i=$((i + 1))
-          if [ "$DELAY" != "0" ]; then
-            sleep "$DELAY"
-          fi
-          HTTP=$(curl -sS -o /tmp/beta-release.json -w "%{http_code}" -X POST "$URL" \
-            -H "Content-Type: application/json" \
-            -H "X-CI-Token: $TOKEN" \
-            --data "{\"channel\":\"beta\",\"version\":\"$VERSION\"}" || true)
-          echo "Tentativa $i → HTTP $HTTP"
-          cat /tmp/beta-release.json || true
-          if [ "$HTTP" = "202" ] || [ "$HTTP" = "200" ]; then
-            echo "Release beta enfileirado."
-            exit 0
-          fi
-          if [ "$HTTP" = "409" ]; then
-            echo "Já existe um release em andamento."
-            exit 0
-          fi
-        done
-        echo "::warning::Não foi possível enfileirar o release beta após várias tentativas."
+        cache-from: type=gha,scope=gsfibra-painel-${{ matrix.id }}
+        cache-to: type=gha,mode=max,scope=gsfibra-painel-${{ matrix.id }}

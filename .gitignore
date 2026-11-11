@@ -452,3 +452,12 @@ services/niohub-telefonia/chamada de voz/
 # Redis dumps locais
 dump.rdb
 **/dump.rdb
+
+# GSFibra local artifacts
+*.apk
+GsFibra.apk
+aplicativo/mobile/android/app/google-services.json
+installer/provedor/.env
+installer/provedor/Caddyfile
+installer/provedor/firebase-credentials.json
+

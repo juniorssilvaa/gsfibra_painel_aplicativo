@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Django
+backend/db.sqlite3     
+
+# Secrets
+.env
+.env.*
+backend/firebase-credentials.json
+response.json
+*.jks
+*.keystore
+*.p12
+*.pem
+*.mobileprovision
+INSTRUCOES_ASSINATURA*.txt
+certs/
+
+# Local / device tooling
+emulator-boot.log
+oppo_adb_driver/
+
+# IDE
+.idea/
+.vscode/
+
+# Flutter / Android    
+mobile/.dart_tool/
+mobile/.idea/
+mobile/build/
+mobile/**/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/**/.cxx/
+mobile/**/gradle-wrapper.jar
+*.apk
+*.aab
+*.iml
+
+# Binários
+*.exe
+
+# OS
+.DS_Store
+Thumbs.db

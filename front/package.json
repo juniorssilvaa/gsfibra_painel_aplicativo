@@ -1,0 +1,45 @@
+{
+  "name": "gsfibra",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.dev.js",
+    "dev:local": "vite --config vite.dev.js",
+    "build": "vite build",
+    "build:prod": "vite build --mode production",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.7",
+    "axios": "^1.11.0",
+    "framer-motion": "^12.15.0",
+    "lucide-react": "^0.510.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.1",
+    "recharts": "^2.15.3",
+    "tailwindcss": "^4.1.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "eslint": "^9.25.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "terser": "^5.44.0",
+    "tw-animate-css": "^1.2.9",
+    "vite": "^6.3.5"
+  },
+  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
+  "pnpm": {
+    "overrides": {
+      "react": "^19.1.0",
+      "react-dom": "^19.1.0"
+    }
+  }
+}

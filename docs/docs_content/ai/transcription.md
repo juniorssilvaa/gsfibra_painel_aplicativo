@@ -1,3 +1,0 @@
-# Transcrição
-
-Documentação para Transcrição.

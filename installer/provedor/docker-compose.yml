@@ -1,0 +1,133 @@
+# Docker Compose — Painel do Aplicativo GSFibra
+# Convive com GenieACS no mesmo servidor: HTTPS na PANEL_PORT (padrão 8443).
+# ACS mantém 80/443/7547/7557/7567/8000. Este stack NÃO publica 5432/27017/8000.
+
+services:
+  gsfibra-postgres:
+    image: postgres:14-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gsfibra}
+      POSTGRES_USER: ${POSTGRES_USER:-gsfibra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+    volumes:
+      - gsfibra_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gsfibra} -d ${POSTGRES_DB:-gsfibra}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - gsfibra_net
+
+  gsfibra-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Defina REDIS_PASSWORD}"]
+    volumes:
+      - gsfibra_redis_data:/data
+    networks:
+      - gsfibra_net
+
+  gsfibra-rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-gsfibra}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Defina RABBITMQ_PASSWORD}
+    volumes:
+      - gsfibra_rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - gsfibra_net
+
+  gsfibra-backend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/juniorssilvaa}/gsfibra_painel_aplicativo-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY}
+      DEBUG: ${DEBUG:-False}
+      ENVIRONMENT: production
+      POSTGRES_DB: ${POSTGRES_DB:-gsfibra}
+      POSTGRES_USER: ${POSTGRES_USER:-gsfibra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: gsfibra-postgres
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: gsfibra-redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER:-gsfibra}:${RABBITMQ_PASSWORD}@gsfibra-rabbitmq:5672//
+      BACKEND_URL: ${BACKEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
+      MOBILE_API_PUBLIC_BASE: ${MOBILE_API_PUBLIC_BASE}
+      FIREBASE_CREDENTIALS: ${FIREBASE_CREDENTIALS:-/opt/gsfibra/firebase-credentials.json}
+      PANEL_ADMIN_USER: ${PANEL_ADMIN_USER:-}
+      PANEL_ADMIN_PASS: ${PANEL_ADMIN_PASS:-}
+      PANEL_PROVEDOR_NOME: ${PANEL_PROVEDOR_NOME:-GSFibra}
+    volumes:
+      - gsfibra_media:/app/backend/media
+      - gsfibra_static:/app/backend/staticfiles
+      # Opcional: instalador cria placeholder se o arquivo não existir
+      - ${HOST_INSTALLER_DIR:-.}/firebase-credentials.json:/opt/gsfibra/firebase-credentials.json:ro
+    depends_on:
+      gsfibra-postgres:
+        condition: service_healthy
+      gsfibra-redis:
+        condition: service_started
+      gsfibra-rabbitmq:
+        condition: service_started
+    networks:
+      - gsfibra_net
+
+  gsfibra-frontend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/juniorssilvaa}/gsfibra_painel_aplicativo:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - gsfibra-backend
+    networks:
+      - gsfibra_net
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      # Porta pública do painel do app (ACS já usa 80/443)
+      - "${PANEL_PORT:-8443}:8443"
+    environment:
+      PANEL_DOMAIN: ${PANEL_DOMAIN}
+      PANEL_PORT: ${PANEL_PORT:-8443}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+      TLS_MODE: ${TLS_MODE:-internal}
+    volumes:
+      - ${HOST_INSTALLER_DIR:-.}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - gsfibra_caddy_data:/data
+      - gsfibra_caddy_config:/config
+    depends_on:
+      - gsfibra-frontend
+      - gsfibra-backend
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    networks:
+      - gsfibra_net
+
+networks:
+  gsfibra_net:
+    name: gsfibra_net
+
+volumes:
+  gsfibra_pg_data:
+    name: gsfibra_pg_data
+  gsfibra_redis_data:
+    name: gsfibra_redis_data
+  gsfibra_rabbitmq_data:
+    name: gsfibra_rabbitmq_data
+  gsfibra_media:
+    name: gsfibra_media
+  gsfibra_static:
+    name: gsfibra_static
+  gsfibra_caddy_data:
+    name: gsfibra_caddy_data
+  gsfibra_caddy_config:
+    name: gsfibra_caddy_config

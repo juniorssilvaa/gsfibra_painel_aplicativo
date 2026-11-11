@@ -1,46 +1,36 @@
-# ------------------- Build Stage -------------------
-FROM node:18-alpine AS build
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Instalar pnpm
 RUN npm install -g pnpm
 
-# Copiar arquivos principais
-COPY frontend/frontend/package*.json ./
-COPY frontend/frontend/pnpm-lock.yaml ./
-
-# Instalar dependências
+COPY front/package.json front/pnpm-lock.yaml ./front/
+WORKDIR /app/front
 RUN pnpm install --no-frozen-lockfile
 
-# Copiar todo o frontend
-COPY frontend/frontend/ ./
+WORKDIR /app
+COPY front ./front
 
-# ---------- Variáveis recebidas do GitHub Actions ----------
-ARG VITE_SUPABASE_URL
-ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_API_URL
 ARG VITE_WS_URL
+ARG VITE_GSFIBRA_APP_URL
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
 
-ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
-ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_WS_URL=$VITE_WS_URL
+ENV VITE_GSFIBRA_APP_URL=$VITE_GSFIBRA_APP_URL
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
-# Build do Vite
+WORKDIR /app/front
 RUN pnpm build
 
-# ------------------- Production Stage -------------------
-FROM node:18-alpine
+FROM nginx:1.27-alpine AS runtime
 
-RUN npm install -g serve
+COPY front/nginx.default.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/front/dist /usr/share/nginx/html
 
-WORKDIR /app
+EXPOSE 80
 
-# O Vite já copia public/ para dist/ automaticamente durante o build
-# Os favicons (favicon.ico e favicon.png) já estão incluídos no dist/
-COPY --from=build /app/dist ./dist
-
-EXPOSE 8012
-
-CMD ["serve", "-s", "dist", "-l", "tcp://0.0.0.0:8012"]
+CMD ["nginx", "-g", "daemon off;"]

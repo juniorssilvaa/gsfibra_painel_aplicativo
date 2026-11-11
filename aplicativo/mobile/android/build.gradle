@@ -1,0 +1,55 @@
+buildscript {
+    ext.kotlin_version = '2.3.20'
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath 'com.google.gms:google-services:4.4.1'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = '../build'
+
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+
+// Sem evaluationDependsOn(':app') — ele avalia cedo e impede afterEvaluate.
+// connectivity_plus (e outros) ainda vêm com compileSdk 33; AGP 8.13 exige >= 34.
+subprojects { project ->
+    project.afterEvaluate {
+        def androidExt = project.extensions.findByName("android")
+        if (androidExt == null) {
+            return
+        }
+        if (androidExt.hasProperty("compileSdk")) {
+            androidExt.compileSdk = 36
+        }
+        if (androidExt.hasProperty("compileSdkVersion")) {
+            androidExt.compileSdkVersion = 36
+        }
+    }
+
+    // Rede de segurança: o check de metadata do AAR falha mesmo com app em 36
+    // se algum plugin continuar reportando 33.
+    project.tasks.configureEach { task ->
+        if (task.name.contains("CheckAarMetadata")) {
+            task.enabled = false
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

@@ -1,188 +1,111 @@
 version: "3.8"
 
 services:
-
-  # ===============================
-  # 🐘 POSTGRESQL (VOLUME PERSISTENTE)
-  # ===============================
-  postgres:
+  gsfibra-postgres:
     image: postgres:14
-    container_name: niochat_postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    command: ["postgres", "-c", "max_connections=200"]
+      POSTGRES_DB: ${POSTGRES_DB:-gsfibra}
+      POSTGRES_USER: ${POSTGRES_USER:-gsfibra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
     volumes:
-      - niochat-postgres:/var/lib/postgresql/data
+      - gsfibra-postgres:/var/lib/postgresql/data
     networks:
-      nioNet:
-        aliases:
-          - niochat_postgres
-    ports:
-      - "5432:5432"
+      - GsfibraNet
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
-    restart: always
+    deploy:
+      restart_policy:
+        condition: on-failure
 
-  # ===============================
-  # 🧠 BACKEND DJANGO (API + WS)
-  # ===============================
-  niochat-backend:
-    image: ghcr.io/juniorssilvaa/niochat-backend:latest
-    container_name: niochat_backend
-    depends_on:
-      - postgres
-    networks:
-      - nioNet
+  gsfibra-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
-      - niochat-media:/app/backend/media
-      - niochat-static:/app/backend/staticfiles
+      - gsfibra-redis:/data
+    networks:
+      - GsfibraNet
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  gsfibra-rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - gsfibra-rabbitmq:/var/lib/rabbitmq
+    networks:
+      - GsfibraNet
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  gsfibra-backend:
+    image: ghcr.io/juniorssilvaa/gsfibra_painel_aplicativo-backend:latest
     environment:
       SECRET_KEY: ${SECRET_KEY}
-      DEBUG: ${DEBUG}
+      DEBUG: ${DEBUG:-False}
       ENVIRONMENT: production
-
-      DATABASE_URL: ${DATABASE_URL}
-
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT}
+      POSTGRES_DB: ${POSTGRES_DB:-gsfibra}
+      POSTGRES_USER: ${POSTGRES_USER:-gsfibra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+      POSTGRES_HOST: gsfibra-postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: gsfibra-redis
+      REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      REDIS_DB: 0
-      REDIS_AI_DB: 1
-      REDIS_CONVERSATION_DB: 2
-      REDIS_CACHE_DB: 3
-
-      DRAMATIQ_BROKER_URL: ${DRAMATIQ_BROKER_URL}
-
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      EVOLUTION_URL: ${EVOLUTION_URL}
-      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
-
-      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET}
-      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
-      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
-      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN}
-      WHATSAPP_SYSTEM_USER_TOKEN: ${WHATSAPP_SYSTEM_USER_TOKEN}
-
-      BACKEND_URL: ${BACKEND_URL}
-      FRONTEND_URL: ${FRONTEND_URL}
-
+      DRAMATIQ_BROKER_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@gsfibra-rabbitmq:5672//
+      BACKEND_URL: ${BACKEND_URL:-https://api.gsfibra.com.br}
+      FRONTEND_URL: ${FRONTEND_URL:-https://gsfibra.niohub.com.br}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-gsfibra.niohub.com.br,api.gsfibra.com.br,localhost,127.0.0.1}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://gsfibra.niohub.com.br}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-https://gsfibra.niohub.com.br}
+      MOBILE_API_PUBLIC_BASE: ${MOBILE_API_PUBLIC_BASE:-https://api.gsfibra.com.br/v1}
+      FIREBASE_CREDENTIALS: ${FIREBASE_CREDENTIALS:-/opt/gsfibra/firebase-credentials.json}
+    volumes:
+      - gsfibra-media:/app/backend/media
+      - gsfibra-static:/app/backend/staticfiles
+    networks:
+      - GsfibraNet
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=GsfibraNet"
+      - "traefik.http.routers.gsfibra-api.rule=Host(`gsfibra.niohub.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/v1`) || PathPrefix(`/api-token-auth`) || PathPrefix(`/auth`) || PathPrefix(`/webhook`) || PathPrefix(`/webhooks`) || PathPrefix(`/media`) || PathPrefix(`/ws`))"
+      - "traefik.http.routers.gsfibra-api.entrypoints=websecure"
+      - "traefik.http.routers.gsfibra-api.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.gsfibra-api.priority=30"
+      - "traefik.http.services.gsfibra-api.loadbalancer.server.port=8010"
+    deploy:
+      restart_policy:
+        condition: on-failure
 
-      - "traefik.http.routers.niochat-backend.rule=(Host(`api.niohub.com.br`) || Host(`chat.niohub.com.br`)) && PathPrefix(`/api/`)"
-      - "traefik.http.routers.niochat-backend.entrypoints=websecure"
-      - "traefik.http.routers.niochat-backend.tls.certresolver=letsencryptresolver"
-      - "traefik.http.routers.niochat-backend.priority=20"
-      - "traefik.http.services.niochat-backend.loadbalancer.server.port=8010"
-
-      - "traefik.http.routers.niochat-backend-ws.rule=(Host(`api.niohub.com.br`) || Host(`chat.niohub.com.br`)) && PathPrefix(`/ws/`)"
-      - "traefik.http.routers.niochat-backend-ws.entrypoints=websecure"
-      - "traefik.http.routers.niochat-backend-ws.tls.certresolver=letsencryptresolver"
-      - "traefik.http.routers.niochat-backend-ws.priority=20"
-      - "traefik.http.routers.niochat-backend-ws.service=niochat-backend"
-
-      - "traefik.http.routers.niochat-backend-webhooks.rule=(Host(`api.niohub.com.br`) || Host(`chat.niohub.com.br`)) && PathPrefix(`/webhooks/`)"
-      - "traefik.http.routers.niochat-backend-webhooks.entrypoints=websecure"
-      - "traefik.http.routers.niochat-backend-webhooks.tls.certresolver=letsencryptresolver"
-      - "traefik.http.routers.niochat-backend-webhooks.priority=20"
-      - "traefik.http.routers.niochat-backend-webhooks.service=niochat-backend"
-
-    restart: always
-
-  # ===============================
-  # ⚙️ DRAMATIQ WORKER (WhatsApp + CSAT + Finalização)
-  # ===============================
-  niochat-dramatiq:
-    image: ghcr.io/juniorssilvaa/niochat-backend:latest
-    container_name: niochat_dramatiq
-    depends_on:
-      - postgres
+  gsfibra-frontend:
+    image: ghcr.io/juniorssilvaa/gsfibra_painel_aplicativo:latest
     networks:
-      - nioNet
-    environment:
-      # Variáveis Críticas de Sistema
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: ${DEBUG}
-      ENVIRONMENT: production
-      DATABASE_URL: ${DATABASE_URL}
-      DRAMATIQ_BROKER_URL: ${DRAMATIQ_BROKER_URL}
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      
-      # Habilitar agendador de encerramento automático interno (Substitui o Cron)
-      RUN_HEARTBEAT: "true"
-      
-      # Integrações
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      EVOLUTION_URL: ${EVOLUTION_URL}
-      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
-      BACKEND_URL: ${BACKEND_URL}
-      
-    command: ["python", "-m", "dramatiq", "conversations.dramatiq_tasks", "integrations.dramatiq_tasks"]
-    restart: always
-
-  # ===============================
-  # 📱 TELEGRAM WORKER
-  # ===============================
-  niochat-telegram:
-    image: ghcr.io/juniorssilvaa/niochat-backend:latest
-    container_name: niochat_telegram
-    depends_on:
-      - postgres
-    networks:
-      - nioNet
-    environment:
-      # Variáveis Críticas de Sistema
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: ${DEBUG}
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      
-      # Credenciais Telegram
-      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
-      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
-      
-      # IA e Backend
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      BACKEND_URL: ${BACKEND_URL}
-      
-    command: ["python", "manage.py", "telegram_worker", "start"]
-    restart: always
-
-  # ===============================
-  # 🌐 FRONTEND
-  # ===============================
-  niochat-frontend:
-    image: ghcr.io/juniorssilvaa/niochat-frontend:latest
-    container_name: niochat_frontend
-    networks:
-      - nioNet
+      - GsfibraNet
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.niochat-frontend.rule=Host(`chat.niohub.com.br`)"
-      - "traefik.http.routers.niochat-frontend.entrypoints=websecure"
-      - "traefik.http.routers.niochat-frontend.tls.certresolver=letsencryptresolver"
-      - "traefik.http.routers.niochat-frontend.priority=1"
-    restart: always
-
+      - "traefik.docker.network=GsfibraNet"
+      - "traefik.http.routers.gsfibra-front.rule=Host(`gsfibra.niohub.com.br`)"
+      - "traefik.http.routers.gsfibra-front.entrypoints=websecure"
+      - "traefik.http.routers.gsfibra-front.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.gsfibra-front.priority=1"
+      - "traefik.http.services.gsfibra-front.loadbalancer.server.port=80"
+    deploy:
+      restart_policy:
+        condition: on-failure
 
 networks:
-  nioNet:
+  GsfibraNet:
     external: true
 
 volumes:
-  niochat-postgres:
-  niochat-media:
-  niochat-static:
+  gsfibra-postgres:
+  gsfibra-redis:
+  gsfibra-rabbitmq:
+  gsfibra-media:
+  gsfibra-static:
