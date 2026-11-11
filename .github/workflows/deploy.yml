@@ -8,10 +8,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: gsfibra-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+# Sem concurrency agressiva: filas longas em "Queued" sem job atribuído.
 permissions:
   contents: write
   packages: write
