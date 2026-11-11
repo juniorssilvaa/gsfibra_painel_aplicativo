@@ -2,100 +2,168 @@ name: Deploy GSFibra
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
   group: gsfibra-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+  packages: write
+
 env:
   REGISTRY: ghcr.io
+  IMAGE_FRONT: juniorssilvaa/gsfibra_painel_aplicativo
+  IMAGE_BACKEND: juniorssilvaa/gsfibra_painel_aplicativo-backend
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: pnpm/action-setup@v4
-      with:
-        version: 10.4.1
-        run_install: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+          run_install: false
 
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: pnpm
-        cache-dependency-path: front/pnpm-lock.yaml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: front/pnpm-lock.yaml
 
-    - name: Install and build front
-      env:
-        VITE_API_URL: "https://gsfibra.niohub.com.br"
-        VITE_WS_URL: "wss://gsfibra.niohub.com.br/ws"
-        VITE_GSFIBRA_APP_URL: "https://gsfibra.niohub.com.br"
-      run: |
-        pnpm --dir front install --no-frozen-lockfile
-        pnpm --dir front build
+      - name: Install and build front
+        env:
+          # Mesmo origin (Caddy encaminha /api e /v1)
+          VITE_API_URL: ""
+          VITE_WS_URL: ""
+          VITE_GSFIBRA_APP_URL: ""
+        run: |
+          pnpm --dir front install --no-frozen-lockfile
+          pnpm --dir front build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Backend check
+        working-directory: backend
+        env:
+          SECRET_KEY: ci-test-secret
+          DEBUG: "True"
+          POSTGRES_DB: gsfibra
+          POSTGRES_USER: gsfibra
+          POSTGRES_PASSWORD: gsfibra
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python manage.py check
 
   build-and-push:
-    needs: test
+    needs: [test]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: frontend
-            image: juniorssilvaa/gsfibra_painel_aplicativo
-            file: ./Dockerfile.frontend
-            vite: true
-          - id: backend
-            image: juniorssilvaa/gsfibra_painel_aplicativo-backend
-            file: ./Dockerfile.backend
-            vite: false
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-    - uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GHCR_TOKEN || github.token }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
 
-    - name: Build args
-      id: vite
-      run: |
-        if [ "${{ matrix.vite }}" = "true" ]; then
-          {
-            # Mesmo origin (Caddy encaminha /api e /v1) — instalador provedor :8443
-            echo "VITE_API_URL="
-            echo "VITE_WS_URL="
-            echo "VITE_GSFIBRA_APP_URL="
-          } > /tmp/vite.args
-        else
-          : > /tmp/vite.args
-        fi
-        echo "args<<EOF" >> "$GITHUB_OUTPUT"
-        cat /tmp/vite.args >> "$GITHUB_OUTPUT"
-        echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Docker metadata (frontend)
+        id: meta_front
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_FRONT }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=stable,enable={{is_default_branch}}
 
-    - uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ${{ matrix.file }}
-        push: true
-        tags: |
-          ${{ env.REGISTRY }}/${{ matrix.image }}:latest
-          ${{ env.REGISTRY }}/${{ matrix.image }}:${{ github.sha }}
-        build-args: ${{ steps.vite.outputs.args }}
-        provenance: false
-        cache-from: type=gha,scope=gsfibra-painel-${{ matrix.id }}
-        cache-to: type=gha,mode=max,scope=gsfibra-painel-${{ matrix.id }}
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.frontend
+          push: true
+          tags: ${{ steps.meta_front.outputs.tags }}
+          labels: ${{ steps.meta_front.outputs.labels }}
+          build-args: |
+            VITE_API_URL=
+            VITE_WS_URL=
+            VITE_GSFIBRA_APP_URL=
+          provenance: false
+          cache-from: type=gha,scope=gsfibra-painel-frontend
+          cache-to: type=gha,mode=max,scope=gsfibra-painel-frontend
+
+      - name: Docker metadata (backend)
+        id: meta_backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=stable,enable={{is_default_branch}}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.backend
+          push: true
+          tags: ${{ steps.meta_backend.outputs.tags }}
+          labels: ${{ steps.meta_backend.outputs.labels }}
+          provenance: false
+          cache-from: type=gha,scope=gsfibra-painel-backend
+          cache-to: type=gha,mode=max,scope=gsfibra-painel-backend
+
+  deploy:
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Empacotar instalador do provedor
+        run: |
+          set -euo pipefail
+          tar -czf installer-gsfibra-painel.tar.gz installer/provedor
+          ls -lh installer-gsfibra-painel.tar.gz
+
+      - name: Upload artefato do instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-gsfibra-painel
+          path: installer-gsfibra-painel.tar.gz
+          retention-days: 30
+
+      - name: Publicar release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer-gsfibra-painel.tar.gz
+          generate_release_notes: true
+
+      - name: Resumo
+        run: |
+          echo "Imagens publicadas:"
+          echo "  ${{ env.REGISTRY }}/${{ env.IMAGE_FRONT }}:latest"
+          echo "  ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:latest"
+          echo "Instalador: installer-gsfibra-painel.tar.gz"
