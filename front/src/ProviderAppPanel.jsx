@@ -1945,7 +1945,7 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
     erp_type: 'sgp',
     sgp_url: '',
     sgp_token: '',
-    sgp_app_name: 'gsfibra',
+    sgp_app_name: '',
     app_default_team_id: '',
   })
   const [genieForm, setGenieForm] = useState({
@@ -1959,10 +1959,10 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
   useEffect(() => {
     if (!sgp) return
     setSgpForm({
-      erp_type: sgp.erp_type === 'receitanet' ? 'receitanet' : 'sgp',
+      erp_type: 'sgp',
       sgp_url: sgp.sgp_url || '',
       sgp_token: sgp.sgp_token || '',
-      sgp_app_name: sgp.sgp_app_name || 'gsfibra',
+      sgp_app_name: sgp.sgp_app_name || '',
       app_default_team_id:
         sgp.app_default_team_id != null && sgp.app_default_team_id !== ''
           ? String(sgp.app_default_team_id)
@@ -1978,7 +1978,7 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
     return <div className="p-6 text-sm text-muted-foreground">Carregando integração…</div>
   }
 
-  const isSgp = sgpForm.erp_type !== 'receitanet'
+  const isSgp = true
 
   const token = sgp.provider_token || ''
   const baseWebhook = (sgp.webhook_url || '').replace(/\?.*$/, '').replace(/\/$/, '')
@@ -2011,13 +2011,11 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
     setSavingSgp(true)
     try {
       const payload = {
-        erp_type: sgpForm.erp_type,
+        erp_type: 'sgp',
         sgp_url: sgpForm.sgp_url,
         sgp_token: sgpForm.sgp_token,
+        sgp_app_name: sgpForm.sgp_app_name || '',
         app_default_team_id: sgpForm.app_default_team_id,
-      }
-      if (sgpForm.erp_type === 'sgp') {
-        payload.sgp_app_name = sgpForm.sgp_app_name
       }
       await onSaveSgp(payload)
     } finally {
@@ -2056,12 +2054,11 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
             <div>
               <label className="mb-1 block text-sm font-medium text-muted-foreground">ERP</label>
               <select
-                value={sgpForm.erp_type}
-                onChange={(e) => setSgpForm((f) => ({ ...f, erp_type: e.target.value }))}
-                className={PANEL_INPUT}
+                value="sgp"
+                disabled
+                className={`${PANEL_INPUT} opacity-80`}
               >
                 <option value="sgp">SGP</option>
-                <option value="receitanet">ReceitaNet</option>
               </select>
             </div>
             <div>
@@ -4891,7 +4888,7 @@ export default function ProviderAppPanel({ onLogout }) {
       cnpj: res.data.cnpj || '',
       number: res.data.number || '',
       sgp_url: res.data.sgp_url || '',
-      sgp_app_name: res.data.sgp_app_name || 'gsfibra',
+      sgp_app_name: res.data.sgp_app_name || '',
       webhook_url: res.data.webhook_url || '',
       genieacs_url: res.data.genieacs_url || '',
       genieacs_user: res.data.genieacs_user || '',
@@ -5085,7 +5082,7 @@ export default function ProviderAppPanel({ onLogout }) {
           erp_type: data.erp_type || 'sgp',
           sgp_url: data.sgp_url,
           sgp_token: data.sgp_token,
-          sgp_app_name: data.sgp_app_name || 'gsfibra',
+          sgp_app_name: data.sgp_app_name || '',
           app_default_team_id: data.app_default_team_id || null,
         },
         { headers: authHeaders() },
