@@ -98,7 +98,7 @@ def get_sgp_integration(request):
         # Token outbound usado nas chamadas à API do SGP
         'sgp_token': profile.sgp_token or '',
         'sgp_url': profile.sgp_url or '',
-        'sgp_app_name': profile.sgp_app_name or 'gsfibra',
+        'sgp_app_name': profile.sgp_app_name or '',
         'erp_type': getattr(profile, 'erp_type', None) or 'sgp',
         'webhook_url': webhook_url,
         'genieacs_url': profile.genieacs_url or '',

@@ -43,8 +43,17 @@ O front de produção para este instalador deve ser buildado com **`VITE_API_URL
 
 ## TLS
 
-- `internal` (padrão): certificado Caddy local — sobe na hora; browser pode avisar.  
-- `acme`: Let's Encrypt — em porta diferente de 443 costuma falhar sem DNS-01.
+- `acs` (recomendado): copia o certificado Let's Encrypt do Caddy do ACS (`installer_caddy_data`) — remove o aviso **Não seguro**.  
+- `internal`: certificado Caddy local — browser mostra **Não seguro**.  
+- `acme`: Let's Encrypt direto — em porta ≠ 443 costuma falhar sem DNS-01.
+
+Já instalado com `internal`? No servidor:
+
+```bash
+cd installer/provedor
+chmod +x fix-tls-from-acs.sh
+sudo ./fix-tls-from-acs.sh painelapp.gsfibra.com 8443
+```
 
 Com Cloudflare no domínio, use Full SSL apontando a origem para `IP:8443`.
 

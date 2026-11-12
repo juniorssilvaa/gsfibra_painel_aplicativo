@@ -2053,13 +2053,7 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
           <form onSubmit={submitSgp} className="space-y-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-muted-foreground">ERP</label>
-              <select
-                value="sgp"
-                disabled
-                className={`${PANEL_INPUT} opacity-80`}
-              >
-                <option value="sgp">SGP</option>
-              </select>
+              <input type="text" value="SGP" readOnly className={`${PANEL_INPUT} opacity-90`} />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-muted-foreground">URL do Host do ERP</label>
@@ -2086,7 +2080,7 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
                   type="text"
                   value={sgpForm.sgp_app_name}
                   onChange={(e) => setSgpForm((f) => ({ ...f, sgp_app_name: e.target.value }))}
-                  placeholder="ex: gsfibra"
+                  placeholder="Deixe em branco se não usar"
                   className={PANEL_INPUT}
                 />
               </div>

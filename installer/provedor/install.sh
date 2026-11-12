@@ -92,9 +92,10 @@ while true; do
 
   echo
   echo -e "${BLUE}--- TLS ---${NC}"
-  echo "  internal = certificado Caddy (rápido; browser pode avisar)"
-  echo "  acme     = Let's Encrypt (requer liberação ACME; em porta != 443 pode falhar)"
-  prompt "Modo TLS (internal/acme)" TLS_MODE "internal"
+  echo "  acs      = reutiliza o certificado Let's Encrypt do Caddy do ACS (recomendado)"
+  echo "  internal = certificado local (browser mostra 'Não seguro')"
+  echo "  acme     = Let's Encrypt direto (em porta != 443 costuma falhar)"
+  prompt "Modo TLS (acs/internal/acme)" TLS_MODE "acs"
 
   echo
   echo -e "${BLUE}--- Imagens (GHCR) ---${NC}"
@@ -180,15 +181,35 @@ GITHUB_TOKEN=${GHCR_TOKEN}
 EOF
 
 info "Gerando Caddyfile (porta ${PANEL_PORT})..."
-if [[ "${TLS_MODE}" == "acme" ]]; then
-  cat > Caddyfile <<EOF
-{
-    https_port ${PANEL_PORT}
-    http_port 8088
-    email ${LETSENCRYPT_EMAIL}
-}
+mkdir -p certs
+TLS_BLOCK="tls internal"
+if [[ "${TLS_MODE}" == "acs" ]]; then
+  info "Procurando certificado do ACS (volume installer_caddy_data)..."
+  if docker volume inspect installer_caddy_data >/dev/null 2>&1; then
+    docker run --rm \
+      -v installer_caddy_data:/acs:ro \
+      -v "$(pwd)/certs:/out" \
+      alpine:3.20 sh -c "
+        set -e
+        crt=\$(find /acs -type f -name '${PANEL_DOMAIN}.crt' | head -n1)
+        key=\$(find /acs -type f -name '${PANEL_DOMAIN}.key' | head -n1)
+        if [ -z \"\$crt\" ] || [ -z \"\$key\" ]; then
+          echo 'CERT_NOT_FOUND'
+          exit 2
+        fi
+        cp \"\$crt\" /out/fullchain.pem
+        cp \"\$key\" /out/privkey.pem
+        echo \"OK \$crt\"
+      " && TLS_BLOCK="tls /certs/fullchain.pem /certs/privkey.pem" \
+        && info "Certificado ACS copiado para ./certs" \
+        || { warn "Certificado ACS não encontrado; usando tls internal."; TLS_MODE=internal; }
+  else
+    warn "Volume installer_caddy_data não existe; usando tls internal."
+    TLS_MODE=internal
+  fi
+fi
 
-https://${PANEL_DOMAIN}:${PANEL_PORT} {
+PROXY_HANDLES=$(cat <<'HANDLES'
     encode gzip
 
     handle /api* {
@@ -206,6 +227,19 @@ https://${PANEL_DOMAIN}:${PANEL_PORT} {
     handle {
         reverse_proxy gsfibra-frontend:80
     }
+HANDLES
+)
+
+if [[ "${TLS_MODE}" == "acme" ]]; then
+  cat > Caddyfile <<EOF
+{
+    https_port ${PANEL_PORT}
+    http_port 8088
+    email ${LETSENCRYPT_EMAIL}
+}
+
+https://${PANEL_DOMAIN}:${PANEL_PORT} {
+${PROXY_HANDLES}
 }
 EOF
 else
@@ -216,24 +250,8 @@ else
 }
 
 https://${PANEL_DOMAIN}:${PANEL_PORT} {
-    tls internal
-    encode gzip
-
-    handle /api* {
-        reverse_proxy gsfibra-backend:8010
-    }
-    handle /v1* {
-        reverse_proxy gsfibra-backend:8010
-    }
-    handle /ws* {
-        reverse_proxy gsfibra-backend:8010
-    }
-    handle /media* {
-        reverse_proxy gsfibra-backend:8010
-    }
-    handle {
-        reverse_proxy gsfibra-frontend:80
-    }
+    ${TLS_BLOCK}
+${PROXY_HANDLES}
 }
 EOF
 fi
@@ -332,7 +350,11 @@ else:
 
 if ensure_mobile_app_for_provedor:
     try:
-        ensure_mobile_app_for_provedor(provedor, create_token=True)
+        profile, _, _ = ensure_mobile_app_for_provedor(provedor, create_token=True)
+        # Campo "Nome do App no ERP" começa vazio (não pré-preenche gsfibra)
+        if getattr(profile, 'sgp_app_name', None):
+            profile.sgp_app_name = None
+            profile.save(update_fields=['sgp_app_name'])
     except Exception as exc:
         print(f'aviso mobile_app: {exc}')
 

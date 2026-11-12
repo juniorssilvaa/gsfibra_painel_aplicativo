@@ -103,6 +103,7 @@ services:
       TLS_MODE: ${TLS_MODE:-internal}
     volumes:
       - ${HOST_INSTALLER_DIR:-.}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${HOST_INSTALLER_DIR:-.}/certs:/certs:ro
       - gsfibra_caddy_data:/data
       - gsfibra_caddy_config:/config
     depends_on:
