@@ -1940,7 +1940,7 @@ function PlansPanel({ plans, onSave, onDelete }) {
   )
 }
 
-function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToken, onNotify }) {
+function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onSaveChat, onRotateToken, onNotify }) {
   const [sgpForm, setSgpForm] = useState({
     erp_type: 'sgp',
     sgp_url: '',
@@ -1952,8 +1952,13 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
     genieacs_url: '',
     genieacs_token: '',
   })
+  const [chatForm, setChatForm] = useState({
+    chat_panel_url: '',
+    chat_integration_token: '',
+  })
   const [savingSgp, setSavingSgp] = useState(false)
   const [savingGenie, setSavingGenie] = useState(false)
+  const [savingChat, setSavingChat] = useState(false)
   const [showGatewayToken, setShowGatewayToken] = useState(false)
 
   useEffect(() => {
@@ -1971,6 +1976,10 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
     setGenieForm({
       genieacs_url: sgp.genieacs_url || '',
       genieacs_token: sgp.genieacs_token || '',
+    })
+    setChatForm({
+      chat_panel_url: sgp.chat_panel_url || '',
+      chat_integration_token: sgp.chat_integration_token || '',
     })
   }, [sgp])
 
@@ -2033,6 +2042,16 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
     }
   }
 
+  const submitChat = async (e) => {
+    e.preventDefault()
+    setSavingChat(true)
+    try {
+      await onSaveChat?.(chatForm)
+    } finally {
+      setSavingChat(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-8 p-6">
       <div>
@@ -2040,6 +2059,65 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onRotateToke
         <p className="mt-2 text-sm text-muted-foreground">
           Configure sua integração com o seu ERP para automação e notificações.
         </p>
+      </div>
+
+      <div className={`${PANEL_CARD} rounded-2xl shadow-xl`}>
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center">
+            <div className="mr-4 flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/20 text-orange-400 ring-1 ring-orange-400/30">
+              <MessageCircle className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-foreground">Configurar chat do app</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Liga o chat do aplicativo ao painel de atendimento (ex.: gigasinal.niohub.com.br).
+              </p>
+            </div>
+          </div>
+          <span
+            className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${
+              sgp.chat_bridge_ready
+                ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30'
+                : 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30'
+            }`}
+          >
+            {sgp.chat_bridge_ready ? 'Pronto' : 'Pendente'}
+          </span>
+        </div>
+        <form onSubmit={submitChat} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-sm font-medium text-muted-foreground">
+              URL do painel de atendimento
+            </label>
+            <input
+              type="url"
+              value={chatForm.chat_panel_url}
+              onChange={(e) => setChatForm((f) => ({ ...f, chat_panel_url: e.target.value }))}
+              placeholder="https://gigasinal.niohub.com.br"
+              className={PANEL_INPUT}
+              required
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-sm font-medium text-muted-foreground">
+              Token de integração (SUPERADMIN_PROVIDER_TOKEN)
+            </label>
+            <SecretField
+              value={chatForm.chat_integration_token}
+              onChange={(e) => setChatForm((f) => ({ ...f, chat_integration_token: e.target.value }))}
+              placeholder="Cole o token do .env do painel de atendimento"
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Use o mesmo valor de <span className="font-mono">SUPERADMIN_PROVIDER_TOKEN</span> do painel
+              de atendimento. Sem isso o app mostra “atendimento desativado”.
+            </p>
+          </div>
+          <div className="md:col-span-2">
+            <button type="submit" disabled={savingChat} className={`${BTN_PRIMARY} w-full sm:w-auto`}>
+              {savingChat ? 'Salvando…' : 'Salvar chat do app'}
+            </button>
+          </div>
+        </form>
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -5089,6 +5167,32 @@ export default function ProviderAppPanel({ onLogout }) {
     await loadSgp()
   }
 
+  const saveChatBridge = async (data) => {
+    let res
+    try {
+      res = await axios.post(
+        '/api/mobile-app/panel/integrations/sgp/credentials/',
+        {
+          chat_panel_url: data.chat_panel_url || '',
+          chat_integration_token: data.chat_integration_token || '',
+        },
+        { headers: authHeaders() },
+      )
+    } catch (err) {
+      toast.apiError(err, 'Não foi possível salvar o chat do app.')
+      return
+    }
+    setMessage(res.data.message || 'Chat do app configurado com sucesso!')
+    setSgp((s) => ({
+      ...(s || {}),
+      chat_panel_url: res.data.chat_panel_url || '',
+      chat_integration_token: res.data.chat_integration_token || '',
+      has_chat_integration_token: !!res.data.has_chat_integration_token,
+      chat_bridge_ready: !!res.data.chat_bridge_ready,
+    }))
+    await loadSgp()
+  }
+
   const saveGenieCredentials = async (data) => {
     const payload = {
       genieacs_url: data.genieacs_url,
@@ -5287,6 +5391,7 @@ export default function ProviderAppPanel({ onLogout }) {
                 setSgp={setSgp}
                 onSaveSgp={saveSgpCredentials}
                 onSaveGenie={saveGenieCredentials}
+                onSaveChat={saveChatBridge}
                 onRotateToken={rotateToken}
                 onNotify={setMessage}
               />

@@ -1,6 +1,7 @@
 """Endpoints de integração SGP do painel (Superadmin ou admin do provedor)."""
 import logging
 import os
+from urllib.parse import urlparse
 
 from django.db import IntegrityError
 from rest_framework.decorators import api_view, permission_classes
@@ -11,6 +12,61 @@ from .models import MobileAppProfile
 from .services import ensure_mobile_app_for_provedor
 
 logger = logging.getLogger(__name__)
+
+
+def _chat_bridge_payload(provedor) -> dict:
+    extras = provedor.integracoes_externas if isinstance(provedor.integracoes_externas, dict) else {}
+    url = (
+        (extras or {}).get('painel_url')
+        or (extras or {}).get('tenant_url')
+        or ''
+    ).strip()
+    token = (getattr(provedor, 'integration_token', None) or '').strip()
+    return {
+        'chat_panel_url': url,
+        'chat_integration_token': token,
+        'has_chat_integration_token': bool(token),
+        'chat_bridge_ready': bool(url and token),
+    }
+
+
+def _apply_chat_bridge(provedor, data: dict) -> list:
+    """Atualiza URL/token do chat app → painel de atendimento. Retorna campos alterados do Provedor."""
+    update_fields = []
+    if 'chat_panel_url' in data or 'painel_url' in data or 'tenant_url' in data:
+        raw = (
+            data.get('chat_panel_url')
+            if 'chat_panel_url' in data
+            else data.get('painel_url') if 'painel_url' in data else data.get('tenant_url')
+        )
+        url = (raw or '').strip().rstrip('/')
+        extras = dict(provedor.integracoes_externas or {}) if isinstance(provedor.integracoes_externas, dict) else {}
+        if url:
+            extras['painel_url'] = url
+            extras['tenant_url'] = url
+            # Alinha subdomain ao host do atendimento (ex.: gigasinal.niohub.com.br)
+            try:
+                host = (urlparse(url).hostname or '').strip().lower()
+            except Exception:
+                host = ''
+            if host:
+                if host.endswith('.niohub.com.br'):
+                    provedor.subdomain = host.split('.', 1)[0]
+                else:
+                    provedor.subdomain = host
+                update_fields.append('subdomain')
+        else:
+            extras.pop('painel_url', None)
+            extras.pop('tenant_url', None)
+        provedor.integracoes_externas = extras
+        update_fields.append('integracoes_externas')
+
+    if 'chat_integration_token' in data or 'integration_token' in data:
+        key = 'chat_integration_token' if 'chat_integration_token' in data else 'integration_token'
+        provedor.integration_token = (data.get(key) or '').strip()
+        update_fields.append('integration_token')
+
+    return list(dict.fromkeys(update_fields))
 
 
 def _duplicate_token_message(request, owner) -> str:
@@ -106,6 +162,7 @@ def get_sgp_integration(request):
         'genieacs_token': profile.genieacs_token or '',
         'has_genieacs_token': bool(profile.genieacs_token),
         'app_default_team_id': profile.app_default_team_id,
+        **_chat_bridge_payload(profile.provedor),
     }
     if token_obj:
         payload['sgp_token_created_at'] = token_obj.created_at.strftime('%d/%m/%Y %H:%M:%S')
@@ -169,8 +226,14 @@ def save_sgp_credentials(request):
             profile.genieacs_password = None
             update_fields.extend(['genieacs_user', 'genieacs_password'])
 
+    provedor = profile.provedor
+    provedor_fields = _apply_chat_bridge(provedor, data)
+
     try:
-        profile.save(update_fields=list(dict.fromkeys(update_fields)))
+        if len(update_fields) > 1:
+            profile.save(update_fields=list(dict.fromkeys(update_fields)))
+        if provedor_fields:
+            provedor.save(update_fields=provedor_fields)
     except IntegrityError:
         logger.warning('[PainelApp] Token do ERP duplicado ao salvar o perfil %s', profile.id)
         return Response({'error': _duplicate_token_message(request, None)}, status=400)
@@ -191,6 +254,7 @@ def save_sgp_credentials(request):
         'genieacs_token': profile.genieacs_token or '',
         'has_genieacs_token': bool(profile.genieacs_token),
         'app_default_team_id': profile.app_default_team_id,
+        **_chat_bridge_payload(provedor),
     })
 
 
