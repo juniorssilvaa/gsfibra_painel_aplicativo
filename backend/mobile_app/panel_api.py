@@ -24,7 +24,8 @@ def _chat_bridge_payload(provedor) -> dict:
     token = (getattr(provedor, 'integration_token', None) or '').strip()
     return {
         'chat_panel_url': url,
-        'chat_integration_token': token,
+        # Nunca devolve o token para o front (campo fica vazio para digitar de novo)
+        'chat_integration_token': '',
         'has_chat_integration_token': bool(token),
         'chat_bridge_ready': bool(url and token),
     }
