@@ -1975,12 +1975,11 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onSaveChat, 
     })
     setGenieForm({
       genieacs_url: sgp.genieacs_url || '',
-      genieacs_token: '',
+      genieacs_token: sgp.genieacs_token || '',
     })
     setChatForm({
       chat_panel_url: sgp.chat_panel_url || '',
-      // Nunca pré-preenche o token (evita valor falso / vazamento na tela)
-      chat_integration_token: '',
+      chat_integration_token: sgp.chat_integration_token || '',
     })
   }, [sgp])
 
@@ -2047,13 +2046,10 @@ function SgpIntegrationPanel({ sgp, setSgp, onSaveSgp, onSaveGenie, onSaveChat, 
     e.preventDefault()
     setSavingChat(true)
     try {
-      const payload = {
+      await onSaveChat?.({
         chat_panel_url: chatForm.chat_panel_url,
-      }
-      const typedToken = (chatForm.chat_integration_token || '').trim()
-      if (typedToken) payload.chat_integration_token = typedToken
-      await onSaveChat?.(payload)
-      setChatForm((f) => ({ ...f, chat_integration_token: '' }))
+        chat_integration_token: (chatForm.chat_integration_token || '').trim(),
+      })
     } finally {
       setSavingChat(false)
     }
@@ -5157,15 +5153,12 @@ export default function ProviderAppPanel({ onLogout }) {
   const saveChatBridge = async (data) => {
     let res
     try {
-      const payload = {
-        chat_panel_url: data.chat_panel_url || '',
-      }
-      if ((data.chat_integration_token || '').trim()) {
-        payload.chat_integration_token = data.chat_integration_token.trim()
-      }
       res = await axios.post(
         '/api/mobile-app/panel/integrations/sgp/credentials/',
-        payload,
+        {
+          chat_panel_url: data.chat_panel_url || '',
+          chat_integration_token: data.chat_integration_token || '',
+        },
         { headers: authHeaders() },
       )
     } catch (err) {
@@ -5176,6 +5169,7 @@ export default function ProviderAppPanel({ onLogout }) {
     setSgp((s) => ({
       ...(s || {}),
       chat_panel_url: res.data.chat_panel_url || '',
+      chat_integration_token: res.data.chat_integration_token || '',
       chat_bridge_ready: !!res.data.chat_bridge_ready,
       has_chat_integration_token: !!res.data.has_chat_integration_token,
     }))
